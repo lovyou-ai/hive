@@ -46,6 +46,12 @@ const (
 	ActionIntegrate    = "integrate_staging"
 )
 
+// writeCodeAction returns the action string for a code generation event.
+// Schema: "write_code:<language>" — made explicit to avoid magic string composition.
+func writeCodeAction(lang string) string {
+	return ActionWriteCode + ":" + lang
+}
+
 // ProductInput describes how a product idea enters the hive.
 type ProductInput struct {
 	Name        string // Product name (used for repo and directory). If empty, CTO derives one.
@@ -534,10 +540,12 @@ func (p *Pipeline) buildLoopConfigs(ctx context.Context, seedTask string, eventB
 	// Guardian — watches everything, can HALT. Gets a larger budget than
 	// execution agents so it outlives them (OBSERVABLE invariant).
 	guardianBudget := cfg.GuardianBudget
-	if guardianBudget.MaxIterations == 0 && guardianBudget.MaxCostUSD == 0 {
-		// Fallback: 10x the execution budget.
+	if guardianBudget.MaxIterations == 0 && guardianBudget.MaxCostUSD == 0 && guardianBudget.MaxDuration == 0 {
+		// Fallback: scale all execution budget dimensions so Guardian outlives them.
 		guardianBudget = cfg.Budget
 		guardianBudget.MaxIterations *= 10
+		guardianBudget.MaxCostUSD *= 2
+		guardianBudget.MaxDuration *= 2
 	}
 	configs = append(configs, loop.Config{
 		Agent:   p.guardian,
@@ -748,7 +756,9 @@ Specification:
 	}
 
 	// Record the build action
-	_, _ = builder.Runtime.Act(ctx, ActionWriteCode+":"+lang, "multi-file generation from spec")
+	if _, err := builder.Runtime.Act(ctx, writeCodeAction(lang), "multi-file generation from spec"); err != nil {
+		fmt.Printf("warning: write_code action event failed: %v\n", err)
+	}
 
 	// Parse multi-file output
 	files := parseFiles(code)
@@ -1072,21 +1082,25 @@ Events:
 
 	if strings.Contains(upper, "HALT") {
 		fmt.Printf("🛑 Guardian HALT (after %s):\n%s\n", phase, eval)
-		_, _ = p.guardian.Runtime.Emit(event.AgentEscalatedContent{
+		if _, err := p.guardian.Runtime.Emit(event.AgentEscalatedContent{
 			AgentID:   p.guardian.Runtime.ID(),
 			Authority: p.humanID,
 			Reason:    fmt.Sprintf("[HALT after %s] %s", phase, eval),
-		})
+		}); err != nil {
+			fmt.Printf("warning: HALT escalation event failed: %v\n", err)
+		}
 		return true
 	}
 
 	if containsAlert(eval) {
 		fmt.Printf("⚠ Guardian Alert (after %s):\n%s\n", phase, eval)
-		_, _ = p.guardian.Runtime.Emit(event.AgentEscalatedContent{
+		if _, err := p.guardian.Runtime.Emit(event.AgentEscalatedContent{
 			AgentID:   p.guardian.Runtime.ID(),
 			Authority: p.humanID,
 			Reason:    fmt.Sprintf("[%s phase] %s", phase, eval),
-		})
+		}); err != nil {
+			fmt.Printf("warning: alert escalation event failed: %v\n", err)
+		}
 	}
 
 	return false
@@ -1169,9 +1183,11 @@ func langTestCommand(lang string) (string, []string) {
 }
 
 // containsAlert checks if the Guardian's evaluation contains an alert keyword.
+// HALT is handled separately by the explicit HALT check in guardianCheck —
+// it is not included here to avoid duplicate event emission.
 func containsAlert(eval string) bool {
 	upper := strings.ToUpper(eval)
-	for _, keyword := range []string{"HALT", "ALERT", "VIOLATION", "QUARANTINE"} {
+	for _, keyword := range []string{"ALERT", "VIOLATION", "QUARANTINE"} {
 		if strings.Contains(upper, keyword) {
 			return true
 		}

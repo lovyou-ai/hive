@@ -11,14 +11,14 @@ func TestContainsAlert(t *testing.T) {
 		want  bool
 	}{
 		{"Everything looks fine", false},
-		{"HALT: policy violation detected", true},
+		{"HALT: policy violation detected", true}, // matches VIOLATION, not HALT
 		{"ALERT: trust anomaly in builder agent", true},
 		{"Found a VIOLATION of soul values", true},
 		{"QUARANTINE agent builder_01", true},
 		{"Minor alert about formatting", true},
 		{"The code is clean", false},
 		{"", false},
-		{"halt operations immediately", true},
+		{"halt operations immediately", false}, // HALT handled separately
 	}
 
 	for _, tt := range tests {

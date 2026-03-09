@@ -264,26 +264,32 @@ func (l *Loop) reason(ctx context.Context, prompt string) (string, int, error) {
 }
 
 // checkResponse examines the LLM response for stopping signals.
+// Priority: HALT > ESCALATE > TASK_DONE (HALT is constitutional, must never be masked).
 func (l *Loop) checkResponse(ctx context.Context, response string, iteration int) *Result {
 	upper := strings.ToUpper(response)
 
-	if strings.Contains(upper, "ESCALATE") {
-		// Record escalation event.
-		_, _ = l.agent.Runtime.Escalate(ctx, l.humanID,
-			fmt.Sprintf("loop iteration %d: %s", iteration, response))
-		r := l.result(StopEscalation, iteration, response)
-		return &r
-	}
-
+	// HALT is the highest priority — Guardian emergency stop.
 	if strings.Contains(upper, "HALT") {
 		r := l.result(StopHalt, iteration, response)
 		return &r
 	}
 
+	if strings.Contains(upper, "ESCALATE") {
+		// Record escalation event.
+		if _, err := l.agent.Runtime.Escalate(ctx, l.humanID,
+			fmt.Sprintf("loop iteration %d: %s", iteration, response)); err != nil {
+			fmt.Printf("warning: escalation event failed: %v\n", err)
+		}
+		r := l.result(StopEscalation, iteration, response)
+		return &r
+	}
+
 	if strings.Contains(upper, "TASK_DONE") {
 		// Record completion.
-		_, _ = l.agent.Runtime.Learn(ctx,
-			"task completed after loop iteration "+fmt.Sprint(iteration), "loop")
+		if _, err := l.agent.Runtime.Learn(ctx,
+			"task completed after loop iteration "+fmt.Sprint(iteration), "loop"); err != nil {
+			fmt.Printf("warning: completion event failed: %v\n", err)
+		}
 		r := l.result(StopTaskDone, iteration, response)
 		return &r
 	}

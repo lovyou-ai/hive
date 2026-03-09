@@ -38,13 +38,25 @@ type BudgetConfig struct {
 
 // NewBudget creates a budget tracker with the given limits.
 func NewBudget(cfg BudgetConfig) *Budget {
+	return newBudgetAt(cfg, time.Now())
+}
+
+// newBudgetAt creates a budget tracker with a custom start time.
+// Exported for testing via NewBudgetForTest.
+func newBudgetAt(cfg BudgetConfig, start time.Time) *Budget {
 	return &Budget{
 		maxTokens:     cfg.MaxTokens,
 		maxCostUSD:    cfg.MaxCostUSD,
 		maxIterations: cfg.MaxIterations,
 		maxDuration:   cfg.MaxDuration,
-		startTime:     time.Now(),
+		startTime:     start,
 	}
+}
+
+// NewBudgetForTest creates a budget with a custom start time for testing
+// duration limits without time.Sleep.
+func NewBudgetForTest(cfg BudgetConfig, start time.Time) *Budget {
+	return newBudgetAt(cfg, start)
 }
 
 // Record adds resource consumption from one iteration.

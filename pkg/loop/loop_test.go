@@ -51,27 +51,7 @@ var _ intelligence.Provider = (*mockProvider)(nil)
 
 func testAgent(t *testing.T, provider intelligence.Provider) *roles.Agent {
 	t.Helper()
-	agentID := types.MustActorID("actor_00000000000000000000000000000001")
-	humanID := types.MustActorID("actor_00000000000000000000000000000099")
-
-	rt, err := intelligence.NewRuntime(context.Background(), intelligence.RuntimeConfig{
-		AgentID:  agentID,
-		Provider: provider,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	_, err = rt.Boot("ai", "mock-model", "standard", []string{"test"}, types.MustDomainScope("test"), humanID)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return &roles.Agent{
-		Runtime: rt,
-		Role:    roles.RoleBuilder,
-		Name:    "test-builder",
-	}
+	return testAgentWithRole(t, provider, roles.RoleBuilder, "test-builder")
 }
 
 func humanID() types.ActorID {
@@ -268,27 +248,29 @@ func TestLoopBudgetTracking(t *testing.T) {
 }
 
 func TestLoopWithBus(t *testing.T) {
-	// Agent says IDLE, then bus delivers an event, agent wakes and completes.
-	provider := newMockProvider("IDLE", "Got new event! TASK_DONE")
+	// Agent says IDLE twice, enters quiescence wait, bus delivers event, agent wakes and completes.
+	// Three responses: IDLE, IDLE, then TASK_DONE after waking.
+	provider := newMockProvider("IDLE", "IDLE", "Got new event! TASK_DONE")
 	agent := testAgent(t, provider)
 
 	s := store.NewInMemoryStore()
 	eventBus := bus.NewEventBus(s, 16)
 	defer eventBus.Close()
 
-	// Channel-based synchronisation — no time.Sleep.
-	firstIterDone := make(chan struct{}, 1)
+	// Channel-based synchronisation — signal after iteration 2 (second IDLE)
+	// which is when the loop will enter waitForEvents.
+	secondIterDone := make(chan struct{}, 1)
 
 	l, err := New(Config{
 		Agent:           agent,
 		HumanID:         humanID(),
 		Budget:          resources.BudgetConfig{MaxIterations: 10},
 		Bus:             eventBus,
-		QuiescenceDelay: 200 * time.Millisecond,
+		QuiescenceDelay: 5 * time.Second, // long delay — test won't hit it
 		OnIteration: func(i int, _ string) {
-			if i == 1 {
+			if i == 2 {
 				select {
-				case firstIterDone <- struct{}{}:
+				case secondIterDone <- struct{}{}:
 				default:
 				}
 			}
@@ -303,8 +285,8 @@ func TestLoopWithBus(t *testing.T) {
 		done <- l.Run(context.Background())
 	}()
 
-	// Wait for first iteration to complete (agent said IDLE), then publish event.
-	<-firstIterDone
+	// Wait for second IDLE iteration — loop is now in waitForEvents.
+	<-secondIterDone
 	otherAgent := types.MustActorID("actor_00000000000000000000000000000002")
 	mockEv := createMockEvent(t, s, otherAgent)
 	eventBus.Publish(mockEv)

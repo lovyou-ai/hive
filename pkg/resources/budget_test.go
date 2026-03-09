@@ -85,8 +85,9 @@ func TestBudgetIterationsExceeded(t *testing.T) {
 }
 
 func TestBudgetDurationExceeded(t *testing.T) {
-	b := NewBudget(BudgetConfig{MaxDuration: 1 * time.Millisecond})
-	time.Sleep(2 * time.Millisecond)
+	// Set start time 1 second in the past — no time.Sleep needed.
+	pastStart := time.Now().Add(-1 * time.Second)
+	b := NewBudgetForTest(BudgetConfig{MaxDuration: 500 * time.Millisecond}, pastStart)
 
 	err := b.Check()
 	if err == nil {
