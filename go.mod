@@ -7,6 +7,8 @@ require (
 	github.com/lovyou-ai/eventgraph/go v0.0.0-20260309152918-5602caa542f2
 )
 
+replace github.com/lovyou-ai/eventgraph/go => ../eventgraph/go
+
 require (
 	github.com/anthropics/anthropic-sdk-go v1.26.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect

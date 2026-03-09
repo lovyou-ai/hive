@@ -11,11 +11,15 @@ func TestContainsAlert(t *testing.T) {
 		want  bool
 	}{
 		{"Everything looks fine", false},
-		{"HALT: policy violation detected", true}, // matches VIOLATION, not HALT
 		{"ALERT: trust anomaly in builder agent", true},
-		{"Found a VIOLATION of soul values", true},
+		{"VIOLATION: soul values breached", true},
 		{"QUARANTINE agent builder_01", true},
-		{"Minor alert about formatting", true},
+		{"Line one\nALERT: something wrong\nLine three", true},
+
+		// Negative — keywords embedded in prose, not line-start directives.
+		{"Found a VIOLATION of soul values", false},
+		{"Minor alert about formatting", false},
+		{"No VIOLATIONS DETECTED", false},
 		{"The code is clean", false},
 		{"", false},
 		{"halt operations immediately", false}, // HALT handled separately

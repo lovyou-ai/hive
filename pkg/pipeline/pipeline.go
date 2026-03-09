@@ -1183,13 +1183,14 @@ func langTestCommand(lang string) (string, []string) {
 	}
 }
 
-// containsAlert checks if the Guardian's evaluation contains an alert keyword.
+// containsAlert checks if the Guardian's evaluation contains an alert directive.
+// Uses line-start matching (via ContainsSignal) to avoid false positives from
+// prose like "NO VIOLATIONS DETECTED".
 // HALT is handled separately by the explicit HALT check in guardianCheck —
 // it is not included here to avoid duplicate event emission.
 func containsAlert(eval string) bool {
-	upper := strings.ToUpper(eval)
 	for _, keyword := range []string{"ALERT", "VIOLATION", "QUARANTINE"} {
-		if strings.Contains(upper, keyword) {
+		if loop.ContainsSignal(eval, keyword) {
 			return true
 		}
 	}

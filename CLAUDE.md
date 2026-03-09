@@ -128,6 +128,9 @@ go test ./...
 # Local dev (in-memory store) — sequential pipeline
 go run ./cmd/hive --human Matt --idea "Build a task management app with kanban boards"
 
+# Auto-approve all agent spawns (dev/testing — skips interactive prompts)
+go run ./cmd/hive --human Matt --yes --idea "Build a task management app with kanban boards"
+
 # Agentic loop mode — concurrent self-directing agents
 go run ./cmd/hive --human Matt --loop --idea "Build a task management app with kanban boards"
 

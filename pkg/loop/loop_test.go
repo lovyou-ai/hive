@@ -64,7 +64,7 @@ func humanID() types.ActorID {
 
 func TestLoopTaskDone(t *testing.T) {
 	// Agent immediately says TASK_DONE.
-	provider := newMockProvider("I've completed the work. TASK_DONE")
+	provider := newMockProvider("I've completed the work.\n/signal {\"signal\": \"TASK_DONE\"}")
 	agent := testAgent(t, provider)
 
 	l, err := New(Config{
@@ -87,7 +87,7 @@ func TestLoopTaskDone(t *testing.T) {
 }
 
 func TestLoopEscalation(t *testing.T) {
-	provider := newMockProvider("I need human approval. ESCALATE: this requires authority")
+	provider := newMockProvider("I need human approval.\n/signal {\"signal\": \"ESCALATE\", \"reason\": \"this requires authority\"}")
 	agent := testAgent(t, provider)
 
 	l, err := New(Config{
@@ -106,7 +106,7 @@ func TestLoopEscalation(t *testing.T) {
 }
 
 func TestLoopHalt(t *testing.T) {
-	provider := newMockProvider("HALT: integrity violation detected")
+	provider := newMockProvider("/signal {\"signal\": \"HALT\", \"reason\": \"integrity violation detected\"}")
 	agent := testAgent(t, provider)
 
 	l, err := New(Config{
@@ -171,7 +171,7 @@ func TestLoopContextCancelled(t *testing.T) {
 
 func TestLoopQuiescence(t *testing.T) {
 	// Agent says IDLE twice — triggers quiescence without bus.
-	provider := newMockProvider("IDLE", "IDLE")
+	provider := newMockProvider("/signal {\"signal\": \"IDLE\"}", "/signal {\"signal\": \"IDLE\"}")
 	agent := testAgent(t, provider)
 
 	l, err := New(Config{
@@ -195,7 +195,7 @@ func TestLoopMultiIteration(t *testing.T) {
 	provider := newMockProvider(
 		"Writing the code...",
 		"Running tests...",
-		"All tests pass. TASK_DONE",
+		"All tests pass.\n/signal {\"signal\": \"TASK_DONE\"}",
 	)
 	agent := testAgent(t, provider)
 
@@ -226,7 +226,7 @@ func TestLoopMultiIteration(t *testing.T) {
 }
 
 func TestLoopBudgetTracking(t *testing.T) {
-	provider := newMockProvider("doing work", "TASK_DONE")
+	provider := newMockProvider("doing work", "/signal {\"signal\": \"TASK_DONE\"}")
 	agent := testAgent(t, provider)
 
 	l, err := New(Config{
@@ -250,7 +250,11 @@ func TestLoopBudgetTracking(t *testing.T) {
 func TestLoopWithBus(t *testing.T) {
 	// Agent says IDLE twice, enters quiescence wait, bus delivers event, agent wakes and completes.
 	// Three responses: IDLE, IDLE, then TASK_DONE after waking.
-	provider := newMockProvider("IDLE", "IDLE", "Got new event! TASK_DONE")
+	provider := newMockProvider(
+		"/signal {\"signal\": \"IDLE\"}",
+		"/signal {\"signal\": \"IDLE\"}",
+		"Got new event!\n/signal {\"signal\": \"TASK_DONE\"}",
+	)
 	agent := testAgent(t, provider)
 
 	s := store.NewInMemoryStore()
@@ -300,8 +304,8 @@ func TestLoopWithBus(t *testing.T) {
 }
 
 func TestRunConcurrent(t *testing.T) {
-	provider1 := newMockProvider("TASK_DONE")
-	provider2 := newMockProvider("TASK_DONE")
+	provider1 := newMockProvider("/signal {\"signal\": \"TASK_DONE\"}")
+	provider2 := newMockProvider("/signal {\"signal\": \"TASK_DONE\"}")
 
 	agent1 := testAgentWithRole(t, provider1, roles.RoleBuilder, "builder")
 	agent2 := testAgentWithRole(t, provider2, roles.RoleTester, "tester")
@@ -398,28 +402,65 @@ func createMockEvent(t *testing.T, _ store.Store, source types.ActorID) event.Ev
 	return ev
 }
 
-func TestContainsSignal(t *testing.T) {
+func TestParseSignal(t *testing.T) {
+	tests := []struct {
+		response string
+		want     *Signal
+	}{
+		// Valid /signal lines.
+		{`/signal {"signal": "IDLE"}`, &Signal{Signal: "IDLE"}},
+		{`/signal {"signal": "TASK_DONE"}`, &Signal{Signal: "TASK_DONE"}},
+		{`/signal {"signal": "HALT", "reason": "policy violation"}`, &Signal{Signal: "HALT", Reason: "policy violation"}},
+		{`/signal {"signal": "ESCALATE", "reason": "needs human"}`, &Signal{Signal: "ESCALATE", Reason: "needs human"}},
+		// Signal at end of multi-line response.
+		{"I checked everything.\n/signal {\"signal\": \"IDLE\"}", &Signal{Signal: "IDLE"}},
+		// Case insensitive — lowercased signal normalised to upper.
+		{`/signal {"signal": "idle"}`, &Signal{Signal: "IDLE"}},
+		// Indented /signal line.
+		{"  /signal {\"signal\": \"IDLE\"}", &Signal{Signal: "IDLE"}},
+
+		// Invalid — no /signal line.
+		{"Just some text", nil},
+		{"HALT: not a signal line", nil},
+		{"", nil},
+		// Invalid JSON.
+		{"/signal not-json", nil},
+		// Empty signal field.
+		{`/signal {"signal": ""}`, nil},
+	}
+	for _, tt := range tests {
+		got := parseSignal(tt.response)
+		if tt.want == nil {
+			if got != nil {
+				t.Errorf("parseSignal(%q) = %+v, want nil", tt.response, got)
+			}
+		} else {
+			if got == nil {
+				t.Errorf("parseSignal(%q) = nil, want %+v", tt.response, tt.want)
+			} else if got.Signal != tt.want.Signal || got.Reason != tt.want.Reason {
+				t.Errorf("parseSignal(%q) = %+v, want %+v", tt.response, got, tt.want)
+			}
+		}
+	}
+}
+
+func TestContainsSignalFallback(t *testing.T) {
+	// Text-based fallback — used when LLM doesn't emit /signal JSON.
 	tests := []struct {
 		response string
 		signal   string
 		want     bool
 	}{
-		// Positive — standalone directives.
+		// Positive — signal at start of line.
 		{"HALT: integrity violation", "HALT", true},
 		{"HALT", "HALT", true},
-		{"I need help. ESCALATE: authority needed", "ESCALATE", true},
-		{"All done. TASK_DONE", "TASK_DONE", true},
-		{"Line one\nHALT\nLine three", "HALT", true},
-		{"IDLE", "IDLE", true},
-		{"IDLE: nothing to do", "IDLE", true},
-		{"brought to a halt", "HALT", true}, // standalone word — bounded by space+EOF
+		{"TASK_DONE", "TASK_DONE", true},
+		{"ESCALATE: authority needed", "ESCALATE", true},
 
-		// Negative — embedded in longer words (no word boundary).
-		{"The asphalt road was fine", "HALT", false},
-		{"An ESCALATED dispute was resolved", "ESCALATE", false},
-		{"ESCALATION required attention", "ESCALATE", false},
-		{"HALTED by the operator", "HALT", false},
-		{"HALTING the process", "HALT", false},
+		// Negative — signal embedded in prose.
+		{"No HALT required", "HALT", false},
+		{"brought to a halt", "HALT", false},
+		{"we should not ESCALATE", "ESCALATE", false},
 		{"", "HALT", false},
 	}
 	for _, tt := range tests {

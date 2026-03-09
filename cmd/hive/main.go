@@ -41,6 +41,7 @@ func run() error {
 	workdir := flag.String("workdir", "products", "Directory for generated products")
 	storeDSN := flag.String("store", "", "Store connection string (postgres://... or empty for in-memory)")
 	loopMode := flag.Bool("loop", false, "Use agentic loop mode (concurrent self-directing agents)")
+	autoApprove := flag.Bool("yes", false, "Auto-approve all authority requests (dev/testing only)")
 	flag.Parse()
 
 	if *idea == "" && *url == "" && *spec == "" {
@@ -121,7 +122,17 @@ func run() error {
 	}
 
 	// Authority gate — human approves agent spawns via CLI.
-	gate := authority.NewGate(cliApprover())
+	var approver authority.Approver
+	if *autoApprove {
+		fmt.Println("Auto-approve: ON (all authority requests auto-approved)")
+		approver = func(req authority.Request) (bool, string) {
+			fmt.Printf("  [auto-approved] %s\n", req.Action)
+			return true, "auto-approved (--yes flag)"
+		}
+	} else {
+		approver = cliApprover()
+	}
+	gate := authority.NewGate(approver)
 
 	// Create and run pipeline — uses Claude CLI (Max plan, flat rate)
 	// CTO, Architect, Reviewer, Guardian → Opus (high judgment)

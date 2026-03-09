@@ -12,6 +12,7 @@ package loop
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -240,13 +241,26 @@ func (l *Loop) buildPrompt(observation string, iteration int) string {
 	sb.WriteString(`
 
 ## Instructions
-Based on the events above, decide what to do next:
-- If work needs doing: describe what you'll do and emit the appropriate events
-- If you need human approval: say ESCALATE and explain why
-- If your work is complete: say TASK_DONE
-- If nothing needs doing: say IDLE
+Based on the events above, decide what to do next.
+
+End your response with exactly one signal on its own line, in this exact JSON format:
+/signal {"signal": "IDLE"}
+
+Valid signals:
+- IDLE       — nothing to do right now, waiting for events
+- TASK_DONE  — all work is complete
+- ESCALATE   — need human approval or decision (include "reason")
+- HALT       — policy violation or integrity issue (include "reason")
+
+Examples:
+  I reviewed the latest build events and found no issues.
+  /signal {"signal": "IDLE"}
+
+  The code violates security policy.
+  /signal {"signal": "HALT", "reason": "SQL injection in user input handler"}
 
 Respond concisely. Focus on actions, not explanations.
+Every response MUST end with exactly one /signal line.
 `)
 
 	return sb.String()
@@ -263,21 +277,107 @@ func (l *Loop) reason(ctx context.Context, prompt string) (string, int, error) {
 	return resp.Content(), resp.TokensUsed(), nil
 }
 
+// Signal is the structured JSON signal emitted by agents at the end of each response.
+type Signal struct {
+	Signal string `json:"signal"` // IDLE, TASK_DONE, ESCALATE, HALT
+	Reason string `json:"reason,omitempty"`
+}
+
+// SignalIDLE is the signal value for "nothing to do".
+const SignalIDLE = "IDLE"
+
+// SignalTaskDone is the signal value for "work complete".
+const SignalTaskDone = "TASK_DONE"
+
+// SignalEscalate is the signal value for "needs human".
+const SignalEscalate = "ESCALATE"
+
+// SignalHalt is the signal value for "policy violation".
+const SignalHalt = "HALT"
+
+// parseSignal extracts the /signal JSON line from a response.
+// Returns nil if no valid signal is found.
+func parseSignal(response string) *Signal {
+	lines := strings.Split(response, "\n")
+	// Search from the bottom — signal should be the last line.
+	for i := len(lines) - 1; i >= 0; i-- {
+		trimmed := strings.TrimSpace(lines[i])
+		if strings.HasPrefix(trimmed, "/signal ") {
+			jsonStr := strings.TrimPrefix(trimmed, "/signal ")
+			var sig Signal
+			if err := json.Unmarshal([]byte(jsonStr), &sig); err == nil && sig.Signal != "" {
+				sig.Signal = strings.ToUpper(sig.Signal)
+				return &sig
+			}
+		}
+	}
+	return nil
+}
+
+// ContainsSignal checks whether a signal keyword appears as a directive in the
+// response. A directive must appear at the start of a line (possibly after
+// whitespace). This is the text-based fallback when the LLM doesn't emit
+// a /signal JSON line.
+//
+// Valid examples: "HALT: violation", "  HALT", "\nHALT\n", "TASK_DONE"
+// Invalid: "No HALT required", "we should not ESCALATE"
+func ContainsSignal(response, signal string) bool {
+	signal = strings.ToUpper(signal)
+	for _, line := range strings.Split(response, "\n") {
+		trimmed := strings.ToUpper(strings.TrimSpace(line))
+		if trimmed == signal || strings.HasPrefix(trimmed, signal+":") || strings.HasPrefix(trimmed, signal+" ") {
+			return true
+		}
+	}
+	return false
+}
+
 // checkResponse examines the LLM response for stopping signals.
 // Priority: HALT > ESCALATE > TASK_DONE (HALT is constitutional, must never be masked).
 //
-// Signals must appear as standalone directives — either at the start of a line
-// or as a distinct word (e.g. "HALT:" or "TASK_DONE"). This avoids false positives
-// from LLM narration like "brought to a halt" or "the task done by the agent".
+// Prefers structured /signal JSON parsing. Falls back to line-start text matching
+// if the LLM doesn't emit the JSON signal line.
 func (l *Loop) checkResponse(ctx context.Context, response string, iteration int) *Result {
-	// HALT is the highest priority — Guardian emergency stop.
+	sig := parseSignal(response)
+	if sig == nil {
+		// Fallback: scan for text-based signals.
+		return l.checkResponseText(ctx, response, iteration)
+	}
+
+	switch sig.Signal {
+	case SignalHalt:
+		r := l.result(StopHalt, iteration, sig.Reason)
+		return &r
+	case SignalEscalate:
+		if _, err := l.agent.Runtime.Escalate(ctx, l.humanID,
+			fmt.Sprintf("loop iteration %d: %s", iteration, sig.Reason)); err != nil {
+			fmt.Printf("warning: escalation event failed: %v\n", err)
+		}
+		r := l.result(StopEscalation, iteration, sig.Reason)
+		return &r
+	case SignalTaskDone:
+		if _, err := l.agent.Runtime.Learn(ctx,
+			"task completed after loop iteration "+fmt.Sprint(iteration), "loop"); err != nil {
+			fmt.Printf("warning: completion event failed: %v\n", err)
+		}
+		r := l.result(StopTaskDone, iteration, sig.Reason)
+		return &r
+	case SignalIDLE:
+		// Not a stop — handled by isQuiescent.
+		return nil
+	default:
+		fmt.Printf("warning: unknown signal %q from %s\n", sig.Signal, l.agent.Name)
+		return nil
+	}
+}
+
+// checkResponseText is the text-based fallback for signal detection.
+func (l *Loop) checkResponseText(ctx context.Context, response string, iteration int) *Result {
 	if ContainsSignal(response, "HALT") {
 		r := l.result(StopHalt, iteration, response)
 		return &r
 	}
-
 	if ContainsSignal(response, "ESCALATE") {
-		// Record escalation event.
 		if _, err := l.agent.Runtime.Escalate(ctx, l.humanID,
 			fmt.Sprintf("loop iteration %d: %s", iteration, response)); err != nil {
 			fmt.Printf("warning: escalation event failed: %v\n", err)
@@ -285,9 +385,7 @@ func (l *Loop) checkResponse(ctx context.Context, response string, iteration int
 		r := l.result(StopEscalation, iteration, response)
 		return &r
 	}
-
 	if ContainsSignal(response, "TASK_DONE") {
-		// Record completion.
 		if _, err := l.agent.Runtime.Learn(ctx,
 			"task completed after loop iteration "+fmt.Sprint(iteration), "loop"); err != nil {
 			fmt.Printf("warning: completion event failed: %v\n", err)
@@ -295,50 +393,15 @@ func (l *Loop) checkResponse(ctx context.Context, response string, iteration int
 		r := l.result(StopTaskDone, iteration, response)
 		return &r
 	}
-
 	return nil
 }
 
-// ContainsSignal checks whether a signal keyword appears as a standalone directive
-// in the response — bounded by non-word characters on both sides. This prevents
-// false positives from embedded words like "halt" in "asphalt" or "ESCALATED".
-func ContainsSignal(response, signal string) bool {
-	upper := strings.ToUpper(response)
-	signal = strings.ToUpper(signal)
-
-	idx := 0
-	for {
-		pos := strings.Index(upper[idx:], signal)
-		if pos < 0 {
-			return false
-		}
-		abs := idx + pos
-		end := abs + len(signal)
-
-		beforeOK := abs == 0 || !isWordChar(upper[abs-1])
-		afterOK := end >= len(upper) || !isWordChar(upper[end])
-
-		if beforeOK && afterOK {
-			return true
-		}
-		idx = end
-		if idx >= len(upper) {
-			return false
-		}
-	}
-}
-
-// isWordChar returns true for characters that are part of a word (A-Z, 0-9).
-// Underscore is NOT a word char here — signals like "TASK_DONE" contain underscores
-// internally, so underscore must not break the match.
-func isWordChar(c byte) bool {
-	return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
-}
-
 // isQuiescent returns true if the response indicates the agent has nothing to do.
-// Uses ContainsSignal for consistency with other signal detection — requires
-// IDLE as a standalone word, not embedded in other text.
+// Checks for /signal JSON first, then falls back to text matching.
 func (l *Loop) isQuiescent(response string) bool {
+	if sig := parseSignal(response); sig != nil {
+		return sig.Signal == SignalIDLE
+	}
 	return ContainsSignal(response, "IDLE")
 }
 
