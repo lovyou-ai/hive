@@ -110,6 +110,9 @@ func (s *Server) handleToolsList(req Request) *Response {
 }
 
 func (s *Server) handleToolsCall(req Request) *Response {
+	if len(req.Params) == 0 {
+		return s.errorResp(req.ID, -32600, "params required for tools/call")
+	}
 	var params ToolCallParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		return s.errorResp(req.ID, -32602, "invalid params")

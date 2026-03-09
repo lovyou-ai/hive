@@ -41,9 +41,10 @@ func (c *AuthorityChecker) CheckWrite(action string) error {
 		return fmt.Errorf("authority check: agent not found: %w", err)
 	}
 
-	// Check actor status — suspended agents cannot write.
-	if string(a.Status()) == "suspended" {
-		return fmt.Errorf("authority denied: agent %s is suspended", c.agentID.Value())
+	// Check actor status — only active agents can write.
+	status := a.Status()
+	if status == types.ActorStatusSuspended || status == types.ActorStatusMemorial {
+		return fmt.Errorf("authority denied: agent %s has status %s", c.agentID.Value(), status)
 	}
 
 	metrics, err := c.trustModel.Score(nil, a)

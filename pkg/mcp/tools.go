@@ -256,16 +256,19 @@ func registerSelfTools(s *Server, deps Deps, audit *AuditLogger) {
 			if err != nil {
 				return ErrorResult(fmt.Sprintf("self lookup failed: %v", err)), nil
 			}
-			metrics, _ := deps.Trust.Score(nil, a)
 
 			info := map[string]any{
 				"id":           a.ID().Value(),
 				"display_name": a.DisplayName(),
 				"type":         string(a.Type()),
 				"status":       string(a.Status()),
-				"trust_score":  metrics.Overall().Value(),
-				"confidence":   metrics.Confidence().Value(),
-				"trend":        metrics.Trend().Value(),
+			}
+			if metrics, err := deps.Trust.Score(nil, a); err == nil {
+				info["trust_score"] = metrics.Overall().Value()
+				info["confidence"] = metrics.Confidence().Value()
+				info["trend"] = metrics.Trend().Value()
+			} else {
+				info["trust_error"] = err.Error()
 			}
 			data, _ := json.MarshalIndent(info, "", "  ")
 			return TextResult(string(data)), nil

@@ -256,6 +256,54 @@ func TestEmitEventAuthorityDenied(t *testing.T) {
 	}
 }
 
+func TestEmitEventDeniedSuspended(t *testing.T) {
+	deps := testDepsWithMinTrust(t, 0.01) // low trust gate, but status check comes first
+	s := NewServer("test", "0.0.1")
+	RegisterAllTools(s, deps)
+
+	// Suspend the agent.
+	bootstrapHead, _ := deps.Store.Head()
+	reason := bootstrapHead.Unwrap().ID()
+	if _, err := deps.Actors.Suspend(deps.AgentID, reason); err != nil {
+		t.Fatal(err)
+	}
+
+	result := callTool(t, s, "emit_event", map[string]any{
+		"event_type": "agent.acted",
+		"content":    map[string]any{"Action": "blocked", "Target": "test"},
+	})
+	if !result.IsError {
+		t.Error("expected authority denied for suspended agent")
+	}
+	if !strings.Contains(result.Content[0].Text, "suspended") {
+		t.Errorf("error should mention suspended status, got: %s", result.Content[0].Text)
+	}
+}
+
+func TestEmitEventDeniedMemorial(t *testing.T) {
+	deps := testDepsWithMinTrust(t, 0.01)
+	s := NewServer("test", "0.0.1")
+	RegisterAllTools(s, deps)
+
+	// Memorialize the agent.
+	bootstrapHead, _ := deps.Store.Head()
+	reason := bootstrapHead.Unwrap().ID()
+	if _, err := deps.Actors.Memorial(deps.AgentID, reason); err != nil {
+		t.Fatal(err)
+	}
+
+	result := callTool(t, s, "emit_event", map[string]any{
+		"event_type": "agent.acted",
+		"content":    map[string]any{"Action": "blocked", "Target": "test"},
+	})
+	if !result.IsError {
+		t.Error("expected authority denied for memorial agent")
+	}
+	if !strings.Contains(result.Content[0].Text, "memorial") {
+		t.Errorf("error should mention memorial status, got: %s", result.Content[0].Text)
+	}
+}
+
 func TestAuditLogging(t *testing.T) {
 	deps := testDeps(t)
 	s := NewServer("test", "0.0.1")

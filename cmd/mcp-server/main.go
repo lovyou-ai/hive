@@ -13,11 +13,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/lovyou-ai/eventgraph/go/pkg/actor"
 	"github.com/lovyou-ai/eventgraph/go/pkg/actor/pgactor"
-	"github.com/lovyou-ai/eventgraph/go/pkg/statestore"
 	"github.com/lovyou-ai/eventgraph/go/pkg/statestore/pgstate"
-	"github.com/lovyou-ai/eventgraph/go/pkg/store"
 	"github.com/lovyou-ai/eventgraph/go/pkg/store/pgstore"
 	"github.com/lovyou-ai/eventgraph/go/pkg/trust"
 	"github.com/lovyou-ai/eventgraph/go/pkg/types"
@@ -92,7 +89,9 @@ func run() error {
 	// Load trust model from state store.
 	trustModel := trust.NewDefaultTrustModel()
 	if data, err := states.Get("trust", "model"); err == nil && data != nil {
-		trustModel.ImportJSON(data)
+		if err := trustModel.ImportJSON(data); err != nil {
+			return fmt.Errorf("load trust model: %w", err)
+		}
 	}
 
 	cid, err := types.NewConversationID(*convID)
@@ -131,9 +130,3 @@ func run() error {
 
 	return server.Run()
 }
-
-// Unused but available for future use — in-memory mode isn't practical for
-// the MCP server (separate process can't share memory with the pipeline).
-var _ store.Store = nil
-var _ actor.IActorStore = nil
-var _ statestore.IStateStore = nil
