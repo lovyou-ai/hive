@@ -30,6 +30,7 @@ go run ./cmd/hive --human Matt --store "postgres://hive:hive@localhost:5432/hive
 - [Architecture](docs/ARCHITECTURE.md) — how it's built
 - [Agent Tools](docs/AGENT-TOOLS.md) — MCP server and agentic loop spec
 - [Roadmap](docs/ROADMAP.md) — what's done and what's next
+- [Audit](docs/AUDIT.md) — derivation-method doc audit and gap analysis
 
 ## License
 

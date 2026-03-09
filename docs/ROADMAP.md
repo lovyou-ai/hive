@@ -176,6 +176,7 @@ Dependency order — each tier unlocks the next.
 ### Tier 1: Persistence + Tools
 - [ ] Postgres actor store (in eventgraph)
 - [ ] Docker Compose for local Postgres
+- [ ] Event type catalog (what events exist, schemas, who emits, who consumes — blocks MCP)
 - [ ] MCP server (Go binary exposing graph/actors/workspace as tools)
 - [ ] Wire MCP into claude-cli provider (`.mcp.json` generation)
 - [ ] Context injection (actor list, pending tasks, own identity)
@@ -183,6 +184,10 @@ Dependency order — each tier unlocks the next.
 ### Tier 2: Agentic Loop + Auth
 - [ ] Agentic loop (observe → reason → act → reflect → repeat)
 - [ ] Agents self-direct from graph state, not just fixed pipeline
+- [ ] Trust dynamics spec (concrete mechanics: accumulation, decay, triggers, authority shifts)
+- [ ] Inter-agent dynamics (agent-to-agent trust, delegation chains, conflict resolution)
+- [ ] Agent growth model (within-lifetime learning, decision tree evolution, memory accumulation)
+- [ ] Human operator guide (day-to-day operation, approval patterns, what to scrutinise)
 - [ ] HTTP daemon (`hived`)
 - [ ] Google OAuth2 → actor store registration
 - [ ] Human approval surface (CLI prompts first, then web dashboard)
@@ -201,6 +206,7 @@ Dependency order — each tier unlocks the next.
 - [ ] Hive builds its own communication layer
 
 ### Tier 5: First Products
+- [ ] Product derivation pattern (method for deriving each product from its composition grammar)
 - [ ] Task manager (Work Graph) — the hive's first real product
 - [ ] Knowledge store (Knowledge Graph) — for the Researcher
 - [ ] Governance dashboard (Social Graph) — norms, roles, consent
@@ -217,6 +223,7 @@ Dependency order — each tier unlocks the next.
 - [ ] Alignment Graph — AI accountability for regulators
 
 See [AGENT-TOOLS.md](AGENT-TOOLS.md) for the full MCP + agentic loop spec.
+See [AUDIT.md](AUDIT.md) for the derivation-method doc audit and gap analysis.
 
 ## Neon vs Docker Postgres
 
