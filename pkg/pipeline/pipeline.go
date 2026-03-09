@@ -41,11 +41,12 @@ type ProductInput struct {
 
 // Pipeline orchestrates agents through the product build phases.
 type Pipeline struct {
-	store   store.Store
-	actors  actor.IActorStore
-	humanID types.ActorID
-	ws      *workspace.Workspace
-	product *workspace.Product // current product being built
+	store     store.Store
+	actors    actor.IActorStore
+	humanID   types.ActorID
+	humanName string
+	ws        *workspace.Workspace
+	product   *workspace.Product // current product being built
 
 	cto      *roles.Agent
 	guardian *roles.Agent
@@ -84,11 +85,12 @@ func New(ctx context.Context, cfg Config) (*Pipeline, error) {
 	}
 
 	p := &Pipeline{
-		store:   cfg.Store,
-		actors:  cfg.Actors,
-		humanID: cfg.HumanID,
-		ws:      ws,
-		agents:  make(map[roles.Role]*roles.Agent),
+		store:     cfg.Store,
+		actors:    cfg.Actors,
+		humanID:   cfg.HumanID,
+		humanName: human.DisplayName(),
+		ws:        ws,
+		agents:    make(map[roles.Role]*roles.Agent),
 	}
 
 	// Bootstrap CTO first — architectural oversight (Opus)
@@ -115,7 +117,7 @@ func (p *Pipeline) providerForRole(role roles.Role) (intelligence.Provider, erro
 	return intelligence.New(intelligence.Config{
 		Provider:     "claude-cli",
 		Model:        model,
-		SystemPrompt: roles.SystemPrompt(role),
+		SystemPrompt: roles.SystemPrompt(role, p.humanName),
 	})
 }
 

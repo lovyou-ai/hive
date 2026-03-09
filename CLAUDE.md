@@ -22,26 +22,27 @@ The end state is an economy — every transaction, decision, and relationship on
 
 ## The Thirteen Products
 
-Each product layer from EventGraph becomes a deployable product on lovyou.ai:
+Each product layer from EventGraph ([product-layers.md](https://github.com/lovyou-ai/eventgraph/blob/main/docs/product-layers.md)) becomes a deployable product on lovyou.ai. Layer 0 is the foundation — layers 1-13 are products:
 
-| Layer | Product | What It Solves |
-|-------|---------|---------------|
-| 0 | Foundation | The graph itself — events, trust, authority |
-| 1 | Work Graph | Task management with agent collaboration and accountability |
-| 2 | Market Graph | Portable reputation, escrow as events, no platform rent |
-| 3 | Social Graph | User-owned social infrastructure, community self-governance |
-| 4 | Knowledge Graph | Claim provenance, challenge events, source reputation |
-| 5 | Research Graph | Open access research, replication infrastructure |
-| 6 | Justice Graph | Dispute resolution, precedent, due process |
-| 7 | Identity Graph | Decentralized identity, trust accumulation |
-| 8 | Governance Graph | Community governance, norm evolution, consent |
-| 9 | Exchange Graph | Value exchange, resource allocation |
-| 10 | Health Graph | Health data sovereignty, care coordination |
-| 11 | Education Graph | Learning paths, credential verification |
-| 12 | Media Graph | Content provenance, attribution, fair compensation |
-| 13 | Alignment Graph | AI accountability dashboard for regulators |
+| Layer | Graph | Composition Grammar | What It Solves |
+|-------|-------|---------------------|---------------|
+| 1 | Work | work.md | Task management with agent collaboration |
+| 2 | Market | market.md | Portable reputation, no platform rent |
+| 3 | Social | social.md | User-owned social, community self-governance |
+| 4 | Justice | justice.md | Dispute resolution, precedent, due process |
+| 5 | Build | build.md | Accountable software development |
+| 6 | Knowledge | knowledge.md | Claim provenance, open access research |
+| 7 | Alignment | alignment.md | AI accountability for regulators |
+| 8 | Identity | identity.md | User-owned identity, trust accumulation |
+| 9 | Bond | bond.md | Relationship infrastructure |
+| 10 | Belonging | belonging.md | Community lifecycle (welcome, grief, renewal) |
+| 11 | Meaning | meaning.md | Knowledge with context and narrative |
+| 12 | Evolution | evolution.md | Safe self-improvement infrastructure |
+| 13 | Being | being.md | Existential wellbeing infrastructure |
 
-Revenue model: charge corporations, free for individuals. Revenue from hosted persistence for people who don't want to run their own infrastructure.
+Revenue model: charge corporations, free for individuals. Hosted persistence for those who don't run their own infrastructure.
+
+Build order: Work Graph first (the hive needs it), then Market, Social, Knowledge, Alignment. Each product is derived using the [derivation method](https://github.com/lovyou-ai/eventgraph/blob/main/docs/derivation-method.md).
 
 ## Architecture
 

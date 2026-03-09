@@ -18,17 +18,29 @@ First the hive builds tools for itself. A task manager. A communication layer. A
 
 Then it probes: what's missing? No other agents. No communication. No governance. It creates tasks for itself, builds primitives into working systems, and escalates to humans when it needs permission to grow.
 
-### The Products
+### The Thirteen Products
 
-Each product addresses a failure in existing systems:
+Each product layer from EventGraph (see [product-layers.md](https://github.com/lovyou-ai/eventgraph/blob/main/docs/product-layers.md)) becomes a deployable product. Each addresses a failure in existing systems:
 
-- **Work Graph** — Small businesses can't afford the coordination tools corporations have. Task management with agent collaboration and accountability. Charge corporations, free for individuals.
-- **Market Graph** — Freelancers getting screwed by platforms taking 25%. Portable reputation, escrow as events, dispute resolution through the Justice Grammar. No platform rent.
-- **Social Graph** — Communities governed by opaque algorithms. User-owned social infrastructure, community self-governance, feeds as visible queries.
-- **Knowledge & Research Graphs** — Research locked behind paywalls with no replication. Claim provenance, challenge events, source reputation. Open access, funded by institutional subscriptions.
-- **Alignment Graph** — AI systems operating without accountability. The dashboard showing regulators what every agent did and why. Enterprise compliance revenue.
+| # | Graph | Gap in the World | Revenue |
+|---|-------|-------------------|---------|
+| 1 | Work | Small businesses can't afford coordination tools | Corps pay, individuals free |
+| 2 | Market | Platforms extract 25% from freelancers | Hosted persistence |
+| 3 | Social | Communities governed by opaque algorithms | Hosted persistence |
+| 4 | Justice | $500 disputes aren't economically solvable | Enterprise compliance |
+| 5 | Build | Software built without accountability | Enterprise tooling |
+| 6 | Knowledge | Research locked behind paywalls | Institutional subscriptions |
+| 7 | Alignment | AI systems operating without accountability | Enterprise compliance |
+| 8 | Identity | Identity controlled by platforms, not people | Hosted persistence |
+| 9 | Bond | Relationships have no infrastructure | Hosted persistence |
+| 10 | Belonging | Online communities can't process grief, loss, renewal | Hosted persistence |
+| 11 | Meaning | Knowledge without context or narrative | Institutional subscriptions |
+| 12 | Evolution | Systems can't self-improve safely | Enterprise tooling |
+| 13 | Being | No infrastructure for existential wellbeing | Institutional subscriptions |
 
 Each product funds the next. Each runs on the same graph. Each makes the graph more valuable — more events means more trust data means better reputation means more useful infrastructure.
+
+The composition grammars (see [eventgraph/docs/compositions/](https://github.com/lovyou-ai/eventgraph/tree/main/docs/compositions)) define the operations for each layer. The derivation method (see [derivation-method.md](https://github.com/lovyou-ai/eventgraph/blob/main/docs/derivation-method.md)) ensures completeness.
 
 ### The Economy
 

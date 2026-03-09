@@ -1,20 +1,23 @@
 package roles
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestSystemPrompt(t *testing.T) {
 	tests := []struct {
 		role Role
 		want string // substring that should be present
 	}{
-		{RoleCTO, "CTO of the hive"},
-		{RoleGuardian, "Guardian"},
-		{RoleResearcher, "Researcher"},
-		{RoleArchitect, "Architect"},
-		{RoleBuilder, "Builder"},
-		{RoleReviewer, "Reviewer"},
-		{RoleTester, "Tester"},
-		{RoleIntegrator, "Integrator"},
+		{RoleCTO, "ROLE: CTO"},
+		{RoleGuardian, "ROLE: GUARDIAN"},
+		{RoleResearcher, "ROLE: RESEARCHER"},
+		{RoleArchitect, "ROLE: ARCHITECT"},
+		{RoleBuilder, "ROLE: BUILDER"},
+		{RoleReviewer, "ROLE: REVIEWER"},
+		{RoleTester, "ROLE: TESTER"},
+		{RoleIntegrator, "ROLE: INTEGRATOR"},
 		{Role("unknown"), "hive agent"},
 	}
 
@@ -23,16 +26,47 @@ func TestSystemPrompt(t *testing.T) {
 		if prompt == "" {
 			t.Errorf("SystemPrompt(%q) is empty", tt.role)
 		}
-		found := false
-		for i := 0; i <= len(prompt)-len(tt.want); i++ {
-			if prompt[i:i+len(tt.want)] == tt.want {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if !strings.Contains(prompt, tt.want) {
 			t.Errorf("SystemPrompt(%q) does not contain %q", tt.role, tt.want)
 		}
+	}
+}
+
+func TestSystemPromptCarriesMission(t *testing.T) {
+	// Every role prompt (except unknown) must carry the soul and mission
+	roles := []Role{RoleCTO, RoleGuardian, RoleResearcher, RoleArchitect,
+		RoleBuilder, RoleReviewer, RoleTester, RoleIntegrator}
+
+	for _, role := range roles {
+		prompt := SystemPrompt(role)
+		if !strings.Contains(prompt, "SOUL") {
+			t.Errorf("SystemPrompt(%q) missing SOUL section", role)
+		}
+		if !strings.Contains(prompt, "MISSION") {
+			t.Errorf("SystemPrompt(%q) missing MISSION section", role)
+		}
+		if !strings.Contains(prompt, "Take care of your human") {
+			t.Errorf("SystemPrompt(%q) missing soul statement", role)
+		}
+		if !strings.Contains(prompt, "thirteen") {
+			t.Errorf("SystemPrompt(%q) missing reference to thirteen product layers", role)
+		}
+		if !strings.Contains(prompt, "TRUST") {
+			t.Errorf("SystemPrompt(%q) missing TRUST section", role)
+		}
+	}
+}
+
+func TestSystemPromptIncludesHumanName(t *testing.T) {
+	prompt := SystemPrompt(RoleCTO, "Matt")
+	if !strings.Contains(prompt, "Matt") {
+		t.Error("SystemPrompt with human name does not contain the name")
+	}
+
+	// Without name, should use default
+	prompt = SystemPrompt(RoleCTO)
+	if !strings.Contains(prompt, "the human operator") {
+		t.Error("SystemPrompt without human name missing default")
 	}
 }
 
