@@ -40,7 +40,7 @@ func testDepsWithMinTrust(t *testing.T, minTrust float64) Deps {
 	if err != nil {
 		t.Fatal(err)
 	}
-	humanActor, err := actors.Register(humanPub, "TestHuman", "Human")
+	humanActor, err := actors.Register(humanPub, "TestHuman", event.ActorTypeHuman)
 	if err != nil {
 		t.Fatal(err)
 	}

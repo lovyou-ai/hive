@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"os/exec"
@@ -95,11 +96,10 @@ func New(ctx context.Context, cfg Config) (*Pipeline, error) {
 
 	// Wire up spawner if an authority gate is provided.
 	if cfg.Gate != nil {
-		_, privKey, err := ed25519.GenerateKey(nil)
-		if err != nil {
-			return nil, fmt.Errorf("generate spawn signer: %w", err)
-		}
-		signer := &ed25519Signer{key: privKey}
+		// Deterministic signer derived from humanID — stable across restarts,
+		// verifiable against the human's identity. Random ephemeral keys would
+		// break INTEGRITY (signature verification requires knowing the key).
+		signer := deriveSignerFromID(cfg.HumanID)
 		registry := event.DefaultRegistry()
 		factory := event.NewEventFactory(registry)
 		convID, err := newConversationID()
@@ -214,6 +214,14 @@ type ed25519Signer struct {
 func (s *ed25519Signer) Sign(data []byte) (types.Signature, error) {
 	sig := ed25519.Sign(s.key, data)
 	return types.NewSignature(sig)
+}
+
+// deriveSignerFromID creates a deterministic Ed25519 signer from an ActorID.
+// Stable across restarts — the same humanID always produces the same key.
+func deriveSignerFromID(id types.ActorID) *ed25519Signer {
+	h := sha256.Sum256([]byte("signer:" + id.Value()))
+	priv := ed25519.NewKeyFromSeed(h[:])
+	return &ed25519Signer{key: priv}
 }
 
 // newConversationID generates a unique conversation ID for this pipeline run.
@@ -849,7 +857,7 @@ func (p *Pipeline) guardianCheck(ctx context.Context, phase string) bool {
 		fmt.Sprintf(`Review these recent events (after %s phase) for policy violations, trust anomalies, or authority overreach.
 
 EXTRA SCRUTINY for:
-- Agent spawn events (agent.role.assigned, agent.acted with spawn_agent) — verify authority and trust levels
+- Agent spawn events (agent.role.assigned, authority.requested, authority.resolved) — verify authority and trust levels
 - Self-modification events — flag for human review
 - Revenue-affecting decisions — verify alignment
 

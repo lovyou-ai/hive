@@ -26,6 +26,12 @@ import (
 	"github.com/lovyou-ai/hive/pkg/roles"
 )
 
+// Spawn action constants used in AgentActedContent.Action fields.
+const (
+	ActionSpawnRequested = "spawn_requested"
+	ActionSpawnDenied    = "spawn_denied"
+)
+
 // SpawnRequest describes a new agent to create.
 type SpawnRequest struct {
 	Role          roles.Role    // what role the agent will fill
@@ -94,6 +100,9 @@ func (s *Spawner) Spawn(_ context.Context, req SpawnRequest) (SpawnResult, error
 	// for the target role (unless the human is requesting directly).
 	if req.RequestedBy != s.humanID {
 		if err := s.checkTrustGate(req); err != nil {
+			// Emit denial so the graph is complete — spawn_requested
+			// must always have a causal successor.
+			_ = s.emitSpawnDenied(reqEventID, err.Error())
 			return SpawnResult{
 				Role:     req.Role,
 				Name:     req.Name,
@@ -200,7 +209,7 @@ func (s *Spawner) checkTrustGate(req SpawnRequest) error {
 func (s *Spawner) emitSpawnRequested(req SpawnRequest) (types.EventID, error) {
 	content := event.AgentActedContent{
 		AgentID: req.RequestedBy,
-		Action:  "spawn_requested",
+		Action:  ActionSpawnRequested,
 		Target:  fmt.Sprintf("%s as %s: %s", req.Name, req.Role, req.Justification),
 	}
 	ev, err := s.appendEvent(event.EventTypeAgentActed, req.RequestedBy, content)
@@ -238,7 +247,13 @@ func (s *Spawner) emitAuthorityResolved(reqEventID types.EventID, res authority.
 		Resolver:  res.Resolver,
 		Reason:    reason,
 	}
-	ev, err := s.appendEventAfter(event.EventTypeAuthorityResolved, s.humanID, content, reqEventID)
+	// Attribute to the actual resolver; fall back to humanID for auto-approvals
+	// where the resolver is unset.
+	source := s.humanID
+	if res.Resolver != (types.ActorID{}) {
+		source = res.Resolver
+	}
+	ev, err := s.appendEventAfter(event.EventTypeAuthorityResolved, source, content, reqEventID)
 	if err != nil {
 		return types.EventID{}, err
 	}
@@ -250,7 +265,7 @@ func (s *Spawner) emitAuthorityResolved(reqEventID types.EventID, res authority.
 func (s *Spawner) emitSpawnDenied(causeID types.EventID, reason string) error {
 	content := event.AgentActedContent{
 		AgentID: s.humanID,
-		Action:  "spawn_denied",
+		Action:  ActionSpawnDenied,
 		Target:  reason,
 	}
 	_, err := s.appendEventAfter(event.EventTypeAgentActed, s.humanID, content, causeID)

@@ -41,7 +41,7 @@ func testSpawnerWithOpts(t *testing.T, opts testSpawnerOpts) (*Spawner, types.Ac
 
 	// Register human.
 	humanPub, _ := types.NewPublicKey([]byte("human-key-00000000000000000000000"))
-	humanActor, err := actors.Register(humanPub, "TestHuman", "Human")
+	humanActor, err := actors.Register(humanPub, "TestHuman", event.ActorTypeHuman)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +147,7 @@ func TestSpawnEmitsEvents(t *testing.T) {
 	foundSpawnRequested := false
 	for _, ev := range page.Items() {
 		if acted, ok := ev.Content().(event.AgentActedContent); ok {
-			if acted.Action == "spawn_requested" {
+			if acted.Action == ActionSpawnRequested {
 				foundSpawnRequested = true
 			}
 		}

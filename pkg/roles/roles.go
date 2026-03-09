@@ -5,10 +5,14 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/lovyou-ai/eventgraph/go/pkg/event"
 	"github.com/lovyou-ai/eventgraph/go/pkg/intelligence"
 	"github.com/lovyou-ai/eventgraph/go/pkg/store"
 	"github.com/lovyou-ai/eventgraph/go/pkg/types"
 )
+
+// CostTierStandard is the default cost tier for agent model binding.
+const CostTierStandard = "standard"
 
 // Role identifies an agent's function in the hive.
 type Role string
@@ -112,9 +116,9 @@ func NewAgent(ctx context.Context, cfg AgentConfig) (*Agent, error) {
 	// Boot with role-specific soul values
 	humanID := cfg.HumanID
 	_, err = rt.Boot(
-		"ai",
+		string(event.ActorTypeAI),
 		cfg.Provider.Model(),
-		"standard",
+		CostTierStandard,
 		soulValues(cfg.Role),
 		types.MustDomainScope("hive"),
 		humanID,
