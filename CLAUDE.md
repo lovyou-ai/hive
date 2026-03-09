@@ -44,15 +44,17 @@ go test ./...
 ## Running
 
 ```bash
-# Start the hive with a product idea
+# Start the hive with a product idea (CTO derives the product name)
 go run ./cmd/hive --idea "Build a task management app with kanban boards"
 
-# Start from a URL
-go run ./cmd/hive --url "https://mattsearles2.substack.com/p/the-missing-social-grammar"
+# Start from a URL with an explicit product name
+go run ./cmd/hive --name social-grammar --url "https://mattsearles2.substack.com/p/the-missing-social-grammar"
 
 # Start from a Code Graph spec file
 go run ./cmd/hive --spec path/to/spec.cg
 ```
+
+Each product gets its own GitHub repo under lovyou-ai, with git commits at each phase.
 
 ## Key Files
 
@@ -69,6 +71,18 @@ Model assignment by role:
 - **Opus** (`claude-opus-4-6`): CTO, Architect, Reviewer, Guardian — high-judgment tasks
 - **Sonnet** (`claude-sonnet-4-6`): Builder, Tester, Integrator, Researcher — execution tasks
 
+## Pipeline
+
+1. **Research** — Researcher reads URLs/ideas, CTO evaluates feasibility
+2. **Design** — Architect creates Code Graph spec, CTO reviews for minimalism
+3. **Simplify** — Architect reduces spec to minimal form (up to 3 rounds)
+4. **Build** — Builder generates multi-file project, committed to product repo
+5. **Review → Rebuild** — Reviewer checks quality/compliance/simplicity. If issues found, Builder fixes and re-submits (up to 3 rounds)
+6. **Test** — Tester runs actual test suite, Builder fixes failures
+7. **Integrate** — Integrator pushes to GitHub, escalates to human for approval
+
+Guardian runs integrity checks after every phase.
+
 ## Design Philosophy
 
 The Architect enforces **derivation over accumulation**:
@@ -76,6 +90,7 @@ The Architect enforces **derivation over accumulation**:
 - Complexity emerges from composing simple atoms, not adding parts
 - A simplification pass runs after every design phase (up to 3 rounds)
 - The Reviewer checks generated code for unnecessary complexity
+- System prompts are wired to each agent's provider — roles have real context
 
 ## Dependencies
 

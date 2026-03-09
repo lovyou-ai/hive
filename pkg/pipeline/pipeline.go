@@ -4,6 +4,7 @@ package pipeline
 import (
 	"context"
 	"fmt"
+	"os/exec"
 	"strings"
 
 	"github.com/lovyou-ai/eventgraph/go/pkg/event"
@@ -29,7 +30,7 @@ const (
 
 // ProductInput describes how a product idea enters the hive.
 type ProductInput struct {
-	Name        string // Product name (used for repo and directory)
+	Name        string // Product name (used for repo and directory). If empty, CTO derives one.
 	URL         string // Read from URL (Substack post, docs, etc.)
 	Description string // Natural language description
 	SpecFile    string // Path to a Code Graph spec file
@@ -82,18 +83,19 @@ func New(ctx context.Context, cfg Config) (*Pipeline, error) {
 	return p, nil
 }
 
-// providerForRole creates an intelligence provider with the model appropriate for the role.
-// Uses Claude CLI (flat rate via Max plan) — no API key needed.
+// providerForRole creates an intelligence provider with the model and system prompt
+// appropriate for the role. Uses Claude CLI (flat rate via Max plan).
 func (p *Pipeline) providerForRole(role roles.Role) (intelligence.Provider, error) {
 	model := roles.PreferredModel(role)
 	return intelligence.New(intelligence.Config{
-		Provider: "claude-cli",
-		Model:    model,
+		Provider:     "claude-cli",
+		Model:        model,
+		SystemPrompt: roles.SystemPrompt(role),
 	})
 }
 
 // ensureAgent creates an agent of the given role if it doesn't exist yet.
-// Each role gets a provider with the appropriate model (Opus for judgment, Sonnet for execution).
+// Each role gets a provider with the appropriate model and system prompt.
 func (p *Pipeline) ensureAgent(ctx context.Context, role roles.Role, name string) (*roles.Agent, error) {
 	if agent, ok := p.agents[role]; ok {
 		return agent, nil
@@ -118,11 +120,24 @@ func (p *Pipeline) ensureAgent(ctx context.Context, role roles.Role, name string
 
 // Run executes the full product pipeline for a given input.
 func (p *Pipeline) Run(ctx context.Context, input ProductInput) error {
-	// Initialize product repo
+	// ── Phase 1: Research ──
+	fmt.Println("═══ Phase 1: Research ═══")
+	spec, err := p.research(ctx, input)
+	if err != nil {
+		return fmt.Errorf("research: %w", err)
+	}
+	p.guardianCheck(ctx, "research")
+
+	// Derive product name if not provided
 	name := input.Name
 	if name == "" {
-		name = "product"
+		name, err = p.deriveName(ctx, spec)
+		if err != nil {
+			return fmt.Errorf("derive name: %w", err)
+		}
 	}
+
+	// Initialize product repo
 	product, err := p.ws.InitProduct(name)
 	if err != nil {
 		return fmt.Errorf("init product: %w", err)
@@ -130,50 +145,116 @@ func (p *Pipeline) Run(ctx context.Context, input ProductInput) error {
 	p.product = product
 	fmt.Printf("Product repo: %s → %s\n", product.Dir, product.Repo)
 
-	fmt.Println("═══ Phase 1: Research ═══")
-	spec, err := p.research(ctx, input)
-	if err != nil {
-		return fmt.Errorf("research: %w", err)
-	}
-
+	// ── Phase 2: Design ──
 	fmt.Println("═══ Phase 2: Design ═══")
 	design, err := p.design(ctx, spec)
 	if err != nil {
 		return fmt.Errorf("design: %w", err)
 	}
+	p.guardianCheck(ctx, "design")
 
+	// ── Phase 2b: Simplify ──
 	fmt.Println("═══ Phase 2b: Simplify ═══")
 	design, err = p.simplify(ctx, design)
 	if err != nil {
 		return fmt.Errorf("simplify: %w", err)
 	}
 
+	// Save the final spec to the product repo
+	if err := p.product.WriteFile("SPEC.md", design); err != nil {
+		return fmt.Errorf("save spec: %w", err)
+	}
+	if err := p.product.Commit("docs: Code Graph specification"); err != nil {
+		return fmt.Errorf("commit spec: %w", err)
+	}
+	fmt.Println("Spec committed to product repo.")
+
+	// Extract language from the design
+	lang := p.extractLanguage(design)
+	fmt.Printf("Target language: %s\n", lang)
+
+	// ── Phase 3: Build ──
 	fmt.Println("═══ Phase 3: Build ═══")
-	code, err := p.build(ctx, design)
+	files, err := p.build(ctx, design, lang)
 	if err != nil {
 		return fmt.Errorf("build: %w", err)
 	}
+	p.guardianCheck(ctx, "build")
 
-	fmt.Println("═══ Phase 4: Review ═══")
-	err = p.review(ctx, code, design)
-	if err != nil {
-		return fmt.Errorf("review: %w", err)
+	// ── Phase 4: Review → Rebuild loop ──
+	const maxReviewRounds = 3
+	for round := 1; round <= maxReviewRounds; round++ {
+		fmt.Printf("═══ Phase 4: Review (round %d) ═══\n", round)
+		feedback, approved, err := p.review(ctx, files, design, lang)
+		if err != nil {
+			return fmt.Errorf("review round %d: %w", round, err)
+		}
+		p.guardianCheck(ctx, "review")
+
+		if approved {
+			fmt.Println("Code approved by reviewer.")
+			break
+		}
+
+		if round == maxReviewRounds {
+			fmt.Println("Max review rounds reached — proceeding with current code.")
+			break
+		}
+
+		// Rebuild with reviewer feedback
+		fmt.Printf("═══ Phase 4b: Rebuild from feedback (round %d) ═══\n", round)
+		files, err = p.rebuild(ctx, files, feedback, design, lang)
+		if err != nil {
+			return fmt.Errorf("rebuild round %d: %w", round, err)
+		}
 	}
 
+	// ── Phase 5: Test ──
 	fmt.Println("═══ Phase 5: Test ═══")
-	err = p.test(ctx, code)
+	err = p.test(ctx, files, lang)
 	if err != nil {
 		return fmt.Errorf("test: %w", err)
 	}
+	p.guardianCheck(ctx, "test")
 
+	// ── Phase 6: Integrate ──
 	fmt.Println("═══ Phase 6: Integrate ═══")
 	err = p.integrate(ctx)
 	if err != nil {
 		return fmt.Errorf("integrate: %w", err)
 	}
+	p.guardianCheck(ctx, "integrate")
 
 	fmt.Println("═══ Pipeline Complete ═══")
 	return nil
+}
+
+// deriveName asks the CTO to derive a short, kebab-case product name from the spec.
+func (p *Pipeline) deriveName(ctx context.Context, spec string) (string, error) {
+	_, name, err := p.cto.Runtime.Evaluate(ctx, "product_name",
+		fmt.Sprintf(`Derive a short product name (kebab-case, 2-4 words, lowercase, no special characters) from this product idea. Reply with ONLY the name, nothing else.
+
+Product idea:
+%s`, spec))
+	if err != nil {
+		return "product", nil // fallback
+	}
+	name = strings.TrimSpace(name)
+	// Sanitize: lowercase, replace spaces with hyphens, remove non-alphanumeric
+	name = strings.ToLower(name)
+	name = strings.ReplaceAll(name, " ", "-")
+	var clean []byte
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' {
+			clean = append(clean, c)
+		}
+	}
+	if len(clean) == 0 {
+		return "product", nil
+	}
+	fmt.Printf("CTO named product: %s\n", string(clean))
+	return string(clean), nil
 }
 
 // research gathers information about the product idea.
@@ -181,7 +262,6 @@ func (p *Pipeline) research(ctx context.Context, input ProductInput) (string, er
 	var spec string
 
 	if input.SpecFile != "" {
-		// Read the spec file directly
 		content, err := p.ws.ReadFile(input.SpecFile)
 		if err != nil {
 			return "", fmt.Errorf("read spec: %w", err)
@@ -227,15 +307,23 @@ func (p *Pipeline) design(ctx context.Context, spec string) (string, error) {
 		return "", err
 	}
 
-	prompt := fmt.Sprintf("%s\n\nDesign the full system architecture. Output a complete Code Graph spec. Remember: derive complexity from simple compositions. Each view should have the minimal elements needed — if a view feels heavy, decompose it. Elegant, simple, beautiful.\n\n%s",
-		roles.SystemPrompt(roles.RoleArchitect), spec)
+	prompt := fmt.Sprintf(`Design the full system architecture. Output a complete Code Graph spec.
+Remember: derive complexity from simple compositions. Each view should have the minimal elements needed — if a view feels heavy, decompose it. Elegant, simple, beautiful.
+
+Also specify the target language/framework at the top of your spec in a line like:
+LANGUAGE: go
+or
+LANGUAGE: typescript
+
+Product idea:
+%s`, spec)
 
 	_, design, err := architect.Runtime.Evaluate(ctx, "architecture", prompt)
 	if err != nil {
 		return "", fmt.Errorf("architect design: %w", err)
 	}
 
-	// CTO reviews the architecture — check for derivation and minimalism
+	// CTO reviews the architecture
 	_, review, err := p.cto.Runtime.Evaluate(ctx, "architecture_review",
 		fmt.Sprintf("Review this architecture. Check: Are views minimal? Is complexity derived from composition rather than accumulated? Are there any bloated entities or views that should be decomposed? Is it elegant and simple?\n\n%s", design))
 	if err != nil {
@@ -247,9 +335,6 @@ func (p *Pipeline) design(ctx context.Context, spec string) (string, error) {
 }
 
 // simplify reviews the Code Graph spec and reduces it to its minimal form.
-// The Architect re-examines every element: can views be composed from fewer parts?
-// Can entities be split or merged? Can states be derived rather than declared?
-// This runs in a loop until the Architect reports no further simplifications.
 func (p *Pipeline) simplify(ctx context.Context, design string) (string, error) {
 	architect, err := p.ensureAgent(ctx, roles.RoleArchitect, "architect")
 	if err != nil {
@@ -291,87 +376,273 @@ Current spec:
 	return current, nil
 }
 
-// build generates code from the design spec.
-func (p *Pipeline) build(ctx context.Context, design string) (string, error) {
+// extractLanguage pulls the target language from the design spec.
+// Looks for "LANGUAGE: xxx" in the spec. Defaults to "go".
+func (p *Pipeline) extractLanguage(design string) string {
+	for _, line := range strings.Split(design, "\n") {
+		line = strings.TrimSpace(line)
+		upper := strings.ToUpper(line)
+		if strings.HasPrefix(upper, "LANGUAGE:") {
+			lang := strings.TrimSpace(line[len("LANGUAGE:"):])
+			lang = strings.ToLower(lang)
+			if lang != "" {
+				return lang
+			}
+		}
+	}
+	return "go"
+}
+
+// build generates multi-file code from the design spec.
+// The builder outputs files with --- FILE: path --- markers, which are parsed
+// into individual files and committed to the product repo.
+func (p *Pipeline) build(ctx context.Context, design string, lang string) (map[string]string, error) {
 	builder, err := p.ensureAgent(ctx, roles.RoleBuilder, "builder")
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	prompt := fmt.Sprintf("%s\n\nGenerate production-quality code from this specification. Include tests.\n\n%s",
-		roles.SystemPrompt(roles.RoleBuilder), design)
+	prompt := fmt.Sprintf(`Generate production-quality %s code from this specification.
 
-	code, err := builder.Runtime.CodeWrite(ctx, prompt, "go")
+Output ALL files needed for a complete, runnable project. Use this format for each file:
+
+--- FILE: path/to/file.ext ---
+<file contents>
+
+Include:
+- Project config (go.mod, package.json, Cargo.toml, etc.)
+- Source files (organized in packages/modules)
+- Test files alongside the code they test
+- A README.md with build and run instructions
+
+Do NOT include explanation text outside of file blocks. Every line must be inside a file block.
+
+Specification:
+%s`, lang, design)
+
+	code, err := builder.Runtime.CodeWrite(ctx, prompt, lang)
 	if err != nil {
-		return "", fmt.Errorf("builder code: %w", err)
+		return nil, fmt.Errorf("builder code: %w", err)
 	}
 
-	// Write code to product repo and commit
-	if err := p.product.WriteFile("main.go", code); err != nil {
-		return "", fmt.Errorf("write code: %w", err)
-	}
-	if err := p.product.Commit("feat: initial code generation from spec"); err != nil {
-		return "", fmt.Errorf("commit code: %w", err)
+	// Parse multi-file output
+	files := parseFiles(code)
+	if len(files) == 0 {
+		// Fallback: treat entire output as a single file
+		ext := langExtension(lang)
+		files = map[string]string{"main" + ext: code}
 	}
 
-	fmt.Printf("Code generated and committed: %d bytes\n", len(code))
-	return code, nil
+	// Write all files to product repo
+	for path, content := range files {
+		if err := p.product.WriteFile(path, content); err != nil {
+			return nil, fmt.Errorf("write %s: %w", path, err)
+		}
+	}
+	if err := p.product.Commit(fmt.Sprintf("feat: initial %s code generation from spec", lang)); err != nil {
+		return nil, fmt.Errorf("commit code: %w", err)
+	}
+
+	fmt.Printf("Generated %d files, committed.\n", len(files))
+	return files, nil
 }
 
-// review checks code quality and spec compliance.
-func (p *Pipeline) review(ctx context.Context, code string, design string) error {
+// rebuild sends reviewer feedback to the builder and generates revised code.
+func (p *Pipeline) rebuild(ctx context.Context, currentFiles map[string]string, feedback string, design string, lang string) (map[string]string, error) {
+	builder, err := p.ensureAgent(ctx, roles.RoleBuilder, "builder")
+	if err != nil {
+		return nil, err
+	}
+
+	// Build a summary of current files
+	var filesSummary strings.Builder
+	for path, content := range currentFiles {
+		filesSummary.WriteString(fmt.Sprintf("--- FILE: %s ---\n%s\n", path, content))
+	}
+
+	prompt := fmt.Sprintf(`The reviewer provided feedback on the code. Fix the issues and output ALL files again using the same format.
+
+Reviewer feedback:
+%s
+
+Original specification:
+%s
+
+Current code:
+%s
+
+Output the COMPLETE revised files using --- FILE: path --- markers. Include ALL files, not just changed ones.`, feedback, design, filesSummary.String())
+
+	code, err := builder.Runtime.CodeWrite(ctx, prompt, lang)
+	if err != nil {
+		return nil, fmt.Errorf("rebuild: %w", err)
+	}
+
+	files := parseFiles(code)
+	if len(files) == 0 {
+		return currentFiles, nil // no parseable output, keep current
+	}
+
+	for path, content := range files {
+		if err := p.product.WriteFile(path, content); err != nil {
+			return nil, fmt.Errorf("write %s: %w", path, err)
+		}
+	}
+	if err := p.product.Commit("fix: address reviewer feedback"); err != nil {
+		return nil, fmt.Errorf("commit rebuild: %w", err)
+	}
+
+	fmt.Printf("Rebuilt %d files from feedback, committed.\n", len(files))
+	return files, nil
+}
+
+// review checks code quality and spec compliance. Returns feedback and whether approved.
+func (p *Pipeline) review(ctx context.Context, files map[string]string, design string, lang string) (feedback string, approved bool, err error) {
 	reviewer, err := p.ensureAgent(ctx, roles.RoleReviewer, "reviewer")
 	if err != nil {
-		return err
+		return "", false, err
 	}
 
-	reviewEvt, review, err := reviewer.Runtime.CodeReview(ctx, code, "go")
+	// Build code summary for review
+	var codeSummary strings.Builder
+	for path, content := range files {
+		codeSummary.WriteString(fmt.Sprintf("--- %s ---\n%s\n\n", path, content))
+	}
+	allCode := codeSummary.String()
+
+	// Code review
+	_, codeReview, err := reviewer.Runtime.CodeReview(ctx, allCode, lang)
 	if err != nil {
-		return fmt.Errorf("code review: %w", err)
+		return "", false, fmt.Errorf("code review: %w", err)
 	}
 
-	// Check spec compliance
+	// Spec compliance
 	_, specReview, err := reviewer.Runtime.Evaluate(ctx, "spec_compliance",
-		fmt.Sprintf("%s\n\nDoes this code match the design spec?\n\nDesign:\n%s\n\nCode:\n%s",
-			roles.SystemPrompt(roles.RoleReviewer), design, code))
+		fmt.Sprintf("Does this code match the design spec? Flag any deviations.\n\nDesign:\n%s\n\nCode:\n%s", design, allCode))
 	if err != nil {
-		return fmt.Errorf("spec review: %w", err)
+		return "", false, fmt.Errorf("spec review: %w", err)
 	}
 
-	// Check for unnecessary complexity in the implementation
+	// Simplicity check
 	_, simplicityReview, err := reviewer.Runtime.Evaluate(ctx, "simplicity_check",
-		fmt.Sprintf(`Review this code for unnecessary complexity. Check:
-- Are there components that could be derived from simpler compositions?
-- Are there redundant abstractions or over-engineered patterns?
-- Could any part be simpler while preserving the same behavior?
-- Does the code match the minimal spec, or did the builder add extras?
+		fmt.Sprintf(`Review this code for unnecessary complexity:
+- Components that could be derived from simpler compositions?
+- Redundant abstractions or over-engineered patterns?
+- Did the builder add extras beyond the spec?
 
 Code:
-%s`, code))
+%s`, allCode))
 	if err != nil {
-		return fmt.Errorf("simplicity review: %w", err)
+		return "", false, fmt.Errorf("simplicity review: %w", err)
 	}
 
-	fmt.Printf("Code Review:\n%s\n\nSpec Compliance:\n%s\n\nSimplicity:\n%s\n", review, specReview, simplicityReview)
-	_ = reviewEvt
-	return nil
+	// Final verdict
+	_, verdict, err := reviewer.Runtime.Decide(ctx, "approve_or_reject",
+		fmt.Sprintf(`Based on your reviews, should this code be APPROVED or does it need CHANGES?
+
+Code Review: %s
+Spec Compliance: %s
+Simplicity: %s
+
+Reply with exactly APPROVED if the code is ready, or CHANGES NEEDED followed by the specific issues to fix.`, codeReview, specReview, simplicityReview))
+	if err != nil {
+		return "", false, fmt.Errorf("verdict: %w", err)
+	}
+
+	fmt.Printf("Code Review:\n%s\n\nSpec Compliance:\n%s\n\nSimplicity:\n%s\n\nVerdict: %s\n",
+		codeReview, specReview, simplicityReview, verdict)
+
+	approved = strings.Contains(strings.ToUpper(verdict), "APPROVED") &&
+		!strings.Contains(strings.ToUpper(verdict), "CHANGES")
+	return verdict, approved, nil
 }
 
-// test runs tests and validates behavior.
-func (p *Pipeline) test(ctx context.Context, code string) error {
+// test runs tests in the product directory and has the tester analyze gaps.
+func (p *Pipeline) test(ctx context.Context, files map[string]string, lang string) error {
 	tester, err := p.ensureAgent(ctx, roles.RoleTester, "tester")
 	if err != nil {
 		return err
 	}
 
+	// Actually run tests in the product directory
+	testCmd, testArgs := langTestCommand(lang)
+	fmt.Printf("Running: %s %s\n", testCmd, strings.Join(testArgs, " "))
+
+	cmd := exec.Command(testCmd, testArgs...)
+	cmd.Dir = p.product.Dir
+	testOutput, testErr := cmd.CombinedOutput()
+
+	testResult := string(testOutput)
+	if testErr != nil {
+		fmt.Printf("Tests failed:\n%s\n", testResult)
+	} else {
+		fmt.Printf("Tests passed:\n%s\n", testResult)
+	}
+
+	// Have the tester analyze results and coverage gaps
+	var codeSummary strings.Builder
+	for path, content := range files {
+		codeSummary.WriteString(fmt.Sprintf("--- %s ---\n%s\n\n", path, content))
+	}
+
 	_, testEval, err := tester.Runtime.Evaluate(ctx, "test_analysis",
-		fmt.Sprintf("%s\n\nAnalyze this code. What tests exist? What gaps are there? Write additional integration tests if needed.\n\n%s",
-			roles.SystemPrompt(roles.RoleTester), code))
+		fmt.Sprintf(`Analyze the test results and code. Are there coverage gaps? What additional tests are needed?
+
+Test output:
+%s
+
+Code:
+%s`, testResult, codeSummary.String()))
 	if err != nil {
 		return fmt.Errorf("test analysis: %w", err)
 	}
 
 	fmt.Printf("Test Analysis:\n%s\n", testEval)
+
+	// If tests failed, have the builder fix them
+	if testErr != nil {
+		fmt.Println("Attempting to fix failing tests...")
+		builder, err := p.ensureAgent(ctx, roles.RoleBuilder, "builder")
+		if err != nil {
+			return err
+		}
+
+		fixPrompt := fmt.Sprintf(`The tests are failing. Fix the code so tests pass.
+
+Test output:
+%s
+
+Current code:
+%s
+
+Output ALL files using --- FILE: path --- markers.`, testResult, codeSummary.String())
+
+		fixedCode, err := builder.Runtime.CodeWrite(ctx, fixPrompt, lang)
+		if err != nil {
+			return fmt.Errorf("fix tests: %w", err)
+		}
+
+		fixedFiles := parseFiles(fixedCode)
+		for path, content := range fixedFiles {
+			if err := p.product.WriteFile(path, content); err != nil {
+				return fmt.Errorf("write fix %s: %w", path, err)
+			}
+		}
+		if len(fixedFiles) > 0 {
+			_ = p.product.Commit("fix: address failing tests")
+		}
+
+		// Re-run tests
+		cmd2 := exec.Command(testCmd, testArgs...)
+		cmd2.Dir = p.product.Dir
+		retryOutput, retryErr := cmd2.CombinedOutput()
+		if retryErr != nil {
+			fmt.Printf("Tests still failing after fix attempt:\n%s\n", string(retryOutput))
+		} else {
+			fmt.Printf("Tests now passing:\n%s\n", string(retryOutput))
+		}
+	}
+
 	return nil
 }
 
@@ -405,46 +676,110 @@ func (p *Pipeline) integrate(ctx context.Context) error {
 	return nil
 }
 
-// GuardianWatch runs the Guardian's monitoring loop.
-// It checks recent events for policy violations.
-func (p *Pipeline) GuardianWatch(ctx context.Context) error {
+// guardianCheck runs the Guardian's integrity check after a phase.
+func (p *Pipeline) guardianCheck(ctx context.Context, phase string) {
 	events, err := p.guardian.Runtime.Memory(20)
-	if err != nil {
-		return fmt.Errorf("guardian memory: %w", err)
+	if err != nil || len(events) == 0 {
+		return
 	}
 
-	if len(events) == 0 {
-		return nil
-	}
-
-	// Build summary of recent activity for the Guardian to evaluate
-	var summary string
+	var summary strings.Builder
 	for _, ev := range events {
-		summary += fmt.Sprintf("[%s] %s: %s\n", ev.Type().Value(), ev.Source().Value(), ev.ID().Value())
+		summary.WriteString(fmt.Sprintf("[%s] %s: %s\n", ev.Type().Value(), ev.Source().Value(), ev.ID().Value()))
 	}
 
-	_, eval, err := p.guardian.Runtime.Evaluate(ctx, "integrity_check",
-		fmt.Sprintf("%s\n\nReview these recent events for policy violations, trust anomalies, or authority overreach:\n\n%s",
-			roles.SystemPrompt(roles.RoleGuardian), summary))
+	_, eval, err := p.guardian.Runtime.Evaluate(ctx, "integrity_check_"+phase,
+		fmt.Sprintf("Review these recent events (after %s phase) for policy violations, trust anomalies, or authority overreach:\n\n%s",
+			phase, summary.String()))
 	if err != nil {
-		return fmt.Errorf("guardian evaluate: %w", err)
+		fmt.Printf("Guardian check failed: %v\n", err)
+		return
 	}
 
-	fmt.Printf("Guardian Report:\n%s\n", eval)
-
-	// If the Guardian detects issues, emit an alert
 	if containsAlert(eval) {
-		_, err = p.guardian.Runtime.Emit(event.AgentEscalatedContent{
+		fmt.Printf("⚠ Guardian Alert (after %s):\n%s\n", phase, eval)
+		_, _ = p.guardian.Runtime.Emit(event.AgentEscalatedContent{
 			AgentID:   p.guardian.Runtime.ID(),
 			Authority: types.MustActorID("actor_human_matt"),
-			Reason:    eval,
+			Reason:    fmt.Sprintf("[%s phase] %s", phase, eval),
 		})
-		if err != nil {
-			return fmt.Errorf("guardian alert: %w", err)
+	}
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// File parsing utilities
+// ════════════════════════════════════════════════════════════════════════
+
+// parseFiles extracts files from builder output using --- FILE: path --- markers.
+func parseFiles(output string) map[string]string {
+	files := make(map[string]string)
+	lines := strings.Split(output, "\n")
+
+	var currentPath string
+	var currentContent strings.Builder
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "--- FILE:") && strings.HasSuffix(trimmed, "---") {
+			// Save previous file if any
+			if currentPath != "" {
+				files[currentPath] = strings.TrimRight(currentContent.String(), "\n")
+			}
+			// Extract new path
+			path := strings.TrimSpace(trimmed[len("--- FILE:") : len(trimmed)-len("---")])
+			currentPath = path
+			currentContent.Reset()
+		} else if currentPath != "" {
+			currentContent.WriteString(line)
+			currentContent.WriteString("\n")
 		}
 	}
+	// Save last file
+	if currentPath != "" {
+		files[currentPath] = strings.TrimRight(currentContent.String(), "\n")
+	}
 
-	return nil
+	return files
+}
+
+// langExtension returns the default file extension for a language.
+func langExtension(lang string) string {
+	switch strings.ToLower(lang) {
+	case "go", "golang":
+		return ".go"
+	case "typescript", "ts":
+		return ".ts"
+	case "javascript", "js":
+		return ".js"
+	case "python", "py":
+		return ".py"
+	case "rust", "rs":
+		return ".rs"
+	case "csharp", "c#", "cs":
+		return ".cs"
+	default:
+		return ".go"
+	}
+}
+
+// langTestCommand returns the test command and args for a language.
+func langTestCommand(lang string) (string, []string) {
+	switch strings.ToLower(lang) {
+	case "go", "golang":
+		return "go", []string{"test", "./..."}
+	case "typescript", "ts":
+		return "npx", []string{"vitest", "run"}
+	case "javascript", "js":
+		return "npm", []string{"test"}
+	case "python", "py":
+		return "python", []string{"-m", "pytest"}
+	case "rust", "rs":
+		return "cargo", []string{"test"}
+	case "csharp", "c#", "cs":
+		return "dotnet", []string{"test"}
+	default:
+		return "go", []string{"test", "./..."}
+	}
 }
 
 // containsAlert checks if the Guardian's evaluation contains an alert keyword.

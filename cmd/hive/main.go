@@ -13,7 +13,7 @@ import (
 )
 
 func main() {
-	name := flag.String("name", "", "Product name (used for repo and directory)")
+	name := flag.String("name", "", "Product name (derived by CTO if not provided)")
 	idea := flag.String("idea", "", "Product idea (natural language description)")
 	url := flag.String("url", "", "URL to research for product idea")
 	spec := flag.String("spec", "", "Path to Code Graph spec file")
@@ -21,7 +21,7 @@ func main() {
 	flag.Parse()
 
 	if *idea == "" && *url == "" && *spec == "" {
-		fmt.Fprintln(os.Stderr, "Usage: hive --name product-name --idea 'description' | --url 'https://...' | --spec path/to/spec.cg")
+		fmt.Fprintln(os.Stderr, "Usage: hive [--name product-name] --idea 'description' | --url 'https://...' | --spec path/to/spec.cg")
 		os.Exit(1)
 	}
 
@@ -42,22 +42,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	input := pipeline.ProductInput{
+	// Run the pipeline — Guardian checks run automatically after each phase
+	if err := p.Run(ctx, pipeline.ProductInput{
 		Name:        *name,
 		URL:         *url,
 		Description: *idea,
 		SpecFile:    *spec,
-	}
-
-	// Run Guardian watch in background
-	go func() {
-		if err := p.GuardianWatch(ctx); err != nil {
-			fmt.Fprintf(os.Stderr, "guardian: %v\n", err)
-		}
-	}()
-
-	// Run the pipeline
-	if err := p.Run(ctx, input); err != nil {
+	}); err != nil {
 		fmt.Fprintf(os.Stderr, "pipeline failed: %v\n", err)
 		os.Exit(1)
 	}

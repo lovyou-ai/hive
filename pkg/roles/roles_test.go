@@ -62,3 +62,30 @@ func TestSoulValues(t *testing.T) {
 		t.Errorf("Reviewer soul values = %d, want 5", len(reviewer))
 	}
 }
+
+func TestPreferredModel(t *testing.T) {
+	opus := "claude-opus-4-6"
+	sonnet := "claude-sonnet-4-6"
+
+	tests := []struct {
+		role Role
+		want string
+	}{
+		{RoleCTO, opus},
+		{RoleArchitect, opus},
+		{RoleReviewer, opus},
+		{RoleGuardian, opus},
+		{RoleBuilder, sonnet},
+		{RoleTester, sonnet},
+		{RoleIntegrator, sonnet},
+		{RoleResearcher, sonnet},
+		{Role("unknown"), sonnet},
+	}
+
+	for _, tt := range tests {
+		got := PreferredModel(tt.role)
+		if got != tt.want {
+			t.Errorf("PreferredModel(%q) = %q, want %q", tt.role, got, tt.want)
+		}
+	}
+}
