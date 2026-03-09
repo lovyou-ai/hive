@@ -2,7 +2,7 @@ module github.com/lovyou-ai/hive
 
 go 1.24.1
 
-require github.com/lovyou-ai/eventgraph/go v0.0.0-20260309105546-946b84e62174
+require github.com/lovyou-ai/eventgraph/go v0.0.0-20260309142835-15d90f3ebac5
 
 require (
 	github.com/anthropics/anthropic-sdk-go v1.26.0 // indirect
