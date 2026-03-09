@@ -285,8 +285,10 @@ func TestLoopWithBus(t *testing.T) {
 		done <- l.Run(context.Background())
 	}()
 
-	// Wait for second IDLE iteration — loop is now in waitForEvents.
+	// Wait for second IDLE iteration, then give the loop a moment to enter
+	// waitForEvents (the callback fires before the loop checks quiescence).
 	<-secondIterDone
+	time.Sleep(50 * time.Millisecond)
 	otherAgent := types.MustActorID("actor_00000000000000000000000000000002")
 	mockEv := createMockEvent(t, s, otherAgent)
 	eventBus.Publish(mockEv)
@@ -337,7 +339,7 @@ var agentCounter uint32
 func testAgentWithRole(t *testing.T, provider intelligence.Provider, role roles.Role, name string) *roles.Agent {
 	t.Helper()
 	n := atomic.AddUint32(&agentCounter, 1)
-	agentID := types.MustActorID(fmt.Sprintf("actor_000000000000000000000000000000%02d", n))
+	agentID := types.MustActorID(fmt.Sprintf("actor_%032d", n))
 	humanID := types.MustActorID("actor_00000000000000000000000000000099")
 
 	rt, err := intelligence.NewRuntime(context.Background(), intelligence.RuntimeConfig{

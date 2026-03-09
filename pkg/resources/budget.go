@@ -75,21 +75,21 @@ func (b *Budget) Check() error {
 
 	if b.maxTokens > 0 && b.tokensUsed >= b.maxTokens {
 		return &BudgetExceededError{
-			Resource: "tokens",
+			Resource: ResourceTokens,
 			Used:     fmt.Sprintf("%d", b.tokensUsed),
 			Limit:    fmt.Sprintf("%d", b.maxTokens),
 		}
 	}
 	if b.maxCostUSD > 0 && b.costUSD >= b.maxCostUSD {
 		return &BudgetExceededError{
-			Resource: "cost",
+			Resource: ResourceCost,
 			Used:     fmt.Sprintf("$%.2f", b.costUSD),
 			Limit:    fmt.Sprintf("$%.2f", b.maxCostUSD),
 		}
 	}
 	if b.maxIterations > 0 && b.iterations >= b.maxIterations {
 		return &BudgetExceededError{
-			Resource: "iterations",
+			Resource: ResourceIterations,
 			Used:     fmt.Sprintf("%d", b.iterations),
 			Limit:    fmt.Sprintf("%d", b.maxIterations),
 		}
@@ -98,7 +98,7 @@ func (b *Budget) Check() error {
 		elapsed := time.Since(b.startTime)
 		if elapsed >= b.maxDuration {
 			return &BudgetExceededError{
-				Resource: "duration",
+				Resource: ResourceDuration,
 				Used:     elapsed.String(),
 				Limit:    b.maxDuration.String(),
 			}
@@ -127,9 +127,19 @@ type BudgetSnapshot struct {
 	Elapsed    time.Duration
 }
 
+// BudgetResource identifies which resource limit was exceeded.
+type BudgetResource string
+
+const (
+	ResourceTokens     BudgetResource = "tokens"
+	ResourceCost       BudgetResource = "cost"
+	ResourceIterations BudgetResource = "iterations"
+	ResourceDuration   BudgetResource = "duration"
+)
+
 // BudgetExceededError is returned when a resource limit is reached.
 type BudgetExceededError struct {
-	Resource string // "tokens", "cost", "iterations", "duration"
+	Resource BudgetResource
 	Used     string
 	Limit    string
 }

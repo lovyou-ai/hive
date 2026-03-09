@@ -540,7 +540,7 @@ func (p *Pipeline) buildLoopConfigs(ctx context.Context, seedTask string, eventB
 	// Guardian — watches everything, can HALT. Gets a larger budget than
 	// execution agents so it outlives them (OBSERVABLE invariant).
 	guardianBudget := cfg.GuardianBudget
-	if guardianBudget.MaxIterations == 0 && guardianBudget.MaxCostUSD == 0 && guardianBudget.MaxDuration == 0 {
+	if guardianBudget == (resources.BudgetConfig{}) {
 		// Fallback: scale all execution budget dimensions so Guardian outlives them.
 		guardianBudget = cfg.Budget
 		guardianBudget.MaxIterations *= 10
@@ -1082,6 +1082,9 @@ Events:
 
 	if strings.Contains(upper, "HALT") {
 		fmt.Printf("🛑 Guardian HALT (after %s):\n%s\n", phase, eval)
+		// NOTE: Emit is context-unaware (eventgraph Runtime.Emit doesn't take ctx).
+		// This is acceptable — the HALT event is best-effort observability, not
+		// control flow. The pipeline stops regardless of whether the event persists.
 		if _, err := p.guardian.Runtime.Emit(event.AgentEscalatedContent{
 			AgentID:   p.guardian.Runtime.ID(),
 			Authority: p.humanID,

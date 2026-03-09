@@ -43,8 +43,8 @@ func TestBudgetTokensExceeded(t *testing.T) {
 	if !errors.As(err, &budgetErr) {
 		t.Fatalf("expected BudgetExceededError, got %T", err)
 	}
-	if budgetErr.Resource != "tokens" {
-		t.Errorf("resource = %q, want %q", budgetErr.Resource, "tokens")
+	if budgetErr.Resource != ResourceTokens {
+		t.Errorf("resource = %q, want %q", budgetErr.Resource, ResourceTokens)
 	}
 }
 
@@ -60,8 +60,8 @@ func TestBudgetCostExceeded(t *testing.T) {
 	if !errors.As(err, &budgetErr) {
 		t.Fatalf("expected BudgetExceededError, got %T", err)
 	}
-	if budgetErr.Resource != "cost" {
-		t.Errorf("resource = %q, want %q", budgetErr.Resource, "cost")
+	if budgetErr.Resource != ResourceCost {
+		t.Errorf("resource = %q, want %q", budgetErr.Resource, ResourceCost)
 	}
 }
 
@@ -79,8 +79,8 @@ func TestBudgetIterationsExceeded(t *testing.T) {
 	if !errors.As(err, &budgetErr) {
 		t.Fatalf("expected BudgetExceededError, got %T", err)
 	}
-	if budgetErr.Resource != "iterations" {
-		t.Errorf("resource = %q, want %q", budgetErr.Resource, "iterations")
+	if budgetErr.Resource != ResourceIterations {
+		t.Errorf("resource = %q, want %q", budgetErr.Resource, ResourceIterations)
 	}
 }
 
@@ -97,8 +97,8 @@ func TestBudgetDurationExceeded(t *testing.T) {
 	if !errors.As(err, &budgetErr) {
 		t.Fatalf("expected BudgetExceededError, got %T", err)
 	}
-	if budgetErr.Resource != "duration" {
-		t.Errorf("resource = %q, want %q", budgetErr.Resource, "duration")
+	if budgetErr.Resource != ResourceDuration {
+		t.Errorf("resource = %q, want %q", budgetErr.Resource, ResourceDuration)
 	}
 }
 

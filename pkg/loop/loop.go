@@ -265,16 +265,18 @@ func (l *Loop) reason(ctx context.Context, prompt string) (string, int, error) {
 
 // checkResponse examines the LLM response for stopping signals.
 // Priority: HALT > ESCALATE > TASK_DONE (HALT is constitutional, must never be masked).
+//
+// Signals must appear as standalone directives — either at the start of a line
+// or as a distinct word (e.g. "HALT:" or "TASK_DONE"). This avoids false positives
+// from LLM narration like "brought to a halt" or "the task done by the agent".
 func (l *Loop) checkResponse(ctx context.Context, response string, iteration int) *Result {
-	upper := strings.ToUpper(response)
-
 	// HALT is the highest priority — Guardian emergency stop.
-	if strings.Contains(upper, "HALT") {
+	if containsSignal(response, "HALT") {
 		r := l.result(StopHalt, iteration, response)
 		return &r
 	}
 
-	if strings.Contains(upper, "ESCALATE") {
+	if containsSignal(response, "ESCALATE") {
 		// Record escalation event.
 		if _, err := l.agent.Runtime.Escalate(ctx, l.humanID,
 			fmt.Sprintf("loop iteration %d: %s", iteration, response)); err != nil {
@@ -284,7 +286,7 @@ func (l *Loop) checkResponse(ctx context.Context, response string, iteration int
 		return &r
 	}
 
-	if strings.Contains(upper, "TASK_DONE") {
+	if containsSignal(response, "TASK_DONE") {
 		// Record completion.
 		if _, err := l.agent.Runtime.Learn(ctx,
 			"task completed after loop iteration "+fmt.Sprint(iteration), "loop"); err != nil {
@@ -295,6 +297,31 @@ func (l *Loop) checkResponse(ctx context.Context, response string, iteration int
 	}
 
 	return nil
+}
+
+// containsSignal checks whether a signal keyword appears as a directive in the
+// response — at line start or preceded by whitespace/punctuation. This prevents
+// false positives from embedded words like "halt" in "brought to a halt".
+func containsSignal(response, signal string) bool {
+	upper := strings.ToUpper(response)
+	signal = strings.ToUpper(signal)
+
+	idx := 0
+	for {
+		pos := strings.Index(upper[idx:], signal)
+		if pos < 0 {
+			return false
+		}
+		abs := idx + pos
+		// Valid if at start of string or preceded by newline/space/punctuation.
+		if abs == 0 || upper[abs-1] == '\n' || upper[abs-1] == ' ' || upper[abs-1] == '.' || upper[abs-1] == ':' || upper[abs-1] == '!' {
+			return true
+		}
+		idx = abs + len(signal)
+		if idx >= len(upper) {
+			return false
+		}
+	}
 }
 
 // isQuiescent returns true if the response indicates the agent has nothing to do.
