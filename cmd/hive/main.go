@@ -25,6 +25,13 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	name := flag.String("name", "", "Product name (derived by CTO if not provided)")
 	human := flag.String("human", "", "Human operator name (required)")
 	idea := flag.String("idea", "", "Product idea (natural language description)")
@@ -35,12 +42,10 @@ func main() {
 	flag.Parse()
 
 	if *idea == "" && *url == "" && *spec == "" {
-		fmt.Fprintln(os.Stderr, "Usage: hive --human name [--store postgres://...] [--name product-name] --idea 'description' | --url 'https://...' | --spec path/to/spec.cg")
-		os.Exit(1)
+		return fmt.Errorf("usage: hive --human name [--store postgres://...] [--name product-name] --idea 'description' | --url 'https://...' | --spec path/to/spec.cg")
 	}
 	if *human == "" {
-		fmt.Fprintln(os.Stderr, "Error: --human is required (the name of the human operator)")
-		os.Exit(1)
+		return fmt.Errorf("--human is required (the name of the human operator)")
 	}
 
 	ctx := context.Background()
@@ -58,16 +63,14 @@ func main() {
 		var err error
 		pool, err = pgxpool.New(ctx, dsn)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "postgres: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("postgres: %w", err)
 		}
 		defer pool.Close()
 	}
 
 	s, err := openStore(ctx, pool)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "store: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("store: %w", err)
 	}
 	defer func() {
 		if err := s.Close(); err != nil {
@@ -78,15 +81,13 @@ func main() {
 	// Actor store — Postgres when pool provided, in-memory otherwise.
 	actors, err := openActorStore(ctx, pool)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "actor store: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("actor store: %w", err)
 	}
 
 	// State store — durable KV for primitive state, trust, agent memory.
 	states, err := openStateStore(ctx, pool)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "state store: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("state store: %w", err)
 	}
 
 	// Trust model — load persisted state if available.
@@ -103,8 +104,7 @@ func main() {
 	// In production this happens via Google auth — this is the CLI bootstrap path.
 	humanID, err := registerHuman(actors, *human)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "register human: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("register human: %w", err)
 	}
 
 	// Create and run pipeline — uses Claude CLI (Max plan, flat rate)
@@ -117,8 +117,7 @@ func main() {
 		WorkDir: *workdir,
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "pipeline: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("pipeline: %w", err)
 	}
 
 	// Run the pipeline — Guardian checks run automatically after each phase
@@ -128,8 +127,7 @@ func main() {
 		Description: *idea,
 		SpecFile:    *spec,
 	}); err != nil {
-		fmt.Fprintf(os.Stderr, "pipeline failed: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("pipeline failed: %w", err)
 	}
 
 	// Persist trust state for next run (only if load succeeded — avoids
@@ -144,6 +142,7 @@ func main() {
 	count, _ := s.Count()
 	fmt.Printf("\nEvents recorded: %d\n", count)
 	fmt.Printf("Agents active: %d\n", len(p.Agents()))
+	return nil
 }
 
 // openStore creates a Store from a shared pool.
