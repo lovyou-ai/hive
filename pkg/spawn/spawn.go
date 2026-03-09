@@ -103,9 +103,15 @@ func (s *Spawner) Spawn(_ context.Context, req SpawnRequest) (SpawnResult, error
 		}
 	}
 
+	// Emit authority.requested on the graph.
+	authReqEventID, err := s.emitAuthorityRequested(reqEventID, req)
+	if err != nil {
+		return SpawnResult{}, fmt.Errorf("emit authority requested: %w", err)
+	}
+
 	// Authority check — all spawns require human approval.
 	authReq := authority.Request{
-		ID:            reqEventID,
+		ID:            authReqEventID,
 		Action:        fmt.Sprintf("spawn agent %q as %s", req.Name, req.Role),
 		Actor:         req.RequestedBy,
 		Level:         event.AuthorityLevelRequired,
@@ -114,8 +120,15 @@ func (s *Spawner) Spawn(_ context.Context, req SpawnRequest) (SpawnResult, error
 	}
 
 	resolution := s.gate.Check(authReq)
+
+	// Emit authority.resolved — causally linked to authority.requested.
+	resolvedEventID, err := s.emitAuthorityResolved(authReqEventID, resolution)
+	if err != nil {
+		return SpawnResult{}, fmt.Errorf("emit authority resolved: %w", err)
+	}
+
 	if !resolution.Approved {
-		if err := s.emitSpawnDenied(reqEventID, resolution.Reason); err != nil {
+		if err := s.emitSpawnDenied(resolvedEventID, resolution.Reason); err != nil {
 			return SpawnResult{}, fmt.Errorf("emit spawn denied: %w", err)
 		}
 		return SpawnResult{
@@ -138,7 +151,7 @@ func (s *Spawner) Spawn(_ context.Context, req SpawnRequest) (SpawnResult, error
 	}
 
 	// Emit lifecycle events.
-	if err := s.emitLifecycleEvents(a.ID(), req, reqEventID); err != nil {
+	if err := s.emitLifecycleEvents(a.ID(), pk, req, resolvedEventID); err != nil {
 		return SpawnResult{}, fmt.Errorf("lifecycle events: %w", err)
 	}
 
@@ -151,14 +164,18 @@ func (s *Spawner) Spawn(_ context.Context, req SpawnRequest) (SpawnResult, error
 	}, nil
 }
 
+// ErrTrustNotConfigured is returned when a trust gate check is needed but no
+// trust model was provided. This is a configuration error, not a policy denial.
+var ErrTrustNotConfigured = fmt.Errorf("trust model not configured")
+
 // checkTrustGate validates the requester has sufficient trust for the target role.
 func (s *Spawner) checkTrustGate(req SpawnRequest) error {
 	gate := roles.TrustGate(req.Role)
 	if gate <= 0 {
-		return nil
+		return nil // no gate for this role
 	}
 	if s.trustModel == nil {
-		return fmt.Errorf("trust gate %.2f for role %s: no trust model configured", gate, req.Role)
+		return fmt.Errorf("trust gate %.2f for role %s: %w", gate, req.Role, ErrTrustNotConfigured)
 	}
 
 	requester, err := s.actors.Get(req.RequestedBy)
@@ -180,8 +197,6 @@ func (s *Spawner) checkTrustGate(req SpawnRequest) error {
 }
 
 // emitSpawnRequested records that an agent spawn was requested.
-// Uses agent.acted with Action="spawn_requested" to distinguish from
-// escalation events (which have different semantics).
 func (s *Spawner) emitSpawnRequested(req SpawnRequest) (types.EventID, error) {
 	content := event.AgentActedContent{
 		AgentID: req.RequestedBy,
@@ -195,28 +210,74 @@ func (s *Spawner) emitSpawnRequested(req SpawnRequest) (types.EventID, error) {
 	return ev.ID(), nil
 }
 
-// emitSpawnDenied records that a spawn was denied.
-func (s *Spawner) emitSpawnDenied(reqID types.EventID, reason string) error {
+// emitAuthorityRequested records an authority.requested event on the graph.
+func (s *Spawner) emitAuthorityRequested(causeID types.EventID, req SpawnRequest) (types.EventID, error) {
+	content := event.AuthorityRequestContent{
+		Action:        fmt.Sprintf("spawn agent %q as %s", req.Name, req.Role),
+		Actor:         req.RequestedBy,
+		Level:         event.AuthorityLevelRequired,
+		Justification: req.Justification,
+		Causes:        types.MustNonEmpty([]types.EventID{causeID}),
+	}
+	ev, err := s.appendEventAfter("authority.requested", req.RequestedBy, content, causeID)
+	if err != nil {
+		return types.EventID{}, err
+	}
+	return ev.ID(), nil
+}
+
+// emitAuthorityResolved records an authority.resolved event on the graph.
+func (s *Spawner) emitAuthorityResolved(reqEventID types.EventID, res authority.Resolution) (types.EventID, error) {
+	reason := types.None[string]()
+	if res.Reason != "" {
+		reason = types.Some(res.Reason)
+	}
+	content := event.AuthorityResolvedContent{
+		RequestID: reqEventID,
+		Approved:  res.Approved,
+		Resolver:  res.Resolver,
+		Reason:    reason,
+	}
+	ev, err := s.appendEventAfter("authority.resolved", s.humanID, content, reqEventID)
+	if err != nil {
+		return types.EventID{}, err
+	}
+	return ev.ID(), nil
+}
+
+// emitSpawnDenied records that a spawn was denied, causally linked to the
+// authority resolution event (fix 3: explicit causal chain, not store head).
+func (s *Spawner) emitSpawnDenied(causeID types.EventID, reason string) error {
 	content := event.AgentActedContent{
 		AgentID: s.humanID,
 		Action:  "spawn_denied",
 		Target:  reason,
 	}
-	_, err := s.appendEvent("agent.acted", s.humanID, content)
+	_, err := s.appendEventAfter("agent.acted", s.humanID, content, causeID)
 	return err
 }
 
 // emitLifecycleEvents emits identity creation, lifespan start, and role assignment events.
-func (s *Spawner) emitLifecycleEvents(actorID types.ActorID, req SpawnRequest, causeID types.EventID) error {
-	// agent.acted — agent was created
-	actedContent := event.AgentActedContent{
-		AgentID: s.humanID,
-		Action:  "spawn_agent",
-		Target:  fmt.Sprintf("%s as %s", req.Name, req.Role),
+func (s *Spawner) emitLifecycleEvents(actorID types.ActorID, pk types.PublicKey, req SpawnRequest, causeID types.EventID) error {
+	// agent.identity.created — records the agent's public key and type.
+	identityContent := event.AgentIdentityCreatedContent{
+		AgentID:   actorID,
+		PublicKey: pk,
+		AgentType: string(event.ActorTypeAI),
 	}
-	actedEv, err := s.appendEvent("agent.acted", s.humanID, actedContent)
+	identityEv, err := s.appendEventAfter("agent.identity.created", s.humanID, identityContent, causeID)
 	if err != nil {
-		return fmt.Errorf("acted event: %w", err)
+		return fmt.Errorf("identity created event: %w", err)
+	}
+
+	// agent.lifespan.started — records agent birth.
+	lifespanContent := event.AgentLifespanStartedContent{
+		AgentID: actorID,
+		Started: types.Now(),
+	}
+	lifespanEv, err := s.appendEventAfter("agent.lifespan.started", actorID, lifespanContent, identityEv.ID())
+	if err != nil {
+		return fmt.Errorf("lifespan started event: %w", err)
 	}
 
 	// agent.role.assigned
@@ -224,7 +285,7 @@ func (s *Spawner) emitLifecycleEvents(actorID types.ActorID, req SpawnRequest, c
 		AgentID: actorID,
 		Role:    string(req.Role),
 	}
-	_, err = s.appendEventAfter("agent.role.assigned", actorID, roleContent, actedEv.ID())
+	_, err = s.appendEventAfter("agent.role.assigned", actorID, roleContent, lifespanEv.ID())
 	if err != nil {
 		return fmt.Errorf("role assigned event: %w", err)
 	}

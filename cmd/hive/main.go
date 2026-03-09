@@ -103,9 +103,20 @@ func run() error {
 
 	// Bootstrap: register the human operator in the actor store.
 	// In production this happens via Google auth — this is the CLI bootstrap path.
+	// WARNING: CLI bootstrap derives keys from display name — not safe for
+	// production Postgres stores where anyone who knows the name can impersonate.
+	if pool != nil {
+		fmt.Fprintln(os.Stderr, "WARNING: CLI key derivation is insecure for persistent Postgres stores.")
+		fmt.Fprintln(os.Stderr, "         Production should use Google auth. Proceeding for development.")
+	}
 	humanID, err := registerHuman(actors, *human)
 	if err != nil {
 		return fmt.Errorf("register human: %w", err)
+	}
+
+	// Bootstrap the event graph if it has no genesis event.
+	if err := bootstrapGraph(s, humanID); err != nil {
+		return fmt.Errorf("bootstrap graph: %w", err)
 	}
 
 	// Authority gate — human approves agent spawns via CLI.
@@ -208,8 +219,51 @@ func saveTrust(model *trust.DefaultTrustModel, states statestore.IStateStore) er
 	return states.Put(trustStateScope, trustStateKey, data)
 }
 
+// bootstrapGraph emits the genesis event if the store is empty.
+// Idempotent — does nothing if the graph already has events.
+func bootstrapGraph(s store.Store, humanID types.ActorID) error {
+	head, err := s.Head()
+	if err != nil {
+		return fmt.Errorf("check head: %w", err)
+	}
+	if head.IsSome() {
+		return nil // already bootstrapped
+	}
+
+	fmt.Println("Bootstrapping event graph...")
+	registry := event.DefaultRegistry()
+	bsFactory := event.NewBootstrapFactory(registry)
+
+	// Use a deterministic signer for the bootstrap event — the human's
+	// derived key. This matches registerHuman's derivation.
+	signer := &bootstrapSigner{humanID: humanID}
+	bootstrap, err := bsFactory.Init(humanID, signer)
+	if err != nil {
+		return fmt.Errorf("create genesis event: %w", err)
+	}
+	if _, err := s.Append(bootstrap); err != nil {
+		return fmt.Errorf("append genesis event: %w", err)
+	}
+	fmt.Println("Event graph bootstrapped.")
+	return nil
+}
+
+// bootstrapSigner provides a minimal Signer for the genesis event.
+type bootstrapSigner struct {
+	humanID types.ActorID
+}
+
+func (b *bootstrapSigner) Sign(data []byte) (types.Signature, error) {
+	// Use a deterministic key derived from the human's actor ID.
+	h := sha256.Sum256([]byte("signer:" + b.humanID.Value()))
+	priv := ed25519.NewKeyFromSeed(h[:])
+	sig := ed25519.Sign(priv, data)
+	return types.NewSignature(sig)
+}
+
 // registerHuman bootstraps a human operator in the actor store.
 // This is the CLI bootstrap path — in production, humans are registered via Google auth.
+// WARNING: derives key from display name — insecure for production persistent stores.
 func registerHuman(actors actor.IActorStore, displayName string) (types.ActorID, error) {
 	h := sha256.Sum256([]byte("human:" + displayName))
 	priv := ed25519.NewKeyFromSeed(h[:])

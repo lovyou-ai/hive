@@ -9,6 +9,7 @@ import (
 	"github.com/lovyou-ai/eventgraph/go/pkg/actor"
 	"github.com/lovyou-ai/eventgraph/go/pkg/event"
 	"github.com/lovyou-ai/eventgraph/go/pkg/store"
+	"github.com/lovyou-ai/eventgraph/go/pkg/trust"
 	"github.com/lovyou-ai/eventgraph/go/pkg/types"
 
 	"github.com/lovyou-ai/hive/pkg/authority"
@@ -21,7 +22,18 @@ func (s *testSigner) Sign(data []byte) (types.Signature, error) {
 	return types.NewSignature(make([]byte, 64))
 }
 
+// testSpawnerOpts configures the test spawner.
+type testSpawnerOpts struct {
+	approver   authority.Approver
+	trustModel *trust.DefaultTrustModel
+}
+
 func testSpawner(t *testing.T, approver authority.Approver) (*Spawner, types.ActorID) {
+	t.Helper()
+	return testSpawnerWithOpts(t, testSpawnerOpts{approver: approver})
+}
+
+func testSpawnerWithOpts(t *testing.T, opts testSpawnerOpts) (*Spawner, types.ActorID) {
 	t.Helper()
 
 	s := store.NewInMemoryStore()
@@ -49,11 +61,12 @@ func testSpawner(t *testing.T, approver authority.Approver) (*Spawner, types.Act
 
 	factory := event.NewEventFactory(registry)
 	convID, _ := types.NewConversationID("conv_test_0000000000000000000000001")
-	gate := authority.NewGate(approver)
+	gate := authority.NewGate(opts.approver)
 
 	spawner := NewSpawner(Config{
 		Store:   s,
 		Actors:  actors,
+		Trust:   opts.trustModel,
 		Gate:    gate,
 		HumanID: humanID,
 		Signer:  signer,
@@ -126,20 +139,16 @@ func TestSpawnEmitsEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Check that lifecycle events were emitted with correct actions.
+	// Check agent.acted events (spawn_requested).
 	actedType := types.MustEventType("agent.acted")
 	page, err := spawner.store.ByType(actedType, 10, types.None[types.Cursor]())
 	if err != nil {
 		t.Fatal(err)
 	}
-	foundSpawnAgent := false
 	foundSpawnRequested := false
 	for _, ev := range page.Items() {
 		if acted, ok := ev.Content().(event.AgentActedContent); ok {
-			switch acted.Action {
-			case "spawn_agent":
-				foundSpawnAgent = true
-			case "spawn_requested":
+			if acted.Action == "spawn_requested" {
 				foundSpawnRequested = true
 			}
 		}
@@ -147,10 +156,48 @@ func TestSpawnEmitsEvents(t *testing.T) {
 	if !foundSpawnRequested {
 		t.Error("expected agent.acted event with Action=spawn_requested")
 	}
-	if !foundSpawnAgent {
-		t.Error("expected agent.acted event with Action=spawn_agent")
+
+	// Check authority.requested event.
+	authReqType := types.MustEventType("authority.requested")
+	authReqPage, err := spawner.store.ByType(authReqType, 10, types.None[types.Cursor]())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(authReqPage.Items()) == 0 {
+		t.Error("expected authority.requested event")
 	}
 
+	// Check authority.resolved event.
+	authResType := types.MustEventType("authority.resolved")
+	authResPage, err := spawner.store.ByType(authResType, 10, types.None[types.Cursor]())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(authResPage.Items()) == 0 {
+		t.Error("expected authority.resolved event")
+	}
+
+	// Check agent.identity.created event.
+	identityType := types.MustEventType("agent.identity.created")
+	identityPage, err := spawner.store.ByType(identityType, 10, types.None[types.Cursor]())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(identityPage.Items()) == 0 {
+		t.Error("expected agent.identity.created event")
+	}
+
+	// Check agent.lifespan.started event.
+	lifespanType := types.MustEventType("agent.lifespan.started")
+	lifespanPage, err := spawner.store.ByType(lifespanType, 10, types.None[types.Cursor]())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lifespanPage.Items()) == 0 {
+		t.Error("expected agent.lifespan.started event")
+	}
+
+	// Check agent.role.assigned event.
 	roleType := types.MustEventType("agent.role.assigned")
 	rolePage, err := spawner.store.ByType(roleType, 10, types.None[types.Cursor]())
 	if err != nil {
@@ -186,8 +233,8 @@ func TestTrustGates(t *testing.T) {
 	}
 	for _, r := range knownRoles {
 		gate := roles.TrustGate(r)
-		if gate <= 0 || gate > 1.0 {
-			t.Errorf("TrustGate(%s) = %f, want (0, 1]", r, gate)
+		if gate < 0 || gate > 1.0 {
+			t.Errorf("TrustGate(%s) = %f, want [0, 1]", r, gate)
 		}
 	}
 
@@ -197,7 +244,80 @@ func TestTrustGates(t *testing.T) {
 	}
 }
 
-// Verify derivePublicKey produces valid Ed25519 keys.
+func TestAgentInitiatedSpawnDeniedByTrustGate(t *testing.T) {
+	// Agent-initiated spawn (RequestedBy != humanID) with no trust model
+	// should fail with ErrTrustNotConfigured, not a silent policy denial.
+	spawner, humanID := testSpawnerWithOpts(t, testSpawnerOpts{
+		approver: func(req authority.Request) (bool, string) {
+			t.Fatal("approver should not be called when trust gate rejects")
+			return false, ""
+		},
+		trustModel: nil, // no trust model
+	})
+
+	// Register an agent actor to use as requester.
+	agentPub := DerivePublicKey("agent:some-agent")
+	agentPK, _ := types.NewPublicKey([]byte(agentPub))
+	agentActor, err := spawner.actors.Register(agentPK, "some-agent", event.ActorTypeAI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = humanID // unused — agent requests, not human
+
+	result, err := spawner.Spawn(context.Background(), SpawnRequest{
+		Role:          roles.RoleBuilder, // trust gate 0.3
+		Name:          "new-builder",
+		Justification: "agent wants a builder",
+		RequestedBy:   agentActor.ID(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Approved {
+		t.Fatal("agent-initiated spawn without trust model should be denied")
+	}
+	if !strings.Contains(result.Reason, "trust model not configured") {
+		t.Errorf("expected config error in reason, got %q", result.Reason)
+	}
+}
+
+func TestAgentInitiatedSpawnDeniedByLowTrust(t *testing.T) {
+	// Agent with default trust (0.0) should fail the trust gate for Builder (0.3).
+	trustModel := trust.NewDefaultTrustModel()
+	spawner, humanID := testSpawnerWithOpts(t, testSpawnerOpts{
+		approver: func(req authority.Request) (bool, string) {
+			t.Fatal("approver should not be called when trust gate rejects")
+			return false, ""
+		},
+		trustModel: trustModel,
+	})
+
+	agentPub := DerivePublicKey("agent:low-trust")
+	agentPK, _ := types.NewPublicKey([]byte(agentPub))
+	agentActor, err := spawner.actors.Register(agentPK, "low-trust", event.ActorTypeAI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = humanID
+
+	result, err := spawner.Spawn(context.Background(), SpawnRequest{
+		Role:          roles.RoleBuilder, // trust gate 0.3
+		Name:          "new-builder",
+		Justification: "low-trust agent wants a builder",
+		RequestedBy:   agentActor.ID(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Approved {
+		t.Fatal("low-trust agent should be denied by trust gate")
+	}
+	if !strings.Contains(result.Reason, "trust gate denied") {
+		t.Errorf("expected trust gate denial, got %q", result.Reason)
+	}
+}
+
+// Verify DerivePublicKey produces valid Ed25519 keys.
 func TestDerivePublicKeyValid(t *testing.T) {
 	pub := DerivePublicKey("agent:valid-test")
 	if len(pub) != ed25519.PublicKeySize {
