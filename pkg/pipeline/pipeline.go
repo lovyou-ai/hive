@@ -1872,7 +1872,7 @@ func (p *Pipeline) guardianCheck(ctx context.Context, phase string) bool {
 	if p.skipGuardian {
 		return false
 	}
-	events, err := p.guardian.Runtime.Memory(20)
+	events, err := p.guardian.Runtime.Memory(200)
 	if err != nil || len(events) == 0 {
 		return false
 	}
