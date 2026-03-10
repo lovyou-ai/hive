@@ -353,7 +353,7 @@ func testAgentWithRole(t *testing.T, provider intelligence.Provider, role roles.
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = rt.Boot("ai", "mock-model", "standard", []string{"test"}, types.MustDomainScope("test"), humanID)
+	_, err = rt.Boot(rt.PublicKey(), "ai", "mock-model", "standard", []string{"test"}, types.MustDomainScope("test"), humanID)
 	if err != nil {
 		t.Fatal(err)
 	}

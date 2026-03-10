@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/lovyou-ai/eventgraph/go/pkg/event"
 	"github.com/lovyou-ai/eventgraph/go/pkg/intelligence"
 	"github.com/lovyou-ai/eventgraph/go/pkg/store"
 	"github.com/lovyou-ai/eventgraph/go/pkg/types"
@@ -94,19 +93,18 @@ type Agent struct {
 
 // AgentConfig configures a new hive agent.
 type AgentConfig struct {
-	Role     Role
-	Name     string
-	ActorID  types.ActorID         // from the actor store — no magic strings
-	Store    store.Store           // shared graph — all agents use the same store
-	Provider intelligence.Provider
-	HumanID  types.ActorID         // the human operator (from the actor store)
+	Role      Role
+	Name      string
+	ActorID   types.ActorID         // from the actor store — no magic strings
+	PublicKey types.PublicKey        // the agent's registered public key
+	Store     store.Store           // shared graph — all agents use the same store
+	Provider  intelligence.Provider
+	HumanID   types.ActorID         // the human operator (from the actor store)
 }
 
 // NewAgent creates and bootstraps a hive agent with the given role.
-// Emits agent.identity.created before Boot() to ensure correct causal ordering
-// on the shared graph — identity must exist before lifespan or role events.
-// Boot() emits its own identity.created as part of its composition; the explicit
-// pre-Boot emission establishes the causal anchor the Guardian requires.
+// Boot() emits identity.created as its first event using the agent's registered
+// public key, ensuring correct causal ordering on the shared graph.
 func NewAgent(ctx context.Context, cfg AgentConfig) (*Agent, error) {
 	rt, err := intelligence.NewRuntime(ctx, intelligence.RuntimeConfig{
 		AgentID:  cfg.ActorID,
@@ -117,30 +115,15 @@ func NewAgent(ctx context.Context, cfg AgentConfig) (*Agent, error) {
 		return nil, fmt.Errorf("runtime: %w", err)
 	}
 
-	// Emit agent.identity.created before Boot() so identity is causally first
-	// on the shared store. Boot() in eventgraph emits its own identity.created
-	// as part of the Boot composition, but on a shared graph other agents'
-	// events (lifespan.started, role.assigned from Spawner) may already be
-	// interleaved. This explicit emission ensures the Guardian sees identity
-	// established before any subsequent lifecycle events.
-	_, err = rt.Emit(event.AgentIdentityCreatedContent{
-		AgentID:   cfg.ActorID,
-		PublicKey: types.MustPublicKey(make([]byte, 32)), // placeholder — Boot() emits canonical identity
-		AgentType: string(event.ActorTypeAI),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("pre-boot identity: %w", err)
-	}
-
-	// Boot with role-specific soul values
-	humanID := cfg.HumanID
+	// Boot with the agent's registered public key and role-specific soul values.
 	_, err = rt.Boot(
+		cfg.PublicKey,
 		string(event.ActorTypeAI),
 		cfg.Provider.Model(),
 		CostTierStandard,
 		soulValues(cfg.Role),
 		types.MustDomainScope("hive"),
-		humanID,
+		cfg.HumanID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("boot: %w", err)
