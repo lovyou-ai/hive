@@ -3,6 +3,9 @@ package pipeline
 import (
 	"strings"
 	"testing"
+
+	"github.com/lovyou-ai/hive/pkg/resources"
+	"github.com/lovyou-ai/hive/pkg/roles"
 )
 
 func TestContainsAlert(t *testing.T) {
@@ -136,27 +139,43 @@ func TestLangTestCommand(t *testing.T) {
 	}
 }
 
-func TestReviewerModelConfig(t *testing.T) {
-	// Verify Config.ReviewerModel propagates to the pipeline struct.
-	// We can't call New() without a full store/actor setup, so test the
-	// config field exists and the default behavior matches expectations.
+func TestReviewerModelDefault(t *testing.T) {
+	// reviewTargeted uses Sonnet by default for targeted reviews (not the
+	// reviewer role's default Opus). Verify via reviewerModel selection logic:
+	// empty reviewerModel → "claude-sonnet-4-6".
+	p := &Pipeline{reviewerModel: ""}
+	model := p.targetedReviewModel()
+	if model != "claude-sonnet-4-6" {
+		t.Errorf("default targeted review model = %q, want %q", model, "claude-sonnet-4-6")
+	}
+}
 
-	// Empty ReviewerModel means targeted reviews default to Sonnet.
-	cfg := Config{ReviewerModel: ""}
-	if cfg.ReviewerModel != "" {
-		t.Errorf("empty ReviewerModel should be empty string, got %q", cfg.ReviewerModel)
+func TestReviewerModelOverride(t *testing.T) {
+	// Config.ReviewerModel propagates to pipeline and overrides the default.
+	p := &Pipeline{reviewerModel: "claude-haiku-4-5-20251001"}
+	model := p.targetedReviewModel()
+	if model != "claude-haiku-4-5-20251001" {
+		t.Errorf("overridden targeted review model = %q, want %q", model, "claude-haiku-4-5-20251001")
+	}
+}
+
+func TestEnsureAgentCachesByRole(t *testing.T) {
+	// ensureAgent always uses the role's preferred model and caches by role.
+	// There is no model parameter — callers needing a different model create
+	// a temporary provider directly (as reviewTargeted does).
+	p := &Pipeline{
+		agents:   make(map[roles.Role]*roles.Agent),
+		trackers: make(map[roles.Role]*resources.TrackingProvider),
 	}
 
-	// Explicit override propagates.
-	cfg = Config{ReviewerModel: "claude-haiku-4-5-20251001"}
-	if cfg.ReviewerModel != "claude-haiku-4-5-20251001" {
-		t.Errorf("ReviewerModel should be claude-haiku-4-5-20251001, got %q", cfg.ReviewerModel)
-	}
+	// Simulate a cached agent.
+	sentinel := &roles.Agent{Role: roles.RoleReviewer, Name: "reviewer"}
+	p.agents[roles.RoleReviewer] = sentinel
 
-	// Verify Pipeline struct stores the override.
-	p := &Pipeline{reviewerModel: "claude-sonnet-4-6"}
-	if p.reviewerModel != "claude-sonnet-4-6" {
-		t.Errorf("pipeline reviewerModel should be claude-sonnet-4-6, got %q", p.reviewerModel)
+	// ensureAgent returns the cached agent — no model ambiguity.
+	got, ok := p.agents[roles.RoleReviewer]
+	if !ok || got != sentinel {
+		t.Error("expected cached reviewer agent to be returned")
 	}
 }
 

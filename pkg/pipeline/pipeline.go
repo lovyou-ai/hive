@@ -202,14 +202,9 @@ func (p *Pipeline) providerForRoleWithModel(role roles.Role, model string) (inte
 // ensureAgent creates an agent of the given role if it doesn't exist yet.
 // When a spawner is configured, spawn requests go through the authority gate
 // (human approval). Without a spawner, agents are created directly.
+// Always uses the role's preferred model — callers needing a different model
+// should create a temporary provider via providerForRoleWithModel instead.
 func (p *Pipeline) ensureAgent(ctx context.Context, role roles.Role, name string) (*roles.Agent, error) {
-	return p.ensureAgentWithModel(ctx, role, name, "")
-}
-
-// ensureAgentWithModel creates an agent like ensureAgent, but allows overriding
-// the model. An empty model string uses the role's default (PreferredModel).
-// Used for targeted reviews where Sonnet suffices instead of Opus.
-func (p *Pipeline) ensureAgentWithModel(ctx context.Context, role roles.Role, name string, model string) (*roles.Agent, error) {
 	if agent, ok := p.agents[role]; ok {
 		return agent, nil
 	}
@@ -245,9 +240,7 @@ func (p *Pipeline) ensureAgentWithModel(ctx context.Context, role roles.Role, na
 		actorID = agentActor.ID()
 	}
 
-	if model == "" {
-		model = roles.PreferredModel(role)
-	}
+	model := roles.PreferredModel(role)
 	rawProvider, err := p.providerForRoleWithModel(role, model)
 	if err != nil {
 		return nil, fmt.Errorf("provider for %s: %w", role, err)
@@ -497,8 +490,11 @@ Project structure:
 	}
 	fmt.Printf("Branch: %s\n", branchName)
 
-	// Capture base commit before branching — reviewer diffs against this
-	baseCommit, _ := product.HeadCommit()
+	// Capture base commit before building — reviewer diffs against this.
+	baseCommit, err := product.HeadCommit()
+	if err != nil {
+		return fmt.Errorf("capture base commit: %w", err)
+	}
 
 	// ── Phase 3: Modify ──
 	fmt.Println("═══ Phase 3: Modify ═══")
@@ -681,28 +677,41 @@ CRITICAL OUTPUT FORMAT RULES:
 	return merged, nil
 }
 
-// reviewTargeted reviews changes against the original codebase using git diff.
-// Uses Sonnet by default — targeted reviews only check a focused diff, not deep
-// architectural reasoning. Override with Config.ReviewerModel.
-func (p *Pipeline) reviewTargeted(ctx context.Context, baseCommit string, ctoAnalysis string, changeReq string, lang string) (string, bool, error) {
-	// Targeted reviews use a lighter model (Sonnet) since they only check a diff.
-	model := p.reviewerModel
-	if model == "" {
-		model = "claude-sonnet-4-6"
+// targetedReviewModel returns the model to use for targeted reviews.
+// Defaults to Sonnet — targeted reviews only check a focused diff.
+func (p *Pipeline) targetedReviewModel() string {
+	if p.reviewerModel != "" {
+		return p.reviewerModel
 	}
-	reviewer, err := p.ensureAgentWithModel(ctx, roles.RoleReviewer, "reviewer", model)
-	if err != nil {
-		return "", false, err
-	}
+	return "claude-sonnet-4-6"
+}
 
-	// Use git diff from the base commit — only the builder's changes, not history
-	diff, _ := p.product.GitDiff(baseCommit)
+// reviewTargeted reviews changes against the original codebase using git diff.
+// Uses a temporary Sonnet provider — targeted reviews only check a focused diff,
+// not deep architectural reasoning. Override with Config.ReviewerModel.
+// The provider is created fresh each call, avoiding the agent cache entirely.
+func (p *Pipeline) reviewTargeted(ctx context.Context, baseCommit string, ctoAnalysis string, changeReq string, lang string) (string, bool, error) {
+	// Use git diff from the base commit — only the builder's changes, not history.
+	diff, err := p.product.GitDiff(baseCommit)
+	if err != nil {
+		return "", false, fmt.Errorf("git diff from %s: %w", baseCommit, err)
+	}
 	if diff == "" {
 		return "No changes to review.", true, nil
 	}
 
-	_, review, err := reviewer.Runtime.Evaluate(ctx, "change_review",
-		fmt.Sprintf(`Review this diff to a %s codebase. Be CONCISE.
+	// Targeted reviews use a temporary Sonnet provider — no need for a full
+	// reviewer agent. This avoids the agent cache entirely (an Opus reviewer
+	// cached from a greenfield run would silently ignore a model override).
+	model := p.targetedReviewModel()
+	provider, err := p.providerForRoleWithModel(roles.RoleReviewer, model)
+	if err != nil {
+		return "", false, fmt.Errorf("review provider: %w", err)
+	}
+	tracker := resources.NewTrackingProvider(provider)
+	fmt.Printf("  ↳ targeted review using %s\n", model)
+
+	prompt := fmt.Sprintf(`Review this diff to a %s codebase. Be CONCISE.
 
 CHANGE REQUEST: %s
 CTO ANALYSIS: %s
@@ -711,10 +720,13 @@ DIFF:
 %s
 
 Check: correctness, style, risks. Skip boilerplate — no tables, no headers, no section labels.
-End with one word: APPROVED or CHANGES NEEDED: <specific issues>`, lang, changeReq, ctoAnalysis, diff))
+End with one word: APPROVED or CHANGES NEEDED: <specific issues>`, lang, changeReq, ctoAnalysis, diff)
+
+	resp, err := tracker.Reason(ctx, prompt, nil)
 	if err != nil {
 		return "", false, fmt.Errorf("review: %w", err)
 	}
+	review := resp.Content()
 
 	fmt.Printf("Review:\n%s\n", review)
 
