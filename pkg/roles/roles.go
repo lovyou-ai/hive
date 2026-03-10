@@ -103,6 +103,10 @@ type AgentConfig struct {
 }
 
 // NewAgent creates and bootstraps a hive agent with the given role.
+// Emits agent.identity.created before Boot() to ensure correct causal ordering
+// on the shared graph — identity must exist before lifespan or role events.
+// Boot() emits its own identity.created as part of its composition; the explicit
+// pre-Boot emission establishes the causal anchor the Guardian requires.
 func NewAgent(ctx context.Context, cfg AgentConfig) (*Agent, error) {
 	rt, err := intelligence.NewRuntime(ctx, intelligence.RuntimeConfig{
 		AgentID:  cfg.ActorID,
@@ -111,6 +115,21 @@ func NewAgent(ctx context.Context, cfg AgentConfig) (*Agent, error) {
 	})
 	if err != nil {
 		return nil, fmt.Errorf("runtime: %w", err)
+	}
+
+	// Emit agent.identity.created before Boot() so identity is causally first
+	// on the shared store. Boot() in eventgraph emits its own identity.created
+	// as part of the Boot composition, but on a shared graph other agents'
+	// events (lifespan.started, role.assigned from Spawner) may already be
+	// interleaved. This explicit emission ensures the Guardian sees identity
+	// established before any subsequent lifecycle events.
+	_, err = rt.Emit(event.AgentIdentityCreatedContent{
+		AgentID:   cfg.ActorID,
+		PublicKey: types.MustPublicKey(make([]byte, 32)), // placeholder — Boot() emits canonical identity
+		AgentType: string(event.ActorTypeAI),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("pre-boot identity: %w", err)
 	}
 
 	// Boot with role-specific soul values
