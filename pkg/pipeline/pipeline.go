@@ -545,8 +545,9 @@ func (p *Pipeline) RunTargeted(ctx context.Context, input ProductInput) error {
 	// Include key context files (CLAUDE.md, README, etc.) for CTO — not the full codebase
 	keyContext := extractKeyFiles(existingFiles)
 
-	timings = append(timings, phaseTiming{"Context Load", time.Since(phaseStart)})
-	p.telemetry.addPhaseTiming("Context Load", time.Since(phaseStart))
+	contextLoadDuration := time.Since(phaseStart)
+	timings = append(timings, phaseTiming{"Context Load", contextLoadDuration})
+	p.telemetry.addPhaseTiming("Context Load", contextLoadDuration)
 
 	// ── Phase 2: Understand ──
 	fmt.Println("═══ Phase 2: Understand ═══")
@@ -589,8 +590,9 @@ Project structure:
 		return fmt.Errorf("capture base commit: %w", err)
 	}
 
-	timings = append(timings, phaseTiming{"Understand", time.Since(phaseStart)})
-	p.telemetry.addPhaseTiming("Understand", time.Since(phaseStart))
+	understandDuration := time.Since(phaseStart)
+	timings = append(timings, phaseTiming{"Understand", understandDuration})
+	p.telemetry.addPhaseTiming("Understand", understandDuration)
 
 	// ── Phase 3: Modify ──
 	fmt.Println("═══ Phase 3: Modify ═══")
@@ -603,7 +605,9 @@ Project structure:
 		return fmt.Errorf("guardian halted pipeline after modify phase")
 	}
 
-	timings = append(timings, phaseTiming{"Modify", time.Since(phaseStart)})
+	modifyDuration := time.Since(phaseStart)
+	timings = append(timings, phaseTiming{"Modify", modifyDuration})
+	p.telemetry.addPhaseTiming("Modify", modifyDuration)
 
 	// ── Phase 4: Review ──
 	phaseStart = time.Now()
@@ -614,6 +618,7 @@ Project structure:
 		if err != nil {
 			return fmt.Errorf("review round %d: %w", round, err)
 		}
+		p.telemetry.addReviewSignal(approved)
 		if halt := p.guardianCheck(ctx, "review"); halt {
 			return fmt.Errorf("guardian halted pipeline after review phase")
 		}
@@ -634,7 +639,9 @@ Project structure:
 			return fmt.Errorf("revise round %d: %w", round, err)
 		}
 	}
-	timings = append(timings, phaseTiming{"Review", time.Since(phaseStart)})
+	reviewDuration := time.Since(phaseStart)
+	timings = append(timings, phaseTiming{"Review", reviewDuration})
+	p.telemetry.addPhaseTiming("Review", reviewDuration)
 
 	// ── Phase 5: Test ──
 	fmt.Println("═══ Phase 5: Test ═══")
@@ -647,7 +654,9 @@ Project structure:
 		return fmt.Errorf("guardian halted pipeline after test phase")
 	}
 
-	timings = append(timings, phaseTiming{"Test", time.Since(phaseStart)})
+	testDuration := time.Since(phaseStart)
+	timings = append(timings, phaseTiming{"Test", testDuration})
+	p.telemetry.addPhaseTiming("Test", testDuration)
 
 	// ── Phase 6: PR ──
 	fmt.Println("═══ Phase 6: PR ═══")
@@ -656,7 +665,10 @@ Project structure:
 	if prErr != nil {
 		fmt.Printf("PR creation failed (may need manual push): %v\n", prErr)
 	}
-	timings = append(timings, phaseTiming{"PR", time.Since(phaseStart)})
+	p.telemetry.PRURL = prURL
+	prDuration := time.Since(phaseStart)
+	timings = append(timings, phaseTiming{"PR", prDuration})
+	p.telemetry.addPhaseTiming("PR", prDuration)
 
 	// ── Phase 7: Merge ──
 	if prURL != "" {
@@ -674,6 +686,7 @@ Project structure:
 				if err := p.mergePR(product, prURL); err != nil {
 					fmt.Printf("PR merge failed (may need manual merge): %v\n", err)
 				} else {
+					p.telemetry.Merged = true
 					if _, err := integrator.Runtime.Act(ctx, ActionMergePR, prURL); err != nil {
 						fmt.Printf("warning: merge_pr action event failed: %v\n", err)
 					}
@@ -682,7 +695,9 @@ Project structure:
 				fmt.Println("PR merge skipped — approval denied.")
 			}
 		}
-		timings = append(timings, phaseTiming{"Merge", time.Since(phaseStart)})
+		mergeDuration := time.Since(phaseStart)
+		timings = append(timings, phaseTiming{"Merge", mergeDuration})
+		p.telemetry.addPhaseTiming("Merge", mergeDuration)
 	}
 
 	fmt.Println("═══ Pipeline Complete ═══")
