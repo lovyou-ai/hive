@@ -142,6 +142,53 @@ func writeTelemetry(baseDir string, result *PipelineResult) {
 	fmt.Printf("Telemetry written: %s\n", path)
 }
 
+// UnmarshalJSON for PhaseTimingEntry — decode duration from milliseconds.
+func (e *PhaseTimingEntry) UnmarshalJSON(data []byte) error {
+	type alias struct {
+		Phase      string `json:"phase"`
+		DurationMs int64  `json:"duration_ms"`
+	}
+	var a alias
+	if err := json.Unmarshal(data, &a); err != nil {
+		return err
+	}
+	e.Phase = a.Phase
+	e.Duration = time.Duration(a.DurationMs) * time.Millisecond
+	return nil
+}
+
+// ReadTelemetry reads all PipelineResult JSON files from .hive/telemetry/ under baseDir.
+// Returns an empty slice (not an error) if the directory doesn't exist or has no files.
+func ReadTelemetry(baseDir string) ([]PipelineResult, error) {
+	dir := filepath.Join(baseDir, ".hive", "telemetry")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read telemetry dir: %w", err)
+	}
+
+	var results []PipelineResult
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+		if err != nil {
+			fmt.Printf("warning: read telemetry file %s: %v\n", entry.Name(), err)
+			continue
+		}
+		var result PipelineResult
+		if err := json.Unmarshal(data, &result); err != nil {
+			fmt.Printf("warning: parse telemetry file %s: %v\n", entry.Name(), err)
+			continue
+		}
+		results = append(results, result)
+	}
+	return results, nil
+}
+
 // telemetryBaseDir returns the directory where .hive/telemetry/ should be created.
 // Targeted mode: product dir. Greenfield: workspace root.
 func (p *Pipeline) telemetryBaseDir() string {
