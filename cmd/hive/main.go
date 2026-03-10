@@ -46,10 +46,11 @@ func run() error {
 	skipGuardian := flag.Bool("skip-guardian", false, "Skip Guardian integrity checks after each phase (dev/testing only)")
 	skipSimplify := flag.Bool("skip-simplify", false, "Skip the simplification loop after design (dev/testing only)")
 	reviewerModel := flag.String("reviewer-model", "", "Override model for targeted reviews (default: claude-sonnet-4-6)")
+	selfImprove := flag.Bool("self-improve", false, "Self-improvement mode: analyze telemetry + codebase and apply fixes")
 	flag.Parse()
 
-	if *idea == "" && *url == "" && *spec == "" {
-		return fmt.Errorf("usage: hive --human name [--store postgres://...] [--name product-name] --idea 'description' | --url 'https://...' | --spec path/to/spec.cg | --repo path --idea 'change'")
+	if *idea == "" && *url == "" && *spec == "" && !*selfImprove {
+		return fmt.Errorf("usage: hive --human name [--store postgres://...] [--name product-name] --idea 'description' | --url 'https://...' | --spec path/to/spec.cg | --repo path --idea 'change' | --self-improve")
 	}
 	if *human == "" {
 		return fmt.Errorf("--human is required (the name of the human operator)")
@@ -164,7 +165,16 @@ func run() error {
 		RepoPath:    *repo,
 	}
 
-	if *repo != "" {
+	if *selfImprove {
+		// Self-improvement mode — analyze telemetry and apply fixes
+		fmt.Println("Mode: self-improve")
+		if input.RepoPath == "" {
+			input.RepoPath = "."
+		}
+		if err := p.RunSelfImprove(ctx, input); err != nil {
+			return fmt.Errorf("self-improve failed: %w", err)
+		}
+	} else if *repo != "" {
 		// Targeted mode — modify existing code
 		fmt.Println("Mode: targeted (modify existing code)")
 		if err := p.RunTargeted(ctx, input); err != nil {

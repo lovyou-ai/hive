@@ -7,12 +7,13 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
-	"time"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/lovyou-ai/eventgraph/go/pkg/actor"
 	"github.com/lovyou-ai/eventgraph/go/pkg/bus"
@@ -35,13 +36,14 @@ import (
 type Phase string
 
 const (
-	PhaseResearch  Phase = "research"
-	PhaseDesign    Phase = "design"
-	PhaseBuild     Phase = "build"
-	PhaseReview    Phase = "review"
-	PhaseTest      Phase = "test"
-	PhaseIntegrate Phase = "integrate"
-	PhaseMerge     Phase = "merge"
+	PhaseResearch    Phase = "research"
+	PhaseDesign      Phase = "design"
+	PhaseBuild       Phase = "build"
+	PhaseReview      Phase = "review"
+	PhaseTest        Phase = "test"
+	PhaseIntegrate   Phase = "integrate"
+	PhaseMerge       Phase = "merge"
+	PhaseSelfImprove Phase = "self-improve"
 )
 
 // Action constants for pipeline events — no magic strings.
@@ -712,6 +714,235 @@ Project structure:
 	}
 	fmt.Printf("  %-16s %s\n", "TOTAL", totalDuration.Round(time.Millisecond))
 	return nil
+}
+
+// maxSelfImproveIterations is the maximum number of improvements per session.
+const maxSelfImproveIterations = 3
+
+// SelfImproveRecommendation is the CTO's structured response from telemetry analysis.
+type SelfImproveRecommendation struct {
+	Description  string   `json:"description"`
+	FilesToChange []string `json:"files_to_change"`
+	ExpectedImpact string `json:"expected_impact"`
+	Priority     string   `json:"priority"`
+	SkipReason   string   `json:"skip_reason"`
+}
+
+// RunSelfImprove enters self-improvement mode: reads telemetry + codebase,
+// has the CTO identify improvements, then runs targeted pipeline iterations.
+// Loops up to maxSelfImproveIterations times, stopping when the CTO says
+// nothing is worth fixing.
+func (p *Pipeline) RunSelfImprove(ctx context.Context, input ProductInput) error {
+	if input.RepoPath == "" {
+		return fmt.Errorf("RunSelfImprove requires RepoPath")
+	}
+
+	for iteration := 1; iteration <= maxSelfImproveIterations; iteration++ {
+		fmt.Printf("\n═══ Self-Improve: Iteration %d/%d ═══\n", iteration, maxSelfImproveIterations)
+
+		// Step 1: Read telemetry
+		telemetryResults, err := ReadTelemetry(input.RepoPath)
+		if err != nil {
+			return fmt.Errorf("read telemetry: %w", err)
+		}
+		fmt.Printf("Telemetry: %d past run(s) found.\n", len(telemetryResults))
+
+		// Step 2: Load codebase context (reuse targeted mode Phase 1)
+		product, err := workspace.OpenRepo(input.RepoPath)
+		if err != nil {
+			return fmt.Errorf("open repo: %w", err)
+		}
+		existingFiles, err := product.ReadSourceFiles()
+		if err != nil {
+			return fmt.Errorf("read source files: %w", err)
+		}
+		fileListing := buildFileListing(existingFiles)
+		keyContext := extractKeyFiles(existingFiles)
+
+		// Step 3: Build telemetry summary for CTO
+		telemetrySummary := summarizeTelemetry(telemetryResults)
+
+		// Step 4: CTO analysis
+		fmt.Println("CTO analyzing telemetry + codebase...")
+		_, ctoResponse, err := p.cto.Runtime.Evaluate(ctx, "self_improve_analysis",
+			fmt.Sprintf(`You are analyzing this codebase and its pipeline telemetry to identify the single highest-impact improvement.
+
+TELEMETRY DATA (from past pipeline runs):
+%s
+
+PROJECT STRUCTURE:
+%s
+
+%s
+
+Look for:
+- Recurring Guardian alerts (same alert across multiple runs = wasted spend)
+- High-cost roles (is Guardian worth the spend? which roles dominate cost?)
+- Slow phases (which phases take disproportionate time?)
+- Reviewer friction patterns (CHANGES NEEDED signals that are false alarms)
+- Code quality issues visible in the codebase itself
+
+Respond with ONLY a JSON object (no markdown, no explanation outside the JSON):
+{
+  "description": "what to change — be specific and actionable",
+  "files_to_change": ["path/to/file1.go", "path/to/file2.go"],
+  "expected_impact": "cost/time/quality improvement expected",
+  "priority": "high|medium|low",
+  "skip_reason": "if nothing is worth fixing, explain why here; otherwise empty string"
+}`, telemetrySummary, fileListing, keyContext))
+		if err != nil {
+			return fmt.Errorf("CTO self-improve analysis: %w", err)
+		}
+
+		// Step 5: Parse recommendation
+		rec, err := parseSelfImproveRecommendation(ctoResponse)
+		if err != nil {
+			return fmt.Errorf("parse CTO recommendation: %w", err)
+		}
+
+		fmt.Printf("CTO recommendation (priority=%s): %s\n", rec.Priority, rec.Description)
+		if rec.SkipReason != "" {
+			fmt.Printf("CTO says nothing worth fixing: %s\n", rec.SkipReason)
+			break
+		}
+		if rec.Description == "" {
+			fmt.Println("CTO returned empty recommendation — stopping.")
+			break
+		}
+
+		fmt.Printf("Expected impact: %s\n", rec.ExpectedImpact)
+		fmt.Printf("Files to change: %v\n", rec.FilesToChange)
+
+		// Step 6: Run targeted pipeline with the recommendation
+		targetedInput := ProductInput{
+			RepoPath:    input.RepoPath,
+			Description: rec.Description,
+		}
+		fmt.Printf("\n═══ Self-Improve: Running targeted pipeline ═══\n")
+		if err := p.RunTargeted(ctx, targetedInput); err != nil {
+			return fmt.Errorf("self-improve iteration %d: %w", iteration, err)
+		}
+
+		fmt.Printf("═══ Self-Improve: Iteration %d complete ═══\n", iteration)
+	}
+
+	fmt.Println("\n═══ Self-Improve: Session Complete ═══")
+	return nil
+}
+
+// summarizeTelemetry builds a human-readable summary of past pipeline runs for the CTO.
+func summarizeTelemetry(results []PipelineResult) string {
+	if len(results) == 0 {
+		return "No telemetry data available (first run)."
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("%d past pipeline run(s):\n\n", len(results)))
+
+	for i, r := range results {
+		sb.WriteString(fmt.Sprintf("--- Run %d (mode=%s, %s) ---\n", i+1, r.Mode, r.StartedAt.Format("2006-01-02 15:04")))
+		sb.WriteString(fmt.Sprintf("  Input: %s\n", r.InputDescription))
+		if r.PRURL != "" {
+			sb.WriteString(fmt.Sprintf("  PR: %s (merged=%v)\n", r.PRURL, r.Merged))
+		}
+
+		// Phase timings
+		if len(r.PhaseTimings) > 0 {
+			sb.WriteString("  Phase timings:\n")
+			for _, pt := range r.PhaseTimings {
+				sb.WriteString(fmt.Sprintf("    %-16s %s\n", pt.Phase, pt.Duration.Round(time.Millisecond)))
+			}
+		}
+
+		// Token usage
+		if len(r.TokenUsage) > 0 {
+			var totalCost float64
+			sb.WriteString("  Token usage by role:\n")
+			for _, tu := range r.TokenUsage {
+				sb.WriteString(fmt.Sprintf("    %-12s %s: %d tokens, $%.4f\n", tu.Role, tu.Model, tu.TotalTokens, tu.CostUSD))
+				totalCost += tu.CostUSD
+			}
+			sb.WriteString(fmt.Sprintf("  Total cost: $%.4f\n", totalCost))
+		}
+
+		// Guardian alerts
+		if len(r.GuardianAlerts) > 0 {
+			sb.WriteString(fmt.Sprintf("  Guardian alerts (%d):\n", len(r.GuardianAlerts)))
+			for _, a := range r.GuardianAlerts {
+				sb.WriteString(fmt.Sprintf("    - %s\n", a))
+			}
+		}
+
+		// Review signals
+		if len(r.ReviewSignals) > 0 {
+			sb.WriteString(fmt.Sprintf("  Review signals: %s\n", strings.Join(r.ReviewSignals, ", ")))
+		}
+		sb.WriteString("\n")
+	}
+	return sb.String()
+}
+
+// parseSelfImproveRecommendation extracts a SelfImproveRecommendation from LLM output.
+// Handles JSON embedded in markdown code blocks or plain text.
+func parseSelfImproveRecommendation(response string) (SelfImproveRecommendation, error) {
+	var rec SelfImproveRecommendation
+
+	// Try direct unmarshal first.
+	if err := json.Unmarshal([]byte(response), &rec); err == nil {
+		return rec, nil
+	}
+
+	// Extract JSON from markdown code blocks or surrounding text.
+	jsonStr := extractJSONBlock(response)
+	if jsonStr == "" {
+		return rec, fmt.Errorf("no JSON found in CTO response")
+	}
+
+	if err := json.Unmarshal([]byte(jsonStr), &rec); err != nil {
+		return rec, fmt.Errorf("parse recommendation JSON: %w", err)
+	}
+	return rec, nil
+}
+
+// extractJSONBlock finds the first JSON object in a string, handling markdown
+// code blocks (```json ... ```) or bare JSON.
+func extractJSONBlock(s string) string {
+	// Try markdown code block first.
+	if idx := strings.Index(s, "```json"); idx != -1 {
+		start := idx + len("```json")
+		if end := strings.Index(s[start:], "```"); end != -1 {
+			return strings.TrimSpace(s[start : start+end])
+		}
+	}
+	if idx := strings.Index(s, "```"); idx != -1 {
+		start := idx + len("```")
+		if end := strings.Index(s[start:], "```"); end != -1 {
+			candidate := strings.TrimSpace(s[start : start+end])
+			if len(candidate) > 0 && candidate[0] == '{' {
+				return candidate
+			}
+		}
+	}
+
+	// Try to find bare JSON object.
+	start := strings.Index(s, "{")
+	if start == -1 {
+		return ""
+	}
+	// Find matching closing brace.
+	depth := 0
+	for i := start; i < len(s); i++ {
+		switch s[i] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return s[start : i+1]
+			}
+		}
+	}
+	return ""
 }
 
 // modify uses the builder in agentic mode to modify existing code directly.
