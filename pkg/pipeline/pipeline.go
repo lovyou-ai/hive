@@ -40,6 +40,7 @@ const (
 	PhaseReview    Phase = "review"
 	PhaseTest      Phase = "test"
 	PhaseIntegrate Phase = "integrate"
+	PhaseMerge     Phase = "merge"
 )
 
 // Action constants for pipeline events — no magic strings.
@@ -47,6 +48,7 @@ const (
 	ActionWriteCode    = "write_code"
 	ActionSeedBuild    = "seed_product_build"
 	ActionIntegrate    = "integrate_staging"
+	ActionMergePR      = "merge_pr"
 )
 
 // writeCodeAction returns the action string for a code generation event.
@@ -81,6 +83,12 @@ type Pipeline struct {
 	skipGuardian  bool
 	skipSimplify  bool
 	reviewerModel string // model override for targeted reviews (empty = role default)
+
+	// Authority infrastructure — set when Gate is configured.
+	gate    *authority.Gate
+	signer  event.Signer
+	factory *event.EventFactory
+	convID  types.ConversationID
 }
 
 // Config for creating a new pipeline.
@@ -136,7 +144,7 @@ func New(ctx context.Context, cfg Config) (*Pipeline, error) {
 		reviewerModel: cfg.ReviewerModel,
 	}
 
-	// Wire up spawner if an authority gate is provided.
+	// Wire up spawner and authority infrastructure if a gate is provided.
 	if cfg.Gate != nil {
 		// Deterministic signer derived from humanID — stable across restarts,
 		// verifiable against the human's identity. Random ephemeral keys would
@@ -148,6 +156,11 @@ func New(ctx context.Context, cfg Config) (*Pipeline, error) {
 		if err != nil {
 			return nil, fmt.Errorf("spawn conversation ID: %w", err)
 		}
+
+		p.gate = cfg.Gate
+		p.signer = signer
+		p.factory = factory
+		p.convID = convID
 
 		p.spawner = spawn.NewSpawner(spawn.Config{
 			Store:   cfg.Store,
@@ -570,10 +583,38 @@ Project structure:
 	// ── Phase 6: PR ──
 	fmt.Println("═══ Phase 6: PR ═══")
 	phaseStart = time.Now()
-	if err := p.openPR(ctx, product, branchName, input.Description, ctoAnalysis); err != nil {
-		fmt.Printf("PR creation failed (may need manual push): %v\n", err)
+	prURL, prErr := p.openPR(ctx, product, branchName, input.Description, ctoAnalysis)
+	if prErr != nil {
+		fmt.Printf("PR creation failed (may need manual push): %v\n", prErr)
 	}
 	timings = append(timings, phaseTiming{"PR", time.Since(phaseStart)})
+
+	// ── Phase 7: Merge ──
+	if prURL != "" {
+		fmt.Println("═══ Phase 7: Merge ═══")
+		phaseStart = time.Now()
+		integrator, mergeErr := p.ensureAgent(ctx, roles.RoleIntegrator, "integrator")
+		if mergeErr != nil {
+			fmt.Printf("Merge phase skipped (integrator unavailable): %v\n", mergeErr)
+		} else {
+			approved := true
+			if p.gate != nil {
+				approved = p.requestMergeApproval(prURL)
+			}
+			if approved {
+				if err := p.mergePR(product, prURL); err != nil {
+					fmt.Printf("PR merge failed (may need manual merge): %v\n", err)
+				} else {
+					if _, err := integrator.Runtime.Act(ctx, ActionMergePR, prURL); err != nil {
+						fmt.Printf("warning: merge_pr action event failed: %v\n", err)
+					}
+				}
+			} else {
+				fmt.Println("PR merge skipped — approval denied.")
+			}
+		}
+		timings = append(timings, phaseTiming{"Merge", time.Since(phaseStart)})
+	}
 
 	fmt.Println("═══ Pipeline Complete ═══")
 	p.PrintTokenSummary()
@@ -865,10 +906,11 @@ Output ONLY the files that need further changes using --- FILE: path --- markers
 }
 
 // openPR pushes the branch and opens a pull request.
-func (p *Pipeline) openPR(ctx context.Context, product *workspace.Product, branch string, changeReq string, analysis string) error {
+// Returns the PR URL on success (empty string on failure).
+func (p *Pipeline) openPR(ctx context.Context, product *workspace.Product, branch string, changeReq string, analysis string) (string, error) {
 	// Push the branch
 	if err := product.PushBranch(); err != nil {
-		return fmt.Errorf("push branch: %w", err)
+		return "", fmt.Errorf("push branch: %w", err)
 	}
 
 	// Open PR via gh CLI
@@ -879,10 +921,112 @@ func (p *Pipeline) openPR(ctx context.Context, product *workspace.Product, branc
 	cmd.Dir = product.Dir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("gh pr create: %s: %w", string(out), err)
+		return "", fmt.Errorf("gh pr create: %s: %w", string(out), err)
 	}
-	fmt.Printf("PR created: %s\n", strings.TrimSpace(string(out)))
+	prURL := strings.TrimSpace(string(out))
+	fmt.Printf("PR created: %s\n", prURL)
+	return prURL, nil
+}
+
+// mergePR squash-merges a pull request via gh CLI.
+// Non-fatal — logs and returns error if merge fails (e.g., branch protection).
+func (p *Pipeline) mergePR(product *workspace.Product, prURL string) error {
+	cmd := exec.Command("gh", "pr", "merge", prURL, "--squash")
+	cmd.Dir = product.Dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("gh pr merge: %s: %w", string(out), err)
+	}
+	fmt.Printf("PR merged: %s\n", strings.TrimSpace(string(out)))
 	return nil
+}
+
+// requestMergeApproval emits an authority.requested event for PR merge and
+// checks approval through the Gate. Returns true if approved.
+func (p *Pipeline) requestMergeApproval(prURL string) bool {
+	// Emit authority.requested on the graph.
+	action := fmt.Sprintf("%s: %s", ActionMergePR, prURL)
+	reqEventID, err := p.emitAuthorityRequested(action, "PR passed review and tests — requesting merge approval")
+	if err != nil {
+		fmt.Printf("warning: authority.requested event failed: %v\n", err)
+		// Fall through — still check the gate for human approval.
+		// Use a zero EventID; the gate doesn't depend on it.
+	}
+
+	authReq := authority.Request{
+		ID:            reqEventID,
+		Action:        action,
+		Actor:         p.humanID,
+		Level:         event.AuthorityLevelRequired,
+		Justification: "PR passed review and tests — requesting merge approval",
+		CreatedAt:     time.Now(),
+	}
+	resolution := p.gate.Check(authReq)
+
+	// Emit authority.resolved — causally linked to authority.requested.
+	if reqEventID != (types.EventID{}) {
+		if _, err := p.emitAuthorityResolved(reqEventID, resolution); err != nil {
+			fmt.Printf("warning: authority.resolved event failed: %v\n", err)
+		}
+	}
+
+	return resolution.Approved
+}
+
+// emitAuthorityRequested records an authority.requested event on the graph.
+func (p *Pipeline) emitAuthorityRequested(action string, justification string) (types.EventID, error) {
+	head, err := p.store.Head()
+	if err != nil {
+		return types.EventID{}, fmt.Errorf("store head: %w", err)
+	}
+	if !head.IsSome() {
+		return types.EventID{}, fmt.Errorf("graph not bootstrapped")
+	}
+	causeID := head.Unwrap().ID()
+
+	content := event.AuthorityRequestContent{
+		Action:        action,
+		Actor:         p.humanID,
+		Level:         event.AuthorityLevelRequired,
+		Justification: justification,
+		Causes:        types.MustNonEmpty([]types.EventID{causeID}),
+	}
+	ev, err := p.factory.Create(event.EventTypeAuthorityRequested, p.humanID, content, []types.EventID{causeID}, p.convID, p.store, p.signer)
+	if err != nil {
+		return types.EventID{}, fmt.Errorf("create event: %w", err)
+	}
+	appended, err := p.store.Append(ev)
+	if err != nil {
+		return types.EventID{}, fmt.Errorf("append event: %w", err)
+	}
+	return appended.ID(), nil
+}
+
+// emitAuthorityResolved records an authority.resolved event on the graph.
+func (p *Pipeline) emitAuthorityResolved(reqEventID types.EventID, res authority.Resolution) (types.EventID, error) {
+	reason := types.None[string]()
+	if res.Reason != "" {
+		reason = types.Some(res.Reason)
+	}
+	content := event.AuthorityResolvedContent{
+		RequestID: reqEventID,
+		Approved:  res.Approved,
+		Resolver:  res.Resolver,
+		Reason:    reason,
+	}
+	source := p.humanID
+	if res.Resolver != (types.ActorID{}) {
+		source = res.Resolver
+	}
+	ev, err := p.factory.Create(event.EventTypeAuthorityResolved, source, content, []types.EventID{reqEventID}, p.convID, p.store, p.signer)
+	if err != nil {
+		return types.EventID{}, fmt.Errorf("create event: %w", err)
+	}
+	appended, err := p.store.Append(ev)
+	if err != nil {
+		return types.EventID{}, fmt.Errorf("append event: %w", err)
+	}
+	return appended.ID(), nil
 }
 
 // detectApproval checks the last portion of a review for the approval verdict.
