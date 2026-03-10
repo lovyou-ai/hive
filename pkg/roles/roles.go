@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/lovyou-ai/eventgraph/go/pkg/event"
 	"github.com/lovyou-ai/eventgraph/go/pkg/intelligence"
 	"github.com/lovyou-ai/eventgraph/go/pkg/store"
 	"github.com/lovyou-ai/eventgraph/go/pkg/types"
