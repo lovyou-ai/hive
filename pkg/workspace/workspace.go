@@ -280,7 +280,7 @@ func (p *Product) GitLog(n int) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// HeadCommit returns the current HEAD commit hash (short form).
+// HeadCommit returns the current HEAD commit hash (full form).
 func (p *Product) HeadCommit() (string, error) {
 	cmd := exec.Command("git", "rev-parse", "HEAD")
 	cmd.Dir = p.Dir

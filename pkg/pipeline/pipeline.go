@@ -708,7 +708,6 @@ func (p *Pipeline) reviewTargeted(ctx context.Context, baseCommit string, ctoAna
 	if err != nil {
 		return "", false, fmt.Errorf("review provider: %w", err)
 	}
-	tracker := resources.NewTrackingProvider(provider)
 	fmt.Printf("  ↳ targeted review using %s\n", model)
 
 	prompt := fmt.Sprintf(`Review this diff to a %s codebase. Be CONCISE.
@@ -722,7 +721,7 @@ DIFF:
 Check: correctness, style, risks. Skip boilerplate — no tables, no headers, no section labels.
 End with one word: APPROVED or CHANGES NEEDED: <specific issues>`, lang, changeReq, ctoAnalysis, diff)
 
-	resp, err := tracker.Reason(ctx, prompt, nil)
+	resp, err := provider.Reason(ctx, prompt, nil)
 	if err != nil {
 		return "", false, fmt.Errorf("review: %w", err)
 	}

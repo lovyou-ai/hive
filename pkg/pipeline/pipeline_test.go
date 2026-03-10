@@ -3,9 +3,6 @@ package pipeline
 import (
 	"strings"
 	"testing"
-
-	"github.com/lovyou-ai/hive/pkg/resources"
-	"github.com/lovyou-ai/hive/pkg/roles"
 )
 
 func TestContainsAlert(t *testing.T) {
@@ -156,26 +153,6 @@ func TestReviewerModelOverride(t *testing.T) {
 	model := p.targetedReviewModel()
 	if model != "claude-haiku-4-5-20251001" {
 		t.Errorf("overridden targeted review model = %q, want %q", model, "claude-haiku-4-5-20251001")
-	}
-}
-
-func TestEnsureAgentCachesByRole(t *testing.T) {
-	// ensureAgent always uses the role's preferred model and caches by role.
-	// There is no model parameter — callers needing a different model create
-	// a temporary provider directly (as reviewTargeted does).
-	p := &Pipeline{
-		agents:   make(map[roles.Role]*roles.Agent),
-		trackers: make(map[roles.Role]*resources.TrackingProvider),
-	}
-
-	// Simulate a cached agent.
-	sentinel := &roles.Agent{Role: roles.RoleReviewer, Name: "reviewer"}
-	p.agents[roles.RoleReviewer] = sentinel
-
-	// ensureAgent returns the cached agent — no model ambiguity.
-	got, ok := p.agents[roles.RoleReviewer]
-	if !ok || got != sentinel {
-		t.Error("expected cached reviewer agent to be returned")
 	}
 }
 
