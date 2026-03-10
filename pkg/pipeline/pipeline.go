@@ -84,7 +84,7 @@ type Pipeline struct {
 	skipSimplify  bool
 	reviewerModel string // model override for targeted reviews (empty = role default)
 
-	// Authority infrastructure — set when Gate is configured.
+	// Authority infrastructure — always initialized; gate is optional.
 	gate    *authority.Gate
 	signer  event.Signer
 	factory *event.EventFactory
@@ -144,23 +144,26 @@ func New(ctx context.Context, cfg Config) (*Pipeline, error) {
 		reviewerModel: cfg.ReviewerModel,
 	}
 
-	// Wire up spawner and authority infrastructure if a gate is provided.
-	if cfg.Gate != nil {
-		// Deterministic signer derived from humanID — stable across restarts,
-		// verifiable against the human's identity. Random ephemeral keys would
-		// break INTEGRITY (signature verification requires knowing the key).
-		signer := deriveSignerFromID(cfg.HumanID)
-		registry := event.DefaultRegistry()
-		factory := event.NewEventFactory(registry)
-		convID, err := newConversationID()
-		if err != nil {
-			return nil, fmt.Errorf("spawn conversation ID: %w", err)
-		}
+	// Always initialize event infrastructure — needed for OBSERVABLE invariant
+	// (all agent spawns emit authority events, even in no-gate dev mode).
+	// Deterministic signer derived from humanID — stable across restarts,
+	// verifiable against the human's identity. Random ephemeral keys would
+	// break INTEGRITY (signature verification requires knowing the key).
+	signer := deriveSignerFromID(cfg.HumanID)
+	registry := event.DefaultRegistry()
+	factory := event.NewEventFactory(registry)
+	convID, err := newConversationID()
+	if err != nil {
+		return nil, fmt.Errorf("spawn conversation ID: %w", err)
+	}
 
+	p.signer = signer
+	p.factory = factory
+	p.convID = convID
+
+	// Wire up spawner and authority gate if provided.
+	if cfg.Gate != nil {
 		p.gate = cfg.Gate
-		p.signer = signer
-		p.factory = factory
-		p.convID = convID
 
 		p.spawner = spawn.NewSpawner(spawn.Config{
 			Store:   cfg.Store,
@@ -260,6 +263,21 @@ func (p *Pipeline) ensureAgent(ctx context.Context, role roles.Role, name string
 			return nil, fmt.Errorf("create agent %s: %w", name, err)
 		}
 		actorID = agentActor.ID()
+
+		// Emit authority events for OBSERVABLE invariant — all spawns are auditable,
+		// even in dev/bootstrap mode without an authority gate.
+		action := fmt.Sprintf("spawn agent %q as %s", name, role)
+		reqEventID, err := p.emitAuthorityRequested(action, "auto-approved (no authority gate)")
+		if err != nil {
+			return nil, fmt.Errorf("emit authority.requested: %w", err)
+		}
+		if _, err := p.emitAuthorityResolved(reqEventID, authority.Resolution{
+			Approved: true,
+			Resolver: p.humanID,
+			Reason:   "auto-approved (no authority gate)",
+		}); err != nil {
+			return nil, fmt.Errorf("emit authority.resolved: %w", err)
+		}
 	}
 
 	model := roles.PreferredModel(role)

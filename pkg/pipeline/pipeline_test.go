@@ -1,8 +1,18 @@
 package pipeline
 
 import (
+	"context"
 	"strings"
 	"testing"
+
+	"github.com/lovyou-ai/eventgraph/go/pkg/actor"
+	"github.com/lovyou-ai/eventgraph/go/pkg/event"
+	"github.com/lovyou-ai/eventgraph/go/pkg/store"
+	"github.com/lovyou-ai/eventgraph/go/pkg/types"
+
+	"github.com/lovyou-ai/hive/pkg/resources"
+	"github.com/lovyou-ai/hive/pkg/roles"
+	"github.com/lovyou-ai/hive/pkg/spawn"
 )
 
 func TestContainsAlert(t *testing.T) {
@@ -211,6 +221,96 @@ func TestSanitizeBranchName(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("sanitizeBranchName(%q) = %q, want %q", tt.desc, got, tt.want)
 		}
+	}
+}
+
+// testSigner implements event.Signer for tests.
+type testSigner struct{}
+
+func (s *testSigner) Sign(data []byte) (types.Signature, error) {
+	return types.NewSignature(make([]byte, 64))
+}
+
+func TestEnsureAgentNoSpawnerEmitsAuthorityEvents(t *testing.T) {
+	s := store.NewInMemoryStore()
+	actors := actor.NewInMemoryActorStore()
+
+	// Register human.
+	humanRawPub := spawn.DerivePublicKey("human:TestHuman")
+	humanPub, err := types.NewPublicKey([]byte(humanRawPub))
+	if err != nil {
+		t.Fatal(err)
+	}
+	humanActor, err := actors.Register(humanPub, "TestHuman", event.ActorTypeHuman)
+	if err != nil {
+		t.Fatal(err)
+	}
+	humanID := humanActor.ID()
+
+	// Bootstrap graph — ensureAgent needs a non-empty graph head.
+	registry := event.DefaultRegistry()
+	bsFactory := event.NewBootstrapFactory(registry)
+	signer := &testSigner{}
+	bootstrap, err := bsFactory.Init(humanID, signer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Append(bootstrap); err != nil {
+		t.Fatal(err)
+	}
+
+	factory := event.NewEventFactory(registry)
+	convID, err := types.NewConversationID("conv_spawn_" + strings.Repeat("0", 24))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p := &Pipeline{
+		store:    s,
+		actors:   actors,
+		humanID:  humanID,
+		signer:   signer,
+		factory:  factory,
+		convID:   convID,
+		agents:   make(map[roles.Role]*roles.Agent),
+		trackers: make(map[roles.Role]*resources.TrackingProvider),
+		// spawner is nil — dev/bootstrap mode.
+	}
+
+	// ensureAgent emits authority events in the no-spawner branch.
+	// Provider creation may succeed or fail depending on environment —
+	// we only care that the authority events were emitted.
+	_, _ = p.ensureAgent(context.Background(), roles.RoleBuilder, "test-builder")
+
+	// Verify authority.requested event was emitted.
+	authReqPage, err := s.ByType(event.EventTypeAuthorityRequested, 10, types.None[types.Cursor]())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(authReqPage.Items()) == 0 {
+		t.Error("expected authority.requested event")
+	}
+
+	// Verify authority.resolved event was emitted.
+	authResPage, err := s.ByType(event.EventTypeAuthorityResolved, 10, types.None[types.Cursor]())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(authResPage.Items()) == 0 {
+		t.Error("expected authority.resolved event")
+	}
+
+	// Verify resolved content shows auto-approved.
+	resolved := authResPage.Items()[0]
+	content, ok := resolved.Content().(event.AuthorityResolvedContent)
+	if !ok {
+		t.Fatal("authority.resolved event has wrong content type")
+	}
+	if !content.Approved {
+		t.Error("expected auto-approved resolution")
+	}
+	if content.Reason.IsSome() && content.Reason.Unwrap() != "auto-approved (no authority gate)" {
+		t.Errorf("reason = %q, want %q", content.Reason.Unwrap(), "auto-approved (no authority gate)")
 	}
 }
 
