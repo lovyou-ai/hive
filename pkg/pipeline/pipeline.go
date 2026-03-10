@@ -704,13 +704,16 @@ func (p *Pipeline) reviewTargeted(ctx context.Context, baseCommit string, ctoAna
 	// reviewer agent. This avoids the agent cache entirely (an Opus reviewer
 	// cached from a greenfield run would silently ignore a model override).
 	model := p.targetedReviewModel()
-	provider, err := p.providerForRoleWithModel(roles.RoleReviewer, model)
+	rawProvider, err := p.providerForRoleWithModel(roles.RoleReviewer, model)
 	if err != nil {
 		return "", false, fmt.Errorf("review provider: %w", err)
 	}
+	// Wrap in tracking so token usage appears in the summary.
+	tracker := resources.NewTrackingProvider(rawProvider)
+	p.trackers[roles.RoleReviewer] = tracker
 	fmt.Printf("  ↳ targeted review using %s\n", model)
 
-	prompt := fmt.Sprintf(`Review this diff to a %s codebase. Be CONCISE.
+	prompt := fmt.Sprintf(`Review this diff to a %s codebase. Be CONCISE — no tables, no headers.
 
 CHANGE REQUEST: %s
 CTO ANALYSIS: %s
@@ -718,10 +721,13 @@ CTO ANALYSIS: %s
 DIFF:
 %s
 
-Check: correctness, style, risks. Skip boilerplate — no tables, no headers, no section labels.
-End with one word: APPROVED or CHANGES NEEDED: <specific issues>`, lang, changeReq, ctoAnalysis, diff)
+Only BLOCK for: correctness bugs, logic errors, security issues, or broken tests.
+Do NOT block for: style nits, missing tests, doc comments, scope creep, or nice-to-haves.
+Mention non-blocking concerns briefly but still approve.
 
-	resp, err := provider.Reason(ctx, prompt, nil)
+End with: APPROVED or CHANGES NEEDED: <specific blocking issues>`, lang, changeReq, ctoAnalysis, diff)
+
+	resp, err := tracker.Reason(ctx, prompt, nil)
 	if err != nil {
 		return "", false, fmt.Errorf("review: %w", err)
 	}
