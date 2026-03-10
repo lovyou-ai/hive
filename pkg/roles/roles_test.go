@@ -129,7 +129,7 @@ func TestPreferredModel(t *testing.T) {
 		{RoleArchitect, opus},
 		{RoleReviewer, opus},
 		{RoleGuardian, opus},
-		{RoleBuilder, sonnet},
+		{RoleBuilder, opus},
 		{RoleTester, sonnet},
 		{RoleIntegrator, sonnet},
 		{RoleResearcher, sonnet},

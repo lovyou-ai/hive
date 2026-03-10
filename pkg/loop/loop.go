@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/lovyou-ai/eventgraph/go/pkg/bus"
+	"github.com/lovyou-ai/eventgraph/go/pkg/decision"
 	"github.com/lovyou-ai/eventgraph/go/pkg/event"
 	"github.com/lovyou-ai/eventgraph/go/pkg/types"
 
@@ -149,13 +150,13 @@ func (l *Loop) Run(ctx context.Context) Result {
 
 		// 2. REASON + ACT — kick the agent with context and task.
 		prompt := l.buildPrompt(observation, iteration)
-		response, tokens, err := l.reason(ctx, prompt)
+		response, usage, err := l.reason(ctx, prompt)
 		if err != nil {
 			return l.result(StopError, iteration, fmt.Sprintf("reason: %v", err))
 		}
 
 		// Record resource consumption.
-		l.budget.Record(tokens, 0) // cost tracked separately if needed
+		l.budget.RecordUsage(usage)
 
 		if l.config.OnIteration != nil {
 			l.config.OnIteration(iteration, response)
@@ -266,15 +267,15 @@ Every response MUST end with exactly one /signal line.
 	return sb.String()
 }
 
-// reason calls the agent's LLM and returns the response text and tokens used.
-func (l *Loop) reason(ctx context.Context, prompt string) (string, int, error) {
+// reason calls the agent's LLM and returns the response text and token usage.
+func (l *Loop) reason(ctx context.Context, prompt string) (string, decision.TokenUsage, error) {
 	rt := l.agent.Runtime
 	memory, _ := rt.Memory(10)
 	resp, err := rt.Provider().Reason(ctx, prompt, memory)
 	if err != nil {
-		return "", 0, err
+		return "", decision.TokenUsage{}, err
 	}
-	return resp.Content(), resp.TokensUsed(), nil
+	return resp.Content(), resp.Usage(), nil
 }
 
 // Signal is the structured JSON signal emitted by agents at the end of each response.

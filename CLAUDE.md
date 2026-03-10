@@ -107,7 +107,7 @@ Constitutional principle (requires full amendment process to change): no militar
 |------|---------------|-------------|------------|-----------|
 | Researcher | Read URLs, extract product ideas | Sonnet | 0.3 | CTO |
 | Architect | Design systems via derivation method | Opus | 0.3 | CTO |
-| Builder | Generate code + tests from specs | Sonnet | 0.3 | CTO |
+| Builder | Generate code + tests from specs | Opus | 0.3 | CTO |
 | Reviewer | Code quality, security, derivation compliance | Opus | 0.5 | CTO |
 | Tester | Run tests, validate behaviour | Sonnet | 0.3 | CTO |
 | Integrator | Assemble, deploy, health check | Sonnet | 0.7 | CTO |
@@ -131,6 +131,9 @@ go run ./cmd/hive --human Matt --idea "Build a task management app with kanban b
 # Auto-approve all agent spawns (dev/testing — skips interactive prompts)
 go run ./cmd/hive --human Matt --yes --idea "Build a task management app with kanban boards"
 
+# Fast dev mode — auto-approve + skip Guardian checks (saves ~6 LLM calls)
+go run ./cmd/hive --human Matt --yes --skip-guardian --idea "Build a task management app with kanban boards"
+
 # Agentic loop mode — concurrent self-directing agents
 go run ./cmd/hive --human Matt --loop --idea "Build a task management app with kanban boards"
 
@@ -146,6 +149,12 @@ go run ./cmd/hive --human Matt --name social-grammar --url "https://mattsearles2
 
 # From a Code Graph spec file
 go run ./cmd/hive --human Matt --spec path/to/spec.cg
+
+# Targeted mode — modify existing code (creates branch + PR)
+go run ./cmd/hive --human Matt --yes --skip-guardian --repo /path/to/repo --idea "add a has command"
+
+# Self-improvement — modify the hive itself
+go run ./cmd/hive --human Matt --yes --repo /path/to/hive --idea "fix the .exe extension bug in test generation"
 ```
 
 ## Key Files
@@ -175,29 +184,41 @@ See `docs/CODING-STANDARDS.md` for full details. The cardinal rules:
 All inference runs through **Claude CLI** (Max plan, flat rate). NOT the Anthropic API — CLI is cheaper and better for our use case. The pipeline creates `claude-cli` providers automatically.
 
 Model assignment by role (three tiers):
-- **Opus** (`claude-opus-4-6`): CTO, Architect, Reviewer, Guardian — high-judgment tasks
-- **Sonnet** (`claude-sonnet-4-6`): Builder, Tester, Integrator, Researcher, Spawner — execution tasks
+- **Opus** (`claude-opus-4-6`): CTO, Architect, Reviewer, Guardian, Builder — high-judgment tasks and code generation
+- **Sonnet** (`claude-sonnet-4-6`): Tester, Integrator, Researcher, Spawner — execution tasks
 - **Haiku** (`claude-haiku-4-5-20251001`): SysMon, Allocator — high-volume, simple tasks
 
 ## Pipeline Modes
 
-### Sequential (default)
-Fixed phase sequence: Research → Design → Simplify → Build → Review → Test → Integrate. Guardian checks after each phase. Human approves agent spawns. Good for stepping through and debugging.
+### Sequential — Full Pipeline (default)
+Fixed phase sequence: Research → Design → Simplify → Build → Review → Test → Integrate. For greenfield projects — generating new products from ideas/specs. Guardian checks after each phase. Human approves agent spawns.
+
+### Sequential — Targeted Mode (`--repo`)
+For modifying existing code: Context Load → Understand → Modify → Review → Test → PR. Skips research/design/simplify. Builder and reviewer receive existing codebase as context. Creates branch and PR, not direct commits. Used for self-improvement and feature additions.
 
 ### Agentic Loop (`--loop`)
 CTO seeds work, then agents run concurrent observe-reason-act-reflect loops. They communicate through events on the shared graph. IBus provides real-time event notification. Budget enforcement prevents runaway agents. Agents stop on: quiescence (nothing to do), escalation (needs human), HALT (Guardian), or budget limit.
 
 ## Sequential Pipeline Detail
 
+### Full Pipeline (greenfield)
 1. **Research** — Researcher reads URLs/ideas, CTO evaluates feasibility
 2. **Design** — Architect creates Code Graph spec, CTO reviews for minimalism
-3. **Simplify** — Architect reduces spec to minimal form (up to 3 rounds)
+3. **Simplify** — Architect reduces spec to minimal form (up to 2 rounds)
 4. **Build** — Builder generates multi-file project, committed to product repo
 5. **Review → Rebuild** — Reviewer checks quality/compliance/simplicity (up to 3 rounds)
-6. **Test** — Tester runs actual test suite, Builder fixes failures
+6. **Test** — Tester runs actual test suite, Builder fixes failures. **Pipeline halts if tests still fail after fix attempt.**
 7. **Integrate** — Integrator pushes to GitHub, escalates to human for approval
 
-Guardian runs integrity checks after every phase. Can HALT the pipeline.
+### Targeted Pipeline (existing code)
+1. **Context Load** — Read existing files, git history, SPEC.md from target repo
+2. **Understand** — CTO evaluates the change request against existing codebase
+3. **Modify** — Builder modifies specific files (receives full codebase as context)
+4. **Review** — Reviewer checks diff against existing code
+5. **Test** — Run existing test suite + any new tests
+6. **PR** — Create branch, commit, open pull request
+
+Guardian runs integrity checks after every phase in both modes. Can HALT the pipeline.
 
 ## Design Philosophy
 

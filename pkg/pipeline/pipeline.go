@@ -9,10 +9,12 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/lovyou-ai/eventgraph/go/pkg/actor"
 	"github.com/lovyou-ai/eventgraph/go/pkg/bus"
+	"github.com/lovyou-ai/eventgraph/go/pkg/decision"
 	"github.com/lovyou-ai/eventgraph/go/pkg/event"
 	"github.com/lovyou-ai/eventgraph/go/pkg/intelligence"
 	"github.com/lovyou-ai/eventgraph/go/pkg/store"
@@ -58,6 +60,7 @@ type ProductInput struct {
 	URL         string // Read from URL (Substack post, docs, etc.)
 	Description string // Natural language description
 	SpecFile    string // Path to a Code Graph spec file
+	RepoPath    string // Path to existing repo (targeted mode)
 }
 
 // Pipeline orchestrates agents through the product build phases.
@@ -70,9 +73,12 @@ type Pipeline struct {
 	product   *workspace.Product // current product being built
 	spawner   *spawn.Spawner     // nil = direct creation (no approval)
 
-	cto      *roles.Agent
-	guardian *roles.Agent
-	agents   map[roles.Role]*roles.Agent
+	cto           *roles.Agent
+	guardian      *roles.Agent
+	agents        map[roles.Role]*roles.Agent
+	trackers      map[roles.Role]*resources.TrackingProvider // per-agent token tracking
+	skipGuardian  bool
+	skipSimplify  bool
 }
 
 // Config for creating a new pipeline.
@@ -83,6 +89,15 @@ type Config struct {
 	HumanID types.ActorID              // pre-registered human operator (from auth/actor store)
 	WorkDir string                     // Root directory for generated products
 	Gate    *authority.Gate             // optional authority gate (nil = no approval required)
+
+	// SkipGuardian disables Guardian integrity checks after each phase.
+	// Saves ~6 LLM calls per pipeline run. Use for dev/testing only.
+	SkipGuardian bool
+
+	// SkipSimplify disables the simplification loop after design.
+	// The Architect's design prompt already includes self-review instructions,
+	// so this is often redundant for simple projects. Saves 1-2 Opus calls.
+	SkipSimplify bool
 }
 
 
@@ -102,12 +117,15 @@ func New(ctx context.Context, cfg Config) (*Pipeline, error) {
 	}
 
 	p := &Pipeline{
-		store:     cfg.Store,
-		actors:    cfg.Actors,
-		humanID:   cfg.HumanID,
-		humanName: human.DisplayName(),
-		ws:        ws,
-		agents:    make(map[roles.Role]*roles.Agent),
+		store:        cfg.Store,
+		actors:       cfg.Actors,
+		humanID:      cfg.HumanID,
+		humanName:    human.DisplayName(),
+		ws:           ws,
+		agents:       make(map[roles.Role]*roles.Agent),
+		trackers:     make(map[roles.Role]*resources.TrackingProvider),
+		skipGuardian: cfg.SkipGuardian,
+		skipSimplify: cfg.SkipSimplify,
 	}
 
 	// Wire up spawner if an authority gate is provided.
@@ -143,11 +161,16 @@ func New(ctx context.Context, cfg Config) (*Pipeline, error) {
 	p.cto = cto
 
 	// Bootstrap Guardian — independent integrity monitor (Opus)
-	guardian, err := p.ensureAgent(ctx, roles.RoleGuardian, "guardian")
-	if err != nil {
-		return nil, fmt.Errorf("bootstrap Guardian: %w", err)
+	// Skipped in dev/testing mode to save tokens.
+	if !cfg.SkipGuardian {
+		guardian, err := p.ensureAgent(ctx, roles.RoleGuardian, "guardian")
+		if err != nil {
+			return nil, fmt.Errorf("bootstrap Guardian: %w", err)
+		}
+		p.guardian = guardian
+	} else {
+		fmt.Println("  ↳ Guardian: SKIPPED (--skip-guardian)")
 	}
-	p.guardian = guardian
 
 	return p, nil
 }
@@ -202,16 +225,18 @@ func (p *Pipeline) ensureAgent(ctx context.Context, role roles.Role, name string
 		actorID = agentActor.ID()
 	}
 
-	provider, err := p.providerForRole(role)
+	rawProvider, err := p.providerForRole(role)
 	if err != nil {
 		return nil, fmt.Errorf("provider for %s: %w", role, err)
 	}
+	tracker := resources.NewTrackingProvider(rawProvider)
+	p.trackers[role] = tracker
 	agent, err := roles.NewAgent(ctx, roles.AgentConfig{
 		Role:     role,
 		Name:     name,
 		ActorID:  actorID,
 		Store:    p.store,
-		Provider: provider,
+		Provider: tracker,
 		HumanID:  p.humanID,
 	})
 	if err != nil {
@@ -253,7 +278,7 @@ func newConversationID() (types.ConversationID, error) {
 func (p *Pipeline) Run(ctx context.Context, input ProductInput) error {
 	// ── Phase 1: Research ──
 	fmt.Println("═══ Phase 1: Research ═══")
-	spec, err := p.research(ctx, input)
+	spec, ctoEval, err := p.research(ctx, input)
 	if err != nil {
 		return fmt.Errorf("research: %w", err)
 	}
@@ -261,13 +286,10 @@ func (p *Pipeline) Run(ctx context.Context, input ProductInput) error {
 		return fmt.Errorf("guardian halted pipeline after research phase")
 	}
 
-	// Derive product name if not provided
+	// Extract product name from CTO evaluation or use provided name.
 	name := input.Name
 	if name == "" {
-		name, err = p.deriveName(ctx, spec)
-		if err != nil {
-			return fmt.Errorf("derive name: %w", err)
-		}
+		name = extractName(ctoEval)
 	}
 
 	// Initialize product repo
@@ -289,10 +311,14 @@ func (p *Pipeline) Run(ctx context.Context, input ProductInput) error {
 	}
 
 	// ── Phase 2b: Simplify ──
-	fmt.Println("═══ Phase 2b: Simplify ═══")
-	design, err = p.simplify(ctx, design)
-	if err != nil {
-		return fmt.Errorf("simplify: %w", err)
+	if !p.skipSimplify {
+		fmt.Println("═══ Phase 2b: Simplify ═══")
+		design, err = p.simplify(ctx, design)
+		if err != nil {
+			return fmt.Errorf("simplify: %w", err)
+		}
+	} else {
+		fmt.Println("═══ Phase 2b: Simplify — SKIPPED ═══")
 	}
 
 	// Save the final spec to the product repo
@@ -369,7 +395,499 @@ func (p *Pipeline) Run(ctx context.Context, input ProductInput) error {
 	}
 
 	fmt.Println("═══ Pipeline Complete ═══")
+	p.PrintTokenSummary()
 	return nil
+}
+
+// RunTargeted executes the targeted pipeline for modifying existing code.
+// Skips research/design/simplify — goes straight to understand → modify → review → test.
+func (p *Pipeline) RunTargeted(ctx context.Context, input ProductInput) error {
+	if input.RepoPath == "" {
+		return fmt.Errorf("RunTargeted requires RepoPath")
+	}
+	if input.Description == "" {
+		return fmt.Errorf("RunTargeted requires Description (what to change)")
+	}
+
+	// Open existing repo
+	product, err := workspace.OpenRepo(input.RepoPath)
+	if err != nil {
+		return fmt.Errorf("open repo: %w", err)
+	}
+	p.product = product
+	fmt.Printf("Repo: %s\n", product.Dir)
+
+	// ── Phase 1: Context Load ──
+	fmt.Println("═══ Phase 1: Context Load ═══")
+	existingFiles, err := product.ReadSourceFiles()
+	if err != nil {
+		return fmt.Errorf("read source files: %w", err)
+	}
+	fmt.Printf("Loaded %d source files.\n", len(existingFiles))
+
+	gitLog, _ := product.GitLog(10)
+	if gitLog != "" {
+		fmt.Printf("Recent history:\n%s\n", gitLog)
+	}
+
+	// Build a summary of the existing codebase for agent context
+	var codeContext strings.Builder
+	for path, content := range existingFiles {
+		codeContext.WriteString(fmt.Sprintf("--- FILE: %s ---\n%s\n\n", path, content))
+	}
+	existingCode := codeContext.String()
+
+	// Detect language from existing files
+	lang := detectLanguage(existingFiles)
+	fmt.Printf("Detected language: %s\n", lang)
+
+	// ── Phase 2: Understand ──
+	fmt.Println("═══ Phase 2: Understand ═══")
+	_, ctoAnalysis, err := p.cto.Runtime.Evaluate(ctx, "change_analysis",
+		fmt.Sprintf(`Analyze this change request against the existing codebase. Identify:
+1. Which files need to change and why
+2. What new files (if any) are needed
+3. Key risks or things to watch for
+4. Whether this is feasible without architectural changes
+
+Be concise — the Builder will receive this analysis along with the full codebase.
+
+Change request:
+%s
+
+Git history:
+%s
+
+Existing codebase:
+%s`, input.Description, gitLog, existingCode))
+	if err != nil {
+		return fmt.Errorf("CTO analysis: %w", err)
+	}
+	fmt.Printf("CTO Analysis:\n%s\n", ctoAnalysis)
+	if halt := p.guardianCheck(ctx, "understand"); halt {
+		return fmt.Errorf("guardian halted pipeline after understand phase")
+	}
+
+	// Create branch for the changes
+	branchName := "hive/" + sanitizeBranchName(input.Description)
+	if err := product.CreateBranch(branchName); err != nil {
+		return fmt.Errorf("create branch: %w", err)
+	}
+	fmt.Printf("Branch: %s\n", branchName)
+
+	// ── Phase 3: Modify ──
+	fmt.Println("═══ Phase 3: Modify ═══")
+	files, err := p.modify(ctx, existingFiles, existingCode, ctoAnalysis, input.Description, lang)
+	if err != nil {
+		return fmt.Errorf("modify: %w", err)
+	}
+	if halt := p.guardianCheck(ctx, "modify"); halt {
+		return fmt.Errorf("guardian halted pipeline after modify phase")
+	}
+
+	// ── Phase 4: Review ──
+	const maxReviewRounds = 3
+	for round := 1; round <= maxReviewRounds; round++ {
+		fmt.Printf("═══ Phase 4: Review (round %d) ═══\n", round)
+		feedback, approved, err := p.reviewTargeted(ctx, files, existingFiles, ctoAnalysis, input.Description, lang)
+		if err != nil {
+			return fmt.Errorf("review round %d: %w", round, err)
+		}
+		if halt := p.guardianCheck(ctx, "review"); halt {
+			return fmt.Errorf("guardian halted pipeline after review phase")
+		}
+
+		if approved {
+			fmt.Println("Changes approved by reviewer.")
+			break
+		}
+
+		if round == maxReviewRounds {
+			fmt.Println("Max review rounds reached — proceeding with current code.")
+			break
+		}
+
+		fmt.Printf("═══ Phase 4b: Revise from feedback (round %d) ═══\n", round)
+		files, err = p.revise(ctx, files, existingFiles, feedback, input.Description, lang)
+		if err != nil {
+			return fmt.Errorf("revise round %d: %w", round, err)
+		}
+	}
+
+	// ── Phase 5: Test ──
+	fmt.Println("═══ Phase 5: Test ═══")
+	err = p.test(ctx, files, lang)
+	if err != nil {
+		return fmt.Errorf("test: %w", err)
+	}
+	if halt := p.guardianCheck(ctx, "test"); halt {
+		return fmt.Errorf("guardian halted pipeline after test phase")
+	}
+
+	// ── Phase 6: PR ──
+	fmt.Println("═══ Phase 6: PR ═══")
+	if err := p.openPR(ctx, product, branchName, input.Description, ctoAnalysis); err != nil {
+		fmt.Printf("PR creation failed (may need manual push): %v\n", err)
+	}
+
+	fmt.Println("═══ Pipeline Complete ═══")
+	p.PrintTokenSummary()
+	return nil
+}
+
+// modify uses the builder in agentic mode to modify existing code directly.
+// Falls back to text-based modify if the provider doesn't support Operate.
+func (p *Pipeline) modify(ctx context.Context, existingFiles map[string]string, existingCode string, ctoAnalysis string, changeReq string, lang string) (map[string]string, error) {
+	builder, err := p.ensureAgent(ctx, roles.RoleBuilder, "builder")
+	if err != nil {
+		return nil, err
+	}
+
+	// Try agentic mode first — builder reads/writes files directly
+	tracker := p.trackers[roles.RoleBuilder]
+	if tracker != nil {
+		instruction := fmt.Sprintf(`You are working in a %s repository. Implement the following change:
+
+CHANGE REQUEST: %s
+
+CTO ANALYSIS: %s
+
+Read the existing code, make the changes, and run tests to verify they pass.
+If tests fail, fix the issues and re-run until tests pass.
+Use the project's existing test commands (e.g., go test ./... for Go).
+Preserve existing code style and conventions.
+Do NOT add unnecessary changes beyond what's requested.`, lang, changeReq, ctoAnalysis)
+
+		result, err := tracker.Operate(ctx, decision.OperateTask{
+			WorkDir:     p.product.Dir,
+			Instruction: instruction,
+		})
+		if err == nil {
+			fmt.Printf("Builder (agentic): %s\n", truncate(result.Summary, 200))
+
+			// Record the action event
+			if _, err := builder.Runtime.Act(ctx, writeCodeAction(lang), "agentic modification"); err != nil {
+				fmt.Printf("warning: write_code action event failed: %v\n", err)
+			}
+
+			// Stage and commit whatever the builder changed
+			_ = p.product.StageAll()
+			_ = p.product.Commit(fmt.Sprintf("feat: %s", truncate(changeReq, 60)))
+
+			// Re-read files from disk (builder may have changed anything)
+			updatedFiles, readErr := p.product.ReadSourceFiles()
+			if readErr != nil {
+				return existingFiles, nil
+			}
+			return updatedFiles, nil
+		}
+		// If Operate isn't supported, fall through to text mode
+		fmt.Printf("Agentic mode unavailable (%v), falling back to text mode.\n", err)
+	}
+
+	// Fallback: text-based modify (original approach)
+	return p.modifyText(ctx, existingFiles, existingCode, ctoAnalysis, changeReq, lang)
+}
+
+// modifyText is the text-based fallback for modify when Operate isn't available.
+func (p *Pipeline) modifyText(ctx context.Context, existingFiles map[string]string, existingCode string, ctoAnalysis string, changeReq string, lang string) (map[string]string, error) {
+	builder, err := p.ensureAgent(ctx, roles.RoleBuilder, "builder")
+	if err != nil {
+		return nil, err
+	}
+
+	prompt := fmt.Sprintf(`Modify this existing %s codebase to implement the requested change.
+
+CHANGE REQUEST:
+%s
+
+CTO ANALYSIS:
+%s
+
+EXISTING CODEBASE:
+%s
+
+CRITICAL OUTPUT FORMAT RULES:
+- Output ONLY file blocks using --- FILE: path --- markers
+- Inside each file block, output ONLY raw source code — no markdown fences, no prose, no explanations
+- Include ONLY files that changed or are new — do not re-output unchanged files
+- Every line of your response must be inside a file block
+- Preserve existing code style and conventions`, lang, changeReq, ctoAnalysis, existingCode)
+
+	_, code, err := builder.Runtime.Evaluate(ctx, "code_modification", prompt)
+	if err != nil {
+		return nil, fmt.Errorf("builder modify: %w", err)
+	}
+
+	if _, err := builder.Runtime.Act(ctx, writeCodeAction(lang), "targeted modification"); err != nil {
+		fmt.Printf("warning: write_code action event failed: %v\n", err)
+	}
+
+	changedFiles := parseFiles(code)
+	if len(changedFiles) == 0 {
+		return nil, fmt.Errorf("builder produced no parseable file output")
+	}
+
+	sanitizeGoMod(changedFiles)
+
+	// Merge: start with existing files, overlay changes
+	merged := make(map[string]string, len(existingFiles)+len(changedFiles))
+	for k, v := range existingFiles {
+		merged[k] = v
+	}
+	for k, v := range changedFiles {
+		merged[k] = v
+	}
+
+	for path, content := range changedFiles {
+		if err := p.product.WriteFile(path, content); err != nil {
+			return nil, fmt.Errorf("write %s: %w", path, err)
+		}
+	}
+	if err := p.product.Commit(fmt.Sprintf("feat: %s", truncate(changeReq, 60))); err != nil {
+		return nil, fmt.Errorf("commit changes: %w", err)
+	}
+
+	fmt.Printf("Modified %d files, committed.\n", len(changedFiles))
+	return merged, nil
+}
+
+// reviewTargeted reviews changes against the original codebase.
+func (p *Pipeline) reviewTargeted(ctx context.Context, files map[string]string, originalFiles map[string]string, ctoAnalysis string, changeReq string, lang string) (string, bool, error) {
+	reviewer, err := p.ensureAgent(ctx, roles.RoleReviewer, "reviewer")
+	if err != nil {
+		return "", false, err
+	}
+
+	// Show the diff — what changed vs. what existed
+	var diffSummary strings.Builder
+	for path, newContent := range files {
+		if orig, ok := originalFiles[path]; ok {
+			if orig != newContent {
+				diffSummary.WriteString(fmt.Sprintf("--- MODIFIED: %s ---\n%s\n\n", path, newContent))
+			}
+		} else {
+			diffSummary.WriteString(fmt.Sprintf("--- NEW: %s ---\n%s\n\n", path, newContent))
+		}
+	}
+
+	_, review, err := reviewer.Runtime.Evaluate(ctx, "change_review",
+		fmt.Sprintf(`Review these changes to an existing %s codebase.
+
+CHANGE REQUEST: %s
+
+CTO ANALYSIS: %s
+
+CHANGED/NEW FILES:
+%s
+
+Review for:
+1. Correctness — do the changes implement the request without breaking existing behavior?
+2. Style — do changes match existing code conventions?
+3. Completeness — is anything missing?
+4. Risks — could these changes break existing functionality?
+
+End with: APPROVED or CHANGES NEEDED: <issues>`, lang, changeReq, ctoAnalysis, diffSummary.String()))
+	if err != nil {
+		return "", false, fmt.Errorf("review: %w", err)
+	}
+
+	fmt.Printf("Review:\n%s\n", review)
+
+	return review, detectApproval(review), nil
+}
+
+// revise applies reviewer feedback — agentic mode preferred, text fallback.
+func (p *Pipeline) revise(ctx context.Context, files map[string]string, originalFiles map[string]string, feedback string, changeReq string, lang string) (map[string]string, error) {
+	builder, err := p.ensureAgent(ctx, roles.RoleBuilder, "builder")
+	if err != nil {
+		return nil, err
+	}
+
+	// Try agentic mode
+	tracker := p.trackers[roles.RoleBuilder]
+	if tracker != nil {
+		instruction := fmt.Sprintf(`You are working in a %s repository. Fix the reviewer's feedback:
+
+ORIGINAL CHANGE REQUEST: %s
+
+REVIEWER FEEDBACK:
+%s
+
+Read the current code, apply the fixes, and run tests to verify they pass.`, lang, changeReq, feedback)
+
+		result, err := tracker.Operate(ctx, decision.OperateTask{
+			WorkDir:     p.product.Dir,
+			Instruction: instruction,
+		})
+		if err == nil {
+			fmt.Printf("Builder (agentic revision): %s\n", truncate(result.Summary, 200))
+			_ = p.product.StageAll()
+			_ = p.product.Commit("fix: address reviewer feedback")
+
+			updatedFiles, readErr := p.product.ReadSourceFiles()
+			if readErr != nil {
+				return files, nil
+			}
+			return updatedFiles, nil
+		}
+		fmt.Printf("Agentic mode unavailable (%v), falling back to text mode.\n", err)
+	}
+
+	// Fallback: text-based revise
+	var codeSummary strings.Builder
+	for path, content := range files {
+		codeSummary.WriteString(fmt.Sprintf("--- FILE: %s ---\n%s\n\n", path, content))
+	}
+
+	prompt := fmt.Sprintf(`Fix the reviewer's issues with these changes to an existing %s codebase.
+
+ORIGINAL CHANGE REQUEST: %s
+
+REVIEWER FEEDBACK:
+%s
+
+CURRENT CODE (after modifications):
+%s
+
+Output ONLY the files that need further changes using --- FILE: path --- markers.`, lang, changeReq, feedback, codeSummary.String())
+
+	_, code, err := builder.Runtime.Evaluate(ctx, "code_revision", prompt)
+	if err != nil {
+		return nil, fmt.Errorf("revise: %w", err)
+	}
+
+	revisedFiles := parseFiles(code)
+	if len(revisedFiles) == 0 {
+		return files, nil
+	}
+
+	sanitizeGoMod(revisedFiles)
+
+	for k, v := range revisedFiles {
+		files[k] = v
+	}
+	for path, content := range revisedFiles {
+		if err := p.product.WriteFile(path, content); err != nil {
+			return nil, fmt.Errorf("write %s: %w", path, err)
+		}
+	}
+	if err := p.product.Commit("fix: address reviewer feedback"); err != nil {
+		return nil, fmt.Errorf("commit revision: %w", err)
+	}
+
+	fmt.Printf("Revised %d files from feedback, committed.\n", len(revisedFiles))
+	return files, nil
+}
+
+// openPR pushes the branch and opens a pull request.
+func (p *Pipeline) openPR(ctx context.Context, product *workspace.Product, branch string, changeReq string, analysis string) error {
+	// Push the branch
+	if err := product.PushBranch(); err != nil {
+		return fmt.Errorf("push branch: %w", err)
+	}
+
+	// Open PR via gh CLI
+	title := truncate(changeReq, 70)
+	body := fmt.Sprintf("## Change Request\n%s\n\n## CTO Analysis\n%s\n\n---\nGenerated by hive", changeReq, analysis)
+
+	cmd := exec.Command("gh", "pr", "create", "--title", title, "--body", body)
+	cmd.Dir = product.Dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("gh pr create: %s: %w", string(out), err)
+	}
+	fmt.Printf("PR created: %s\n", strings.TrimSpace(string(out)))
+	return nil
+}
+
+// detectApproval checks the last portion of a review for the approval verdict.
+// Only looks at the last 20 lines to avoid false positives from earlier text
+// (e.g., "CHANGES NEEDED" appearing in quoted instructions or examples).
+func detectApproval(review string) bool {
+	lines := strings.Split(review, "\n")
+	// Look at the last 20 lines for the verdict
+	start := len(lines) - 20
+	if start < 0 {
+		start = 0
+	}
+	verdict := strings.ToUpper(strings.Join(lines[start:], "\n"))
+
+	hasChanges := strings.Contains(verdict, "CHANGES NEEDED") ||
+		strings.Contains(verdict, "CHANGES REQUIRED") ||
+		strings.Contains(verdict, "REJECT")
+	hasApproved := strings.Contains(verdict, "APPROVED")
+	return hasApproved && !hasChanges
+}
+
+// detectLanguage infers the language from existing project files.
+func detectLanguage(files map[string]string) string {
+	if _, ok := files["go.mod"]; ok {
+		return "go"
+	}
+	if _, ok := files["package.json"]; ok {
+		return "typescript"
+	}
+	if _, ok := files["Cargo.toml"]; ok {
+		return "rust"
+	}
+	if _, ok := files["requirements.txt"]; ok {
+		return "python"
+	}
+	if _, ok := files["setup.py"]; ok {
+		return "python"
+	}
+	if _, ok := files["pyproject.toml"]; ok {
+		return "python"
+	}
+	for path := range files {
+		ext := strings.ToLower(filepath.Ext(path))
+		switch ext {
+		case ".go":
+			return "go"
+		case ".rs":
+			return "rust"
+		case ".py":
+			return "python"
+		case ".ts", ".tsx":
+			return "typescript"
+		case ".js", ".jsx":
+			return "javascript"
+		case ".cs":
+			return "csharp"
+		}
+	}
+	return "go"
+}
+
+// sanitizeBranchName converts a description into a valid git branch name.
+func sanitizeBranchName(desc string) string {
+	// Take first 40 chars, lowercase, replace non-alphanumeric with hyphens
+	s := strings.ToLower(desc)
+	if len(s) > 40 {
+		s = s[:40]
+	}
+	var b strings.Builder
+	for _, c := range s {
+		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') {
+			b.WriteRune(c)
+		} else if c == ' ' || c == '_' || c == '/' {
+			b.WriteRune('-')
+		}
+	}
+	result := strings.Trim(b.String(), "-")
+	if result == "" {
+		return "change"
+	}
+	return result
+}
+
+// truncate returns s truncated to n characters.
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n-3] + "..."
 }
 
 // LoopConfig configures the agentic loop mode of the pipeline.
@@ -433,9 +951,12 @@ func (p *Pipeline) RunLoop(ctx context.Context, input ProductInput, cfg LoopConf
 
 	fmt.Println("═══ All loops stopped ═══")
 	for _, ar := range results {
-		fmt.Printf("  %s (%s): stopped=%s iterations=%d tokens=%d\n",
-			ar.Role, ar.Name, ar.Result.Reason, ar.Result.Iterations, ar.Result.Budget.TokensUsed)
+		b := ar.Result.Budget
+		fmt.Printf("  %s (%s): stopped=%s iterations=%d tokens=%d (in=%d out=%d cache_read=%d cache_write=%d) cost=$%.4f\n",
+			ar.Role, ar.Name, ar.Result.Reason, ar.Result.Iterations,
+			b.TokensUsed, b.InputTokens, b.OutputTokens, b.CacheReadTokens, b.CacheWriteTokens, b.CostUSD)
 	}
+	printTokenSummary(results)
 
 	return results, nil
 }
@@ -539,96 +1060,103 @@ func (p *Pipeline) buildLoopConfigs(ctx context.Context, seedTask string, eventB
 
 	// Guardian — watches everything, can HALT. Gets a larger budget than
 	// execution agents so it outlives them (OBSERVABLE invariant).
-	guardianBudget := cfg.GuardianBudget
-	if guardianBudget == (resources.BudgetConfig{}) {
-		// Fallback: scale all execution budget dimensions so Guardian outlives them.
-		guardianBudget = cfg.Budget
-		guardianBudget.MaxIterations *= 10
-		guardianBudget.MaxCostUSD *= 2
-		guardianBudget.MaxDuration *= 2
+	if p.guardian != nil {
+		guardianBudget := cfg.GuardianBudget
+		if guardianBudget == (resources.BudgetConfig{}) {
+			// Fallback: scale all execution budget dimensions so Guardian outlives them.
+			guardianBudget = cfg.Budget
+			guardianBudget.MaxIterations *= 10
+			guardianBudget.MaxCostUSD *= 2
+			guardianBudget.MaxDuration *= 2
+		}
+		configs = append(configs, loop.Config{
+			Agent:   p.guardian,
+			HumanID: p.humanID,
+			Budget:  guardianBudget,
+			Task:    "Monitor all agent activity for policy violations, trust anomalies, and authority overreach. HALT if anything looks wrong.",
+			Bus:     eventBus,
+			OnIteration: func(i int, resp string) {
+				if cfg.OnIteration != nil {
+					cfg.OnIteration(roles.RoleGuardian, i, resp)
+				}
+			},
+		})
 	}
-	configs = append(configs, loop.Config{
-		Agent:   p.guardian,
-		HumanID: p.humanID,
-		Budget:  guardianBudget,
-		Task:    "Monitor all agent activity for policy violations, trust anomalies, and authority overreach. HALT if anything looks wrong.",
-		Bus:     eventBus,
-		OnIteration: func(i int, resp string) {
-			if cfg.OnIteration != nil {
-				cfg.OnIteration(roles.RoleGuardian, i, resp)
-			}
-		},
-	})
 
 	return configs, nil
 }
 
-// deriveName asks the CTO to derive a short, kebab-case product name from the spec.
-func (p *Pipeline) deriveName(ctx context.Context, spec string) (string, error) {
-	_, name, err := p.cto.Runtime.Evaluate(ctx, "product_name",
-		fmt.Sprintf(`Derive a short product name (kebab-case, 2-4 words, lowercase, no special characters) from this product idea. Reply with ONLY the name, nothing else.
-
-Product idea:
-%s`, spec))
-	if err != nil {
-		return "product", nil // fallback
-	}
-	name = strings.TrimSpace(name)
-	name = strings.ToLower(name)
-	name = strings.ReplaceAll(name, " ", "-")
-	var clean []byte
-	for i := 0; i < len(name); i++ {
-		c := name[i]
-		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' {
-			clean = append(clean, c)
+// extractName pulls a product name from the CTO's evaluation response.
+// Looks for "NAME: kebab-case-name" in the text. Falls back to "product".
+func extractName(ctoEval string) string {
+	for _, line := range strings.Split(ctoEval, "\n") {
+		trimmed := strings.TrimSpace(line)
+		upper := strings.ToUpper(trimmed)
+		if strings.HasPrefix(upper, "NAME:") {
+			name := strings.TrimSpace(trimmed[len("NAME:"):])
+			name = strings.ToLower(name)
+			name = strings.ReplaceAll(name, " ", "-")
+			var clean []byte
+			for i := 0; i < len(name); i++ {
+				c := name[i]
+				if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' {
+					clean = append(clean, c)
+				}
+			}
+			if len(clean) > 0 {
+				result := string(clean)
+				fmt.Printf("CTO named product: %s\n", result)
+				return result
+			}
 		}
 	}
-	if len(clean) == 0 {
-		return "product", nil
-	}
-	fmt.Printf("CTO named product: %s\n", string(clean))
-	return string(clean), nil
+	fmt.Println("CTO did not provide a product name — using default.")
+	return "product"
 }
 
 // research gathers information about the product idea.
-func (p *Pipeline) research(ctx context.Context, input ProductInput) (string, error) {
-	var spec string
-
+// Returns the spec text and the CTO's evaluation (which includes the derived product name).
+func (p *Pipeline) research(ctx context.Context, input ProductInput) (spec string, ctoEval string, err error) {
 	if input.SpecFile != "" {
 		content, err := p.ws.ReadFile(input.SpecFile)
 		if err != nil {
-			return "", fmt.Errorf("read spec: %w", err)
+			return "", "", fmt.Errorf("read spec: %w", err)
 		}
 		spec = content
 	} else if input.URL != "" {
 		researcher, err := p.ensureAgent(ctx, roles.RoleResearcher, "researcher")
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 		_, evaluation, err := researcher.Runtime.Research(ctx, input.URL,
 			"extract the product idea, key entities, features, and requirements. Output in Code Graph vocabulary where possible.")
 		if err != nil {
-			return "", fmt.Errorf("research URL: %w", err)
+			return "", "", fmt.Errorf("research URL: %w", err)
 		}
 		spec = evaluation
 	} else if input.Description != "" {
-		// For a plain description, the CTO evaluates directly — no need
-		// to bounce through the Researcher since there's nothing to research.
 		spec = input.Description
 	}
 
-	// CTO evaluates feasibility
-	_, ctoEval, err := p.cto.Runtime.Evaluate(ctx, "feasibility",
-		fmt.Sprintf("Evaluate this product idea for feasibility. What agents are needed? What's the build sequence? Key risks?\n\n%s", spec))
+	// CTO evaluates feasibility and derives a product name in one call.
+	_, ctoEval, err = p.cto.Runtime.Evaluate(ctx, "feasibility",
+		fmt.Sprintf(`Evaluate this product idea for feasibility. What agents are needed? What's the build sequence? Key risks?
+
+On the LAST LINE of your response, output ONLY a kebab-case product name (2-4 words, lowercase, no special characters) like:
+NAME: my-product-name
+
+Product idea:
+%s`, spec))
 	if err != nil {
-		return "", fmt.Errorf("CTO evaluate: %w", err)
+		return "", "", fmt.Errorf("CTO evaluate: %w", err)
 	}
 
 	fmt.Printf("CTO Assessment:\n%s\n", ctoEval)
-	return spec, nil
+	return spec, ctoEval, nil
 }
 
 // design creates a full Code Graph spec from the product idea.
+// The Architect self-reviews for minimality — no separate CTO review call needed.
 func (p *Pipeline) design(ctx context.Context, spec string) (string, error) {
 	architect, err := p.ensureAgent(ctx, roles.RoleArchitect, "architect")
 	if err != nil {
@@ -636,12 +1164,16 @@ func (p *Pipeline) design(ctx context.Context, spec string) (string, error) {
 	}
 
 	prompt := fmt.Sprintf(`Design the full system architecture. Output a complete Code Graph spec.
-Remember: derive complexity from simple compositions. Each view should have the minimal elements needed — if a view feels heavy, decompose it. Elegant, simple, beautiful.
 
-Also specify the target language/framework at the top of your spec in a line like:
+CRITICAL CONSTRAINTS — review your own output before responding:
+- Derive complexity from simple compositions. Each view: minimal elements needed.
+- If a view feels heavy, decompose it. Elegant, simple, beautiful.
+- Are views minimal? Is complexity derived from composition, not accumulated?
+- Are there bloated entities or views that should be decomposed?
+- Count your elements — can any be removed without losing functionality?
+
+Specify the target language/framework at the top of your spec:
 LANGUAGE: go
-or
-LANGUAGE: typescript
 
 Product idea:
 %s`, spec)
@@ -651,14 +1183,6 @@ Product idea:
 		return "", fmt.Errorf("architect design: %w", err)
 	}
 
-	// CTO reviews the architecture
-	_, review, err := p.cto.Runtime.Evaluate(ctx, "architecture_review",
-		fmt.Sprintf("Review this architecture. Check: Are views minimal? Is complexity derived from composition rather than accumulated? Are there any bloated entities or views that should be decomposed? Is it elegant and simple?\n\n%s", design))
-	if err != nil {
-		return "", fmt.Errorf("CTO review design: %w", err)
-	}
-
-	fmt.Printf("Architecture Review:\n%s\n", review)
 	return design, nil
 }
 
@@ -669,20 +1193,19 @@ func (p *Pipeline) simplify(ctx context.Context, design string) (string, error) 
 		return "", err
 	}
 
-	const maxRounds = 3
+	const maxRounds = 2
 	current := design
 
 	for round := 1; round <= maxRounds; round++ {
 		_, analysis, err := architect.Runtime.Evaluate(ctx, "simplify",
-			fmt.Sprintf(`Review this Code Graph spec for simplification opportunities.
+			fmt.Sprintf(`Review this Code Graph spec for simplification. Apply ALL simplifications in ONE pass.
 
-For each View: can it be composed from fewer elements? Are any elements redundant or derivable from others?
-For each Entity: is it as small as possible? Should it be split or can properties be derived?
-For each State machine: are there too many states? Can transitions be reduced?
-For each Layout: does it have too many children? Can sub-views be composed instead?
+- Can any View be composed from fewer elements? Any redundant or derivable?
+- Can any Entity be smaller? Properties derived instead of stored?
+- Can any State machine have fewer states or transitions?
 
-If you find simplifications, output the REVISED spec with the changes applied.
-If the spec is already minimal, respond with exactly: MINIMAL
+If you find simplifications, output the COMPLETE REVISED spec.
+If already minimal, respond with exactly: MINIMAL
 
 Current spec:
 %s`, current))
@@ -743,7 +1266,10 @@ Include:
 - Test files alongside the code they test
 - A README.md with build and run instructions
 
-Do NOT include explanation text outside of file blocks. Every line of output must be inside a file block.
+CRITICAL OUTPUT FORMAT RULES:
+- Every line of output must be inside a file block
+- Inside file blocks, output ONLY raw source code — no markdown fences (no ` + "```" + `), no prose, no explanations
+- Do NOT include any text outside of file blocks
 
 Specification:
 %s`, lang, design)
@@ -767,6 +1293,9 @@ Specification:
 		ext := langExtension(lang)
 		files = map[string]string{"main" + ext: code}
 	}
+
+	// Sanitize go.mod — LLMs often embed newlines in the module path.
+	sanitizeGoMod(files)
 
 	// Write all files to product repo
 	for path, content := range files {
@@ -817,6 +1346,8 @@ Output the COMPLETE revised files using --- FILE: path --- markers. Include ALL 
 		return currentFiles, nil // no parseable output, keep current
 	}
 
+	sanitizeGoMod(files)
+
 	for path, content := range files {
 		if err := p.product.WriteFile(path, content); err != nil {
 			return nil, fmt.Errorf("write %s: %w", path, err)
@@ -830,7 +1361,8 @@ Output the COMPLETE revised files using --- FILE: path --- markers. Include ALL 
 	return files, nil
 }
 
-// review checks code quality and spec compliance. Returns feedback and whether approved.
+// review checks code quality and spec compliance in a single LLM call.
+// Returns feedback and whether approved.
 func (p *Pipeline) review(ctx context.Context, files map[string]string, design string, lang string) (feedback string, approved bool, err error) {
 	reviewer, err := p.ensureAgent(ctx, roles.RoleReviewer, "reviewer")
 	if err != nil {
@@ -844,63 +1376,43 @@ func (p *Pipeline) review(ctx context.Context, files map[string]string, design s
 	}
 	allCode := codeSummary.String()
 
-	// Code review
-	_, codeReview, err := reviewer.Runtime.CodeReview(ctx, allCode, lang)
-	if err != nil {
-		return "", false, fmt.Errorf("code review: %w", err)
-	}
+	// Single comprehensive review call — replaces 4 separate calls.
+	_, review, err := reviewer.Runtime.Evaluate(ctx, "code_review",
+		fmt.Sprintf(`Review this %s code comprehensively. Cover ALL of the following in ONE response:
 
-	// Spec compliance
-	_, specReview, err := reviewer.Runtime.Evaluate(ctx, "spec_compliance",
-		fmt.Sprintf("Does this code match the design spec? Flag any deviations.\n\nDesign:\n%s\n\nCode:\n%s", design, allCode))
-	if err != nil {
-		return "", false, fmt.Errorf("spec review: %w", err)
-	}
+## 1. Code Quality
+Bugs, security issues, error handling, test coverage, best practices.
 
-	// Simplicity check
-	_, simplicityReview, err := reviewer.Runtime.Evaluate(ctx, "simplicity_check",
-		fmt.Sprintf(`Review this code for unnecessary complexity:
+## 2. Spec Compliance
+Does the code match this design spec? Flag deviations.
+Design:
+%s
+
+## 3. Simplicity
+- Unnecessary complexity? Over-engineered patterns?
 - Components that could be derived from simpler compositions?
-- Redundant abstractions or over-engineered patterns?
-- Did the builder add extras beyond the spec?
+- Extras beyond the spec?
+
+## 4. Verdict
+End with exactly one of:
+- APPROVED — code is ready
+- CHANGES NEEDED: followed by the specific issues to fix
 
 Code:
-%s`, allCode))
+%s`, lang, design, allCode))
 	if err != nil {
-		return "", false, fmt.Errorf("simplicity review: %w", err)
+		return "", false, fmt.Errorf("review: %w", err)
 	}
 
-	// Final verdict
-	_, verdict, err := reviewer.Runtime.Decide(ctx, "approve_or_reject",
-		fmt.Sprintf(`Based on your reviews, should this code be APPROVED or does it need CHANGES?
+	fmt.Printf("Review:\n%s\n", review)
 
-Code Review: %s
-Spec Compliance: %s
-Simplicity: %s
-
-Reply with APPROVED if the code is ready, or CHANGES NEEDED: followed by the specific issues to fix.`, codeReview, specReview, simplicityReview))
-	if err != nil {
-		return "", false, fmt.Errorf("verdict: %w", err)
-	}
-
-	fmt.Printf("Code Review:\n%s\n\nSpec Compliance:\n%s\n\nSimplicity:\n%s\n\nVerdict: %s\n",
-		codeReview, specReview, simplicityReview, verdict)
-
-	// APPROVED unless explicitly requesting changes
-	upper := strings.ToUpper(verdict)
-	approved = !strings.Contains(upper, "CHANGES NEEDED") &&
-		!strings.Contains(upper, "CHANGES REQUIRED") &&
-		!strings.Contains(upper, "REJECT")
-	return verdict, approved, nil
+	approved = detectApproval(review)
+	return review, approved, nil
 }
 
-// test installs deps, runs tests, and has the tester analyze gaps.
+// test installs deps, runs tests, and has the tester analyze failures.
+// Skips the analysis LLM call if tests pass — no need to spend tokens on "looks good".
 func (p *Pipeline) test(ctx context.Context, files map[string]string, lang string) error {
-	tester, err := p.ensureAgent(ctx, roles.RoleTester, "tester")
-	if err != nil {
-		return err
-	}
-
 	// Install dependencies first
 	p.installDeps(lang)
 
@@ -913,20 +1425,26 @@ func (p *Pipeline) test(ctx context.Context, files map[string]string, lang strin
 	testOutput, testErr := cmd.CombinedOutput()
 
 	testResult := string(testOutput)
-	if testErr != nil {
-		fmt.Printf("Tests failed:\n%s\n", testResult)
-	} else {
+	if testErr == nil {
 		fmt.Printf("Tests passed:\n%s\n", testResult)
+		return nil // No need for tester analysis or builder fixes.
 	}
 
-	// Have the tester analyze results and coverage gaps
+	fmt.Printf("Tests failed:\n%s\n", testResult)
+
+	// Tests failed — have the tester analyze what went wrong.
+	tester, err := p.ensureAgent(ctx, roles.RoleTester, "tester")
+	if err != nil {
+		return err
+	}
+
 	var codeSummary strings.Builder
 	for path, content := range files {
 		codeSummary.WriteString(fmt.Sprintf("--- %s ---\n%s\n\n", path, content))
 	}
 
 	_, testEval, err := tester.Runtime.Evaluate(ctx, "test_analysis",
-		fmt.Sprintf(`Analyze the test results and code. Are there coverage gaps? What additional tests are needed?
+		fmt.Sprintf(`Tests are failing. Analyze the failures and identify root causes.
 
 Test output:
 %s
@@ -939,15 +1457,50 @@ Code:
 
 	fmt.Printf("Test Analysis:\n%s\n", testEval)
 
-	// If tests failed, have the builder fix them
-	if testErr != nil {
+	// Have the builder fix the failures.
+	{
 		fmt.Println("Attempting to fix failing tests...")
 		builder, err := p.ensureAgent(ctx, roles.RoleBuilder, "builder")
 		if err != nil {
 			return err
 		}
 
-		fixPrompt := fmt.Sprintf(`The tests are failing. Fix the code so tests pass.
+		fixed := false
+
+		// Try agentic mode first — builder reads/writes files directly
+		tracker := p.trackers[roles.RoleBuilder]
+		if tracker != nil {
+			instruction := fmt.Sprintf(`You are working in a %s repository. The tests are failing. Fix the code so tests pass.
+
+Test output:
+%s
+
+Read the failing tests and the code under test, fix the issues, and run tests to verify they pass.
+Use the project's existing test commands (e.g., go test ./... for Go).
+Preserve existing code style and conventions.`, lang, testResult)
+
+			result, opErr := tracker.Operate(ctx, decision.OperateTask{
+				WorkDir:     p.product.Dir,
+				Instruction: instruction,
+			})
+			if opErr == nil {
+				fmt.Printf("Builder (agentic fix): %s\n", truncate(result.Summary, 200))
+
+				if _, actErr := builder.Runtime.Act(ctx, writeCodeAction(lang), "agentic test fix"); actErr != nil {
+					fmt.Printf("warning: write_code action event failed: %v\n", actErr)
+				}
+
+				_ = p.product.StageAll()
+				_ = p.product.Commit("fix: address failing tests")
+				fixed = true
+			} else {
+				fmt.Printf("Agentic mode unavailable (%v), falling back to text mode.\n", opErr)
+			}
+		}
+
+		// Fallback: text-based fix
+		if !fixed {
+			fixPrompt := fmt.Sprintf(`The tests are failing. Fix the code so tests pass.
 
 Test output:
 %s
@@ -957,19 +1510,21 @@ Current code:
 
 Output ALL files using --- FILE: path --- markers.`, testResult, codeSummary.String())
 
-		_, fixedCode, err := builder.Runtime.Evaluate(ctx, "test_fix", fixPrompt)
-		if err != nil {
-			return fmt.Errorf("fix tests: %w", err)
-		}
-
-		fixedFiles := parseFiles(fixedCode)
-		for path, content := range fixedFiles {
-			if err := p.product.WriteFile(path, content); err != nil {
-				return fmt.Errorf("write fix %s: %w", path, err)
+			_, fixedCode, err := builder.Runtime.Evaluate(ctx, "test_fix", fixPrompt)
+			if err != nil {
+				return fmt.Errorf("fix tests: %w", err)
 			}
-		}
-		if len(fixedFiles) > 0 {
-			_ = p.product.Commit("fix: address failing tests")
+
+			fixedFiles := parseFiles(fixedCode)
+			sanitizeGoMod(fixedFiles)
+			for path, content := range fixedFiles {
+				if err := p.product.WriteFile(path, content); err != nil {
+					return fmt.Errorf("write fix %s: %w", path, err)
+				}
+			}
+			if len(fixedFiles) > 0 {
+				_ = p.product.Commit("fix: address failing tests")
+			}
 		}
 
 		// Re-run tests
@@ -978,9 +1533,9 @@ Output ALL files using --- FILE: path --- markers.`, testResult, codeSummary.Str
 		retryOutput, retryErr := cmd2.CombinedOutput()
 		if retryErr != nil {
 			fmt.Printf("Tests still failing after fix attempt:\n%s\n", string(retryOutput))
-		} else {
-			fmt.Printf("Tests now passing:\n%s\n", string(retryOutput))
+			return fmt.Errorf("tests still failing after fix attempt")
 		}
+		fmt.Printf("Tests now passing:\n%s\n", string(retryOutput))
 	}
 
 	return nil
@@ -1052,6 +1607,9 @@ func (p *Pipeline) integrate(ctx context.Context) error {
 // guardianCheck runs the Guardian's integrity check after a phase.
 // Returns true if the Guardian issued a HALT — the pipeline should stop.
 func (p *Pipeline) guardianCheck(ctx context.Context, phase string) bool {
+	if p.skipGuardian {
+		return false
+	}
 	events, err := p.guardian.Runtime.Memory(20)
 	if err != nil || len(events) == 0 {
 		return false
@@ -1111,7 +1669,50 @@ Events:
 // File parsing utilities
 // ════════════════════════════════════════════════════════════════════════
 
+// sanitizeGoMod fixes common LLM go.mod corruption.
+// The most common issue is newlines embedded in the module path string,
+// producing `module "github.com/\nfoo/bar"` which Go rejects.
+// Fix: rejoin any line that looks like a continuation of a module directive.
+func sanitizeGoMod(files map[string]string) {
+	content, ok := files["go.mod"]
+	if !ok {
+		return
+	}
+
+	lines := strings.Split(content, "\n")
+	var cleaned []string
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
+		trimmed := strings.TrimSpace(line)
+
+		// If a module/go/require line is split across multiple lines, rejoin.
+		if strings.HasPrefix(trimmed, "module ") || trimmed == "module" {
+			// Collect continuation lines until we have the full module path.
+			joined := trimmed
+			for i+1 < len(lines) {
+				next := strings.TrimSpace(lines[i+1])
+				if next == "" || strings.HasPrefix(next, "go ") ||
+					strings.HasPrefix(next, "require") ||
+					strings.HasPrefix(next, "replace") ||
+					strings.HasPrefix(next, "module ") {
+					break
+				}
+				// This line is a continuation of the module directive.
+				joined += next
+				i++
+			}
+			// Remove any quotes around the module path.
+			joined = strings.ReplaceAll(joined, "\"", "")
+			cleaned = append(cleaned, joined)
+		} else {
+			cleaned = append(cleaned, line)
+		}
+	}
+	files["go.mod"] = strings.Join(cleaned, "\n")
+}
+
 // parseFiles extracts files from builder output using --- FILE: path --- markers.
+// Strips markdown code fences (```lang / ```) that LLMs sometimes wrap around file content.
 func parseFiles(output string) map[string]string {
 	files := make(map[string]string)
 	lines := strings.Split(output, "\n")
@@ -1124,7 +1725,7 @@ func parseFiles(output string) map[string]string {
 		if strings.HasPrefix(trimmed, "--- FILE:") && strings.HasSuffix(trimmed, "---") {
 			// Save previous file if any
 			if currentPath != "" {
-				files[currentPath] = strings.TrimRight(currentContent.String(), "\n")
+				files[currentPath] = stripMarkdownFences(strings.TrimRight(currentContent.String(), "\n"))
 			}
 			// Extract new path
 			path := strings.TrimSpace(trimmed[len("--- FILE:") : len(trimmed)-len("---")])
@@ -1137,10 +1738,43 @@ func parseFiles(output string) map[string]string {
 	}
 	// Save last file
 	if currentPath != "" {
-		files[currentPath] = strings.TrimRight(currentContent.String(), "\n")
+		files[currentPath] = stripMarkdownFences(strings.TrimRight(currentContent.String(), "\n"))
 	}
 
 	return files
+}
+
+// stripMarkdownFences removes markdown code fences and trailing prose from file content.
+// Handles: opening ```lang on first line, closing ``` on last code line,
+// and any trailing markdown text after the closing fence.
+func stripMarkdownFences(content string) string {
+	lines := strings.Split(content, "\n")
+	if len(lines) == 0 {
+		return content
+	}
+
+	start := 0
+	end := len(lines)
+
+	// Strip leading markdown fence (```go, ```python, etc.)
+	if strings.HasPrefix(strings.TrimSpace(lines[0]), "```") {
+		start = 1
+	}
+
+	// Find and strip trailing markdown fence + any prose after it
+	for i := end - 1; i >= start; i-- {
+		trimmed := strings.TrimSpace(lines[i])
+		if trimmed == "```" {
+			end = i
+			break
+		}
+	}
+
+	if start >= end {
+		return content // safety: don't return empty if something went wrong
+	}
+
+	return strings.Join(lines[start:end], "\n")
 }
 
 // langExtension returns the default file extension for a language.
@@ -1195,6 +1829,64 @@ func containsAlert(eval string) bool {
 		}
 	}
 	return false
+}
+
+// PrintTokenSummary prints per-agent token usage from tracking providers.
+func (p *Pipeline) PrintTokenSummary() {
+	fmt.Println("\n═══ Token Usage Summary ═══")
+	fmt.Printf("  %-12s %-8s %8s %8s %8s %10s %10s %10s\n",
+		"Role", "Model", "Input", "Output", "Total", "CacheRead", "CacheWrite", "Cost")
+	fmt.Printf("  %-12s %-8s %8s %8s %8s %10s %10s %10s\n",
+		"────", "─────", "─────", "──────", "─────", "─────────", "──────────", "────")
+
+	var totalIn, totalOut, totalTokens, totalCacheRead, totalCacheWrite int
+	var totalCost float64
+
+	for role, tracker := range p.trackers {
+		s := tracker.Snapshot()
+		fmt.Printf("  %-12s %-8s %8d %8d %8d %10d %10d %10s\n",
+			role, tracker.Model(), s.InputTokens, s.OutputTokens, s.TokensUsed,
+			s.CacheReadTokens, s.CacheWriteTokens, fmt.Sprintf("$%.4f", s.CostUSD))
+		totalIn += s.InputTokens
+		totalOut += s.OutputTokens
+		totalTokens += s.TokensUsed
+		totalCacheRead += s.CacheReadTokens
+		totalCacheWrite += s.CacheWriteTokens
+		totalCost += s.CostUSD
+	}
+
+	fmt.Printf("  %-12s %-8s %8d %8d %8d %10d %10d %10s\n",
+		"TOTAL", "", totalIn, totalOut, totalTokens,
+		totalCacheRead, totalCacheWrite, fmt.Sprintf("$%.4f", totalCost))
+}
+
+// printTokenSummary prints an aggregate token usage table from loop results.
+func printTokenSummary(results []loop.AgentResult) {
+	var totalIn, totalOut, totalCacheRead, totalCacheWrite, totalTokens int
+	var totalCost float64
+
+	fmt.Println("\n═══ Token Usage Summary ═══")
+	fmt.Printf("  %-12s %8s %8s %8s %10s %10s %10s\n",
+		"Role", "Input", "Output", "Total", "CacheRead", "CacheWrite", "Cost")
+	fmt.Printf("  %-12s %8s %8s %8s %10s %10s %10s\n",
+		"────", "─────", "──────", "─────", "─────────", "──────────", "────")
+
+	for _, ar := range results {
+		b := ar.Result.Budget
+		fmt.Printf("  %-12s %8d %8d %8d %10d %10d %10s\n",
+			ar.Role, b.InputTokens, b.OutputTokens, b.TokensUsed,
+			b.CacheReadTokens, b.CacheWriteTokens, fmt.Sprintf("$%.4f", b.CostUSD))
+		totalIn += b.InputTokens
+		totalOut += b.OutputTokens
+		totalTokens += b.TokensUsed
+		totalCacheRead += b.CacheReadTokens
+		totalCacheWrite += b.CacheWriteTokens
+		totalCost += b.CostUSD
+	}
+
+	fmt.Printf("  %-12s %8d %8d %8d %10d %10d %10s\n",
+		"TOTAL", totalIn, totalOut, totalTokens,
+		totalCacheRead, totalCacheWrite, fmt.Sprintf("$%.4f", totalCost))
 }
 
 // Store returns the shared event graph.

@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/lovyou-ai/eventgraph/go/pkg/decision"
 )
 
 // Budget tracks resource consumption for an agent loop.
@@ -22,10 +24,14 @@ type Budget struct {
 	maxDuration   time.Duration
 
 	// Consumed.
-	tokensUsed int
-	costUSD    float64
-	iterations int
-	startTime  time.Time
+	tokensUsed       int
+	inputTokens      int
+	outputTokens     int
+	cacheReadTokens  int
+	cacheWriteTokens int
+	costUSD          float64
+	iterations       int
+	startTime        time.Time
 }
 
 // BudgetConfig configures resource limits. Zero values mean unlimited.
@@ -65,6 +71,19 @@ func (b *Budget) Record(tokens int, costUSD float64) {
 	defer b.mu.Unlock()
 	b.tokensUsed += tokens
 	b.costUSD += costUSD
+	b.iterations++
+}
+
+// RecordUsage adds resource consumption from a TokenUsage breakdown.
+func (b *Budget) RecordUsage(usage decision.TokenUsage) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.tokensUsed += usage.Total()
+	b.inputTokens += usage.InputTokens
+	b.outputTokens += usage.OutputTokens
+	b.cacheReadTokens += usage.CacheReadTokens
+	b.cacheWriteTokens += usage.CacheWriteTokens
+	b.costUSD += usage.CostUSD
 	b.iterations++
 }
 
@@ -112,19 +131,27 @@ func (b *Budget) Snapshot() BudgetSnapshot {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return BudgetSnapshot{
-		TokensUsed: b.tokensUsed,
-		CostUSD:    b.costUSD,
-		Iterations: b.iterations,
-		Elapsed:    time.Since(b.startTime),
+		TokensUsed:       b.tokensUsed,
+		InputTokens:      b.inputTokens,
+		OutputTokens:     b.outputTokens,
+		CacheReadTokens:  b.cacheReadTokens,
+		CacheWriteTokens: b.cacheWriteTokens,
+		CostUSD:          b.costUSD,
+		Iterations:       b.iterations,
+		Elapsed:          time.Since(b.startTime),
 	}
 }
 
 // BudgetSnapshot is an immutable copy of resource consumption at a point in time.
 type BudgetSnapshot struct {
-	TokensUsed int
-	CostUSD    float64
-	Iterations int
-	Elapsed    time.Duration
+	TokensUsed       int
+	InputTokens      int
+	OutputTokens     int
+	CacheReadTokens  int
+	CacheWriteTokens int
+	CostUSD          float64
+	Iterations       int
+	Elapsed          time.Duration
 }
 
 // BudgetResource identifies which resource limit was exceeded.

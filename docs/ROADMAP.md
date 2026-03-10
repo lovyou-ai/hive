@@ -22,14 +22,57 @@ The hive can take a product idea, research it, design a Code Graph spec, generat
 
 **What works today:**
 - CLI pipeline: idea → research → design → simplify → build → review → test → integrate
-- Per-role intelligence (Opus for judgment, Sonnet for execution, Haiku for volume)
+- Per-role intelligence (Opus for judgment + code gen, Sonnet for execution, Haiku for volume)
 - Multi-file code generation with review/rebuild loop
 - Product repos with git commits at each phase
 - Guardian integrity checks with HALT capability
 - Postgres event store (via eventgraph pgstore)
 - Actor registration (in-memory, human bootstrap via CLI)
+- Per-agent token tracking with full breakdown (input, output, cache read/write, cost)
+- Pipeline halts on test failure (no silent promotion of broken code)
+- Targeted pipeline mode: read existing code → understand → modify → review → test → PR
+- Agentic builder: Claude CLI reads/writes files directly via Operate (no text parsing middleman)
+- Branch workflow for existing repos (create branch, commit, open PR)
+- CLI `--repo` flag for targeting existing codebases
 - 11 roles defined with system prompts and soul values
 - Complete documentation (12 docs, ~2,200 lines)
+
+**What doesn't work yet:**
+- No concept of project continuity — every run starts from scratch
+- No client/project registry — the hive doesn't know who it's building for
+
+---
+
+## Milestone 0: Self-Improvement Loop
+
+**Why first:** The hive's first product is itself. Before building for others, it must be able to modify existing code — its own code. This is the prerequisite for everything: adding features, fixing bugs, growing capabilities. Without this, the hive is a one-shot generator, not a civilisation.
+
+**Dependency:** None — builds on what exists today.
+
+**Architecture decisions (derived via derivation method):**
+- **The filesystem is the source of truth for code.** The git workdir has the code. The state store and event graph record metadata and decisions. We don't store code in the database.
+- **Clients are NOT actors.** They don't sign events or make decisions on the graph. Clients are lightweight metadata in the state store. When lovyou.ai gets auth (Milestone 5), client representatives become human actors. But the client org itself isn't a decision-maker.
+- **No eventgraph changes needed.** The state store (`IStateStore`) handles project/client metadata. The event graph records decisions. ConversationID groups events per project/run.
+- **Two pipeline modes:** Full pipeline (greenfield: research → design → build → review → test → integrate) and targeted mode (existing code: understand → modify → review → test → PR). Self-improvement and feature additions use targeted mode.
+- **Branch workflow for existing repos.** Self-improvement creates branches and PRs, not direct commits to main. Guardian scrutiny is higher for self-modification.
+
+| # | Task | Where | Effort | Status |
+|---|------|-------|--------|--------|
+| 0.1 | Context loader — read existing files from any directory into ProjectContext | `hive/pkg/pipeline/` | 0.5d | ✅ Done |
+| 0.2 | Context-aware prompts — builder/reviewer receive existing code as context | `hive/pkg/pipeline/` | 1d | ✅ Done |
+| 0.3 | Targeted pipeline mode — skip research/design for modifications to existing code | `hive/pkg/pipeline/` | 1d | ✅ Done |
+| 0.4 | Branch workflow — create branch, commit changes, open PR (not push to main) | `hive/pkg/workspace/` | 0.5d | ✅ Done |
+| 0.5 | CLI: `--repo <path>` flag to target existing repo | `hive/cmd/hive/` | 0.5d | ✅ Done |
+| 0.6 | Test: hive adds a feature to an existing project (end-to-end) | manual test | 0.5d | ✅ Done |
+| 0.7 | Test: hive fixes a bug in its own codebase (end-to-end) | manual test | 0.5d | ||
+
+**Exit criteria:** The hive can read an existing codebase, understand what needs changing, make targeted modifications, verify tests pass, and open a PR. Tested on both external projects and the hive's own code.
+
+**Future (post-self-improvement):**
+- Project registry in state store (scope: `project`, key: project ID → {client, repo, language, status})
+- Client registry in state store (scope: `client`, key: client ID → {name, notes})
+- CLI: `--client`, `--project`, `hive projects list`
+- Per-project budgets, per-client billing (Milestone 9)
 
 ---
 
@@ -257,15 +300,17 @@ The hive can take a product idea, research it, design a Code Graph spec, generat
 ## Dependency Graph
 
 ```
-M1 (Identity) ─────┬──→ M2 (MCP Tools) ──→ M4 (Agentic Loop) ──→ M7 (Self-Improve)
-                    │         │                                          │
-                    ├──→ M3 (Spawning) ──→ M4                    M8 (Products)
-                    │                                                    │
-                    └──→ M5 (Web/Auth) ──→ M6 (CI/CD) ──→ M7      M9 (Economy)
-                                                                        │
-                                                                  M10 (Market/Social)
-                                                                        │
-                                                                  M11 (Civilisation)
+M0 (Self-Improve) ──→ M1 (Identity) ─────┬──→ M2 (MCP Tools) ──→ M4 (Agentic Loop)
+                                          │         │                      │
+                                          ├──→ M3 (Spawning) ──→ M4    M7 (Self-Mod CI)
+                                          │                                │
+                                          └──→ M5 (Web/Auth) ──→ M6    M8 (Products)
+                                                                           │
+                                                                     M9 (Economy)
+                                                                           │
+                                                                     M10 (Market/Social)
+                                                                           │
+                                                                     M11 (Civilisation)
 ```
 
 Milestones 2, 3, and 5 can run in parallel after Milestone 1. Milestones 4 and 6 can run in parallel. Everything converges at Milestone 7 (self-improvement), then flows through products → economy → civilisation.

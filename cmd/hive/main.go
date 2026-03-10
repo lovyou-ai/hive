@@ -38,14 +38,17 @@ func run() error {
 	idea := flag.String("idea", "", "Product idea (natural language description)")
 	url := flag.String("url", "", "URL to research for product idea")
 	spec := flag.String("spec", "", "Path to Code Graph spec file")
+	repo := flag.String("repo", "", "Path to existing repo (targeted mode — modify existing code)")
 	workdir := flag.String("workdir", "products", "Directory for generated products")
 	storeDSN := flag.String("store", "", "Store connection string (postgres://... or empty for in-memory)")
 	loopMode := flag.Bool("loop", false, "Use agentic loop mode (concurrent self-directing agents)")
 	autoApprove := flag.Bool("yes", false, "Auto-approve all authority requests (dev/testing only)")
+	skipGuardian := flag.Bool("skip-guardian", false, "Skip Guardian integrity checks after each phase (dev/testing only)")
+	skipSimplify := flag.Bool("skip-simplify", false, "Skip the simplification loop after design (dev/testing only)")
 	flag.Parse()
 
 	if *idea == "" && *url == "" && *spec == "" {
-		return fmt.Errorf("usage: hive --human name [--store postgres://...] [--name product-name] --idea 'description' | --url 'https://...' | --spec path/to/spec.cg")
+		return fmt.Errorf("usage: hive --human name [--store postgres://...] [--name product-name] --idea 'description' | --url 'https://...' | --spec path/to/spec.cg | --repo path --idea 'change'")
 	}
 	if *human == "" {
 		return fmt.Errorf("--human is required (the name of the human operator)")
@@ -135,15 +138,17 @@ func run() error {
 	gate := authority.NewGate(approver)
 
 	// Create and run pipeline — uses Claude CLI (Max plan, flat rate)
-	// CTO, Architect, Reviewer, Guardian → Opus (high judgment)
-	// Builder, Tester, Integrator, Researcher → Sonnet (execution)
+	// CTO, Architect, Reviewer, Guardian, Builder → Opus (high judgment + code gen)
+	// Tester, Integrator, Researcher → Sonnet (execution)
 	p, err := pipeline.New(ctx, pipeline.Config{
-		Store:   s,
-		Actors:  actors,
-		Trust:   trustModel,
-		HumanID: humanID,
-		WorkDir: *workdir,
-		Gate:    gate,
+		Store:        s,
+		Actors:       actors,
+		Trust:        trustModel,
+		HumanID:      humanID,
+		WorkDir:      *workdir,
+		Gate:         gate,
+		SkipGuardian: *skipGuardian,
+		SkipSimplify: *skipSimplify,
 	})
 	if err != nil {
 		return fmt.Errorf("pipeline: %w", err)
@@ -154,9 +159,16 @@ func run() error {
 		URL:         *url,
 		Description: *idea,
 		SpecFile:    *spec,
+		RepoPath:    *repo,
 	}
 
-	if *loopMode {
+	if *repo != "" {
+		// Targeted mode — modify existing code
+		fmt.Println("Mode: targeted (modify existing code)")
+		if err := p.RunTargeted(ctx, input); err != nil {
+			return fmt.Errorf("targeted pipeline failed: %w", err)
+		}
+	} else if *loopMode {
 		// Agentic loop mode — concurrent self-directing agents
 		fmt.Println("Mode: agentic loop (concurrent)")
 		results, err := p.RunLoop(ctx, input, pipeline.DefaultLoopConfig())

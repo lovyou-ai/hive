@@ -156,6 +156,11 @@ func (p *Product) WriteFile(relPath string, content string) error {
 	return p.git("add", relPath)
 }
 
+// StageAll stages all changes (new, modified, deleted) in the product repo.
+func (p *Product) StageAll() error {
+	return p.git("add", "-A")
+}
+
 // Commit commits staged changes in the product repo.
 func (p *Product) Commit(message string) error {
 	return p.git("commit", "-m", message)
@@ -186,6 +191,113 @@ func (p *Product) gh(args ...string) error {
 		return fmt.Errorf("gh %s: %s: %w", strings.Join(args, " "), string(out), err)
 	}
 	return nil
+}
+
+// OpenRepo opens an arbitrary directory as a Product.
+// Unlike InitProduct, this does NOT create a git repo or GitHub remote.
+// The directory must already exist and be a git repo.
+func OpenRepo(dir string) (*Product, error) {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, fmt.Errorf("abs path: %w", err)
+	}
+	if _, err := os.Stat(filepath.Join(abs, ".git")); os.IsNotExist(err) {
+		return nil, fmt.Errorf("%s is not a git repository", abs)
+	}
+	name := filepath.Base(abs)
+	return &Product{Name: name, Dir: abs}, nil
+}
+
+// ReadSourceFiles reads all source files from the product directory.
+// Skips .git, binary files, and files over 100KB.
+// Returns a map of relative path → content.
+func (p *Product) ReadSourceFiles() (map[string]string, error) {
+	files := make(map[string]string)
+	err := filepath.Walk(p.Dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			base := filepath.Base(path)
+			if base == ".git" || base == "node_modules" || base == "vendor" || base == "__pycache__" || base == "target" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		// Skip large files (>100KB) and known binary extensions
+		if info.Size() > 100*1024 {
+			return nil
+		}
+		ext := strings.ToLower(filepath.Ext(path))
+		if isBinaryExt(ext) {
+			return nil
+		}
+
+		rel, err := filepath.Rel(p.Dir, path)
+		if err != nil {
+			return nil
+		}
+		// Normalize to forward slashes for consistency
+		rel = filepath.ToSlash(rel)
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil // skip unreadable files
+		}
+		files[rel] = string(data)
+		return nil
+	})
+	return files, err
+}
+
+// GitLog returns recent git log entries.
+func (p *Product) GitLog(n int) (string, error) {
+	cmd := exec.Command("git", "log", fmt.Sprintf("-%d", n), "--oneline")
+	cmd.Dir = p.Dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("git log: %w", err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// CreateBranch creates and checks out a new branch.
+func (p *Product) CreateBranch(name string) error {
+	return p.git("checkout", "-b", name)
+}
+
+// CurrentBranch returns the current branch name.
+func (p *Product) CurrentBranch() (string, error) {
+	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
+	cmd.Dir = p.Dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("current branch: %w", err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// PushBranch pushes the current branch to the remote.
+func (p *Product) PushBranch() error {
+	branch, err := p.CurrentBranch()
+	if err != nil {
+		return err
+	}
+	return p.git("push", "-u", "origin", branch)
+}
+
+// isBinaryExt returns true for known binary file extensions.
+func isBinaryExt(ext string) bool {
+	switch ext {
+	case ".exe", ".dll", ".so", ".dylib", ".a", ".o", ".obj",
+		".png", ".jpg", ".jpeg", ".gif", ".ico", ".bmp", ".webp",
+		".zip", ".tar", ".gz", ".bz2", ".xz", ".7z",
+		".pdf", ".wasm", ".pyc", ".class",
+		".db", ".sqlite", ".sqlite3":
+		return true
+	}
+	return false
 }
 
 // resolvePath makes a path absolute relative to the workspace root.

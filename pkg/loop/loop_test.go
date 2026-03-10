@@ -40,7 +40,7 @@ func (m *mockProvider) Reason(_ context.Context, _ string, _ []event.Event) (dec
 		idx = len(m.responses) - 1
 	}
 	confidence, _ := types.NewScore(0.8)
-	return decision.NewResponse(m.responses[idx], confidence, 50), nil
+	return decision.NewResponse(m.responses[idx], confidence, decision.TokenUsage{InputTokens: 30, OutputTokens: 20}), nil
 }
 
 var _ intelligence.Provider = (*mockProvider)(nil)
