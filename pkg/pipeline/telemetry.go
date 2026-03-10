@@ -1,0 +1,155 @@
+package pipeline
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/lovyou-ai/hive/pkg/resources"
+	"github.com/lovyou-ai/hive/pkg/roles"
+)
+
+// PipelineResult collects telemetry data during a pipeline run.
+// Written to .hive/telemetry/ after each run — the foundation for
+// --self-improve mode where the CTO reads past run data.
+type PipelineResult struct {
+	// Timing per phase.
+	PhaseTimings []PhaseTimingEntry `json:"phase_timings"`
+
+	// Token usage and cost per role.
+	TokenUsage []RoleTokenUsage `json:"token_usage"`
+
+	// Guardian alert lines (the ALERT/VIOLATION/QUARANTINE lines).
+	GuardianAlerts []string `json:"guardian_alerts"`
+
+	// Reviewer feedback signals: "APPROVED" or "CHANGES NEEDED".
+	ReviewSignals []string `json:"review_signals"`
+
+	// The input idea/description that started the run.
+	InputDescription string `json:"input_description"`
+
+	// PR URL if one was created (targeted mode only).
+	PRURL string `json:"pr_url,omitempty"`
+
+	// Whether the PR was merged.
+	Merged bool `json:"merged"`
+
+	// Pipeline mode: "full" or "targeted".
+	Mode string `json:"mode"`
+
+	// When the pipeline started and ended.
+	StartedAt time.Time `json:"started_at"`
+	EndedAt   time.Time `json:"ended_at"`
+}
+
+// PhaseTimingEntry records timing for one pipeline phase.
+type PhaseTimingEntry struct {
+	Phase    string        `json:"phase"`
+	Duration time.Duration `json:"duration_ms"`
+}
+
+// MarshalJSON for PhaseTimingEntry — encode duration as milliseconds.
+func (e PhaseTimingEntry) MarshalJSON() ([]byte, error) {
+	type alias struct {
+		Phase      string `json:"phase"`
+		DurationMs int64  `json:"duration_ms"`
+	}
+	return json.Marshal(alias{
+		Phase:      e.Phase,
+		DurationMs: e.Duration.Milliseconds(),
+	})
+}
+
+// RoleTokenUsage records token usage for one role.
+type RoleTokenUsage struct {
+	Role             string  `json:"role"`
+	Model            string  `json:"model"`
+	InputTokens      int     `json:"input_tokens"`
+	OutputTokens     int     `json:"output_tokens"`
+	TotalTokens      int     `json:"total_tokens"`
+	CacheReadTokens  int     `json:"cache_read_tokens"`
+	CacheWriteTokens int     `json:"cache_write_tokens"`
+	CostUSD          float64 `json:"cost_usd"`
+}
+
+// addPhaseTiming records a phase's duration.
+func (r *PipelineResult) addPhaseTiming(phase string, d time.Duration) {
+	r.PhaseTimings = append(r.PhaseTimings, PhaseTimingEntry{Phase: phase, Duration: d})
+}
+
+// addGuardianAlert appends an alert string if non-empty.
+func (r *PipelineResult) addGuardianAlert(alert string) {
+	if alert != "" {
+		r.GuardianAlerts = append(r.GuardianAlerts, alert)
+	}
+}
+
+// addReviewSignal records whether a review round approved or requested changes.
+func (r *PipelineResult) addReviewSignal(approved bool) {
+	if approved {
+		r.ReviewSignals = append(r.ReviewSignals, "APPROVED")
+	} else {
+		r.ReviewSignals = append(r.ReviewSignals, "CHANGES NEEDED")
+	}
+}
+
+// collectTokenUsage snapshots token usage from all tracked roles.
+func (r *PipelineResult) collectTokenUsage(trackers map[roles.Role]*resources.TrackingProvider) {
+	for role, tracker := range trackers {
+		s := tracker.Snapshot()
+		r.TokenUsage = append(r.TokenUsage, RoleTokenUsage{
+			Role:             string(role),
+			Model:            tracker.Model(),
+			InputTokens:      s.InputTokens,
+			OutputTokens:     s.OutputTokens,
+			TotalTokens:      s.TokensUsed,
+			CacheReadTokens:  s.CacheReadTokens,
+			CacheWriteTokens: s.CacheWriteTokens,
+			CostUSD:          s.CostUSD,
+		})
+	}
+}
+
+// writeTelemetry writes the pipeline result to .hive/telemetry/<timestamp>.json
+// inside the given base directory. Errors are logged but not fatal — telemetry
+// must never break the pipeline.
+func writeTelemetry(baseDir string, result *PipelineResult) {
+	result.EndedAt = time.Now()
+
+	dir := filepath.Join(baseDir, ".hive", "telemetry")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		fmt.Printf("warning: telemetry dir: %v\n", err)
+		return
+	}
+
+	// Filename: timestamp with colons replaced for filesystem safety.
+	ts := result.StartedAt.UTC().Format("2006-01-02T15-04-05")
+	path := filepath.Join(dir, ts+".json")
+
+	data, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		fmt.Printf("warning: telemetry marshal: %v\n", err)
+		return
+	}
+
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		fmt.Printf("warning: telemetry write: %v\n", err)
+		return
+	}
+
+	fmt.Printf("Telemetry written: %s\n", path)
+}
+
+// telemetryBaseDir returns the directory where .hive/telemetry/ should be created.
+// Targeted mode: product dir. Greenfield: workspace root.
+func (p *Pipeline) telemetryBaseDir() string {
+	if p.product != nil {
+		return p.product.Dir
+	}
+	if p.ws != nil {
+		return p.ws.Root()
+	}
+	return "."
+}
