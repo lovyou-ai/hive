@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os/exec"
+	"time"
 	"path/filepath"
 	"strings"
 
@@ -425,6 +426,13 @@ func (p *Pipeline) RunTargeted(ctx context.Context, input ProductInput) error {
 		return fmt.Errorf("RunTargeted requires Description (what to change)")
 	}
 
+	pipelineStart := time.Now()
+	type phaseTiming struct {
+		name     string
+		duration time.Duration
+	}
+	var timings []phaseTiming
+
 	// Open existing repo
 	product, err := workspace.OpenRepo(input.RepoPath)
 	if err != nil {
@@ -435,6 +443,7 @@ func (p *Pipeline) RunTargeted(ctx context.Context, input ProductInput) error {
 
 	// ── Phase 1: Context Load ──
 	fmt.Println("═══ Phase 1: Context Load ═══")
+	phaseStart := time.Now()
 	existingFiles, err := product.ReadSourceFiles()
 	if err != nil {
 		return fmt.Errorf("read source files: %w", err)
@@ -456,8 +465,11 @@ func (p *Pipeline) RunTargeted(ctx context.Context, input ProductInput) error {
 	// Include key context files (CLAUDE.md, README, etc.) for CTO — not the full codebase
 	keyContext := extractKeyFiles(existingFiles)
 
+	timings = append(timings, phaseTiming{"Context Load", time.Since(phaseStart)})
+
 	// ── Phase 2: Understand ──
 	fmt.Println("═══ Phase 2: Understand ═══")
+	phaseStart = time.Now()
 	_, ctoAnalysis, err := p.cto.Runtime.Evaluate(ctx, "change_analysis",
 		fmt.Sprintf(`Analyze this change request. Be BRIEF — the Builder reads files itself.
 
@@ -496,8 +508,11 @@ Project structure:
 		return fmt.Errorf("capture base commit: %w", err)
 	}
 
+	timings = append(timings, phaseTiming{"Understand", time.Since(phaseStart)})
+
 	// ── Phase 3: Modify ──
 	fmt.Println("═══ Phase 3: Modify ═══")
+	phaseStart = time.Now()
 	files, err := p.modify(ctx, existingFiles, ctoAnalysis, input.Description, lang)
 	if err != nil {
 		return fmt.Errorf("modify: %w", err)
@@ -506,7 +521,10 @@ Project structure:
 		return fmt.Errorf("guardian halted pipeline after modify phase")
 	}
 
+	timings = append(timings, phaseTiming{"Modify", time.Since(phaseStart)})
+
 	// ── Phase 4: Review ──
+	phaseStart = time.Now()
 	const maxReviewRounds = 3
 	for round := 1; round <= maxReviewRounds; round++ {
 		fmt.Printf("═══ Phase 4: Review (round %d) ═══\n", round)
@@ -534,9 +552,11 @@ Project structure:
 			return fmt.Errorf("revise round %d: %w", round, err)
 		}
 	}
+	timings = append(timings, phaseTiming{"Review", time.Since(phaseStart)})
 
 	// ── Phase 5: Test ──
 	fmt.Println("═══ Phase 5: Test ═══")
+	phaseStart = time.Now()
 	err = p.test(ctx, files, lang)
 	if err != nil {
 		return fmt.Errorf("test: %w", err)
@@ -545,14 +565,27 @@ Project structure:
 		return fmt.Errorf("guardian halted pipeline after test phase")
 	}
 
+	timings = append(timings, phaseTiming{"Test", time.Since(phaseStart)})
+
 	// ── Phase 6: PR ──
 	fmt.Println("═══ Phase 6: PR ═══")
+	phaseStart = time.Now()
 	if err := p.openPR(ctx, product, branchName, input.Description, ctoAnalysis); err != nil {
 		fmt.Printf("PR creation failed (may need manual push): %v\n", err)
 	}
+	timings = append(timings, phaseTiming{"PR", time.Since(phaseStart)})
 
 	fmt.Println("═══ Pipeline Complete ═══")
 	p.PrintTokenSummary()
+
+	totalDuration := time.Since(pipelineStart)
+	fmt.Println("\n═══ Timing Summary ═══")
+	fmt.Printf("  %-16s %s\n", "Phase", "Duration")
+	fmt.Printf("  %-16s %s\n", "─────", "────────")
+	for _, t := range timings {
+		fmt.Printf("  %-16s %s\n", t.name, t.duration.Round(time.Millisecond))
+	}
+	fmt.Printf("  %-16s %s\n", "TOTAL", totalDuration.Round(time.Millisecond))
 	return nil
 }
 

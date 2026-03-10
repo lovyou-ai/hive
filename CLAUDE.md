@@ -229,20 +229,32 @@ The Architect enforces **derivation over accumulation**:
 - The Reviewer checks generated code for unnecessary complexity
 - System prompts are wired to each agent's provider — roles have real context
 
-## Method of Inquiry
+## The Generator Function
 
-**Derivation and composition are not just design tools — they are the hive's primary method of acquiring knowledge.**
+Three irreducible atoms: **Distinguish** (perceive difference), **Relate** (perceive connection), **Select** (choose what matters).
 
-When the hive needs to understand anything — a domain, a codebase, a gap, a problem — it applies the derivation method:
-1. **Identify the gap** — what's missing, what's broken, what's needed
-2. **Name the transitions** — what operations transform the current state to the desired state
-3. **Find base operations** — the minimal atomic actions that compose into everything needed
-4. **Identify semantic dimensions** — the axes along which the problem varies (scope, time, trust, cost, etc.)
-5. **Traverse dimensions** — zoom in/out along each axis to see what emerges at different scales
-6. **Decompose systematically** — break complex operations into compositions of base operations
-7. **Verify completeness** — ensure no gap remains, no operation is redundant
+Twelve operations composed from six modes of three atoms:
 
-This applies everywhere: product design, doc audits, code audits, architecture reviews, gap analysis, roadmap planning. When auditing docs, derive what sections should exist from the purpose of the doc, then compare to what exists. When auditing code, derive what the code should do from the spec, then compare to what it does. Compose and decompose. Zoom in and out along dimensions. This is how the hive thinks.
+| Operation | What it does |
+|-----------|-------------|
+| **Decompose** | Find parts and structure |
+| **Dimension** | Find properties that matter |
+| **Need** | Find the absence that matters most |
+| **Diagnose** | Find how absence connects to what's present |
+| **Name** | Recognise a recurrence and give it a word |
+| **Abstract** | Recognise what's essential, discard the rest |
+| **Compose** | Connect parts into a meaningful whole |
+| **Simplify** | Remove complexity without losing function |
+| **Bound** | Define where something ends |
+| **Accept** | Recognise an absence that shouldn't be filled |
+| **Derive** | Follow a recurrence to its consequence |
+| **Release** | Let go of what's missing without trying to fill it |
+
+The method: Decompose → Dimension + Bound → Derive → Need + Diagnose → Compose + Name + Simplify → Abstract → Accept → Release → Loop via Need.
+
+**Accept and Release are stopping conditions.** The original method had none — it iterated forever. The self-derivation produced the method's own recognition that some gaps should remain gaps. This applies directly: the reviewer uses Accept (don't block for style nits), the pipeline uses Release (move on when good enough).
+
+See `eventgraph/docs/generator-function.md` and `eventgraph/docs/generator-function-self-derivation.md`.
 
 ## Store
 

@@ -52,8 +52,8 @@ func TestSystemPromptCarriesMission(t *testing.T) {
 		if !strings.Contains(prompt, "Take care of your human") {
 			t.Errorf("SystemPrompt(%q) missing soul statement", role)
 		}
-		if !strings.Contains(prompt, "thirteen") {
-			t.Errorf("SystemPrompt(%q) missing reference to thirteen product layers", role)
+		if !strings.Contains(prompt, "METHOD") {
+			t.Errorf("SystemPrompt(%q) missing METHOD section", role)
 		}
 		if !strings.Contains(prompt, "TRUST") {
 			t.Errorf("SystemPrompt(%q) missing TRUST section", role)
