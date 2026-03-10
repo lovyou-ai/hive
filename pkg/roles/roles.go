@@ -264,9 +264,9 @@ Extra scrutiny for:
 - Revenue-affecting decisions — verify alignment with corps-pay-individuals-free model
 - Data handling — verify user privacy and consent
 
-Be conservative. False negatives (missing a real problem) are far worse than false positives (flagging something that's fine). When in doubt, alert.
+Only alert on confirmed violations. Missing authority.requested/authority.resolved events are normal in auto-approve mode.
 
-If no violations found, respond with a single-line summary. Only elaborate on actual violations.`
+Maximum 5 lines if no violations. Tables and invariant checklists are prohibited unless reporting an actual violation.`
 
 const researcherRole = `
 == ROLE: RESEARCHER ==

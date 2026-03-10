@@ -223,10 +223,21 @@ func (p *Pipeline) providerForRole(role roles.Role) (intelligence.Provider, erro
 // and the system prompt for the role. Used when the model needs to differ from
 // the role's default — e.g., targeted reviews use Sonnet instead of Opus.
 func (p *Pipeline) providerForRoleWithModel(role roles.Role, model string) (intelligence.Provider, error) {
+	prompt := roles.SystemPrompt(role, p.humanName)
+
+	// Bake pipeline-mode context into the Guardian's system prompt at creation
+	// time so every Guardian call gets it — not just per-phase Evaluate() calls.
+	if role == roles.RoleGuardian && p.autoApprove {
+		prompt += `
+
+== PIPELINE CONTEXT ==
+The --yes flag is active (auto-approve mode). Missing authority.requested/authority.resolved events are EXPECTED — the approval gate is bypassed. Do not flag this as a violation.`
+	}
+
 	return intelligence.New(intelligence.Config{
 		Provider:     "claude-cli",
 		Model:        model,
-		SystemPrompt: roles.SystemPrompt(role, p.humanName),
+		SystemPrompt: prompt,
 	})
 }
 
@@ -2205,17 +2216,9 @@ func (p *Pipeline) guardianCheck(ctx context.Context, phase string) bool {
 		summary.WriteString(fmt.Sprintf("[%s] %s: %s\n", ev.Type().Value(), ev.Source().Value(), ev.ID().Value()))
 	}
 
-	// Build pipeline context so Guardian doesn't flag expected behavior.
-	var pipelineCtx string
-	if p.autoApprove {
-		pipelineCtx = `
-Pipeline context: --yes flag is active (auto-approve mode). Missing authority.requested/authority.resolved events are EXPECTED — the approval gate is bypassed. Do not flag this as a violation.
-`
-	}
-
 	_, eval, err := p.guardian.Runtime.Evaluate(ctx, "integrity_check_"+phase,
 		fmt.Sprintf(`Review these recent events (after %s phase) for policy violations, trust anomalies, or authority overreach.
-%s
+
 EXTRA SCRUTINY for:
 - Agent spawn events (agent.role.assigned, authority.requested, authority.resolved) — verify authority and trust levels
 - Self-modification events — flag for human review
@@ -2223,7 +2226,7 @@ EXTRA SCRUTINY for:
 
 Events:
 %s`,
-			phase, pipelineCtx, summary.String()))
+			phase, summary.String()))
 	if err != nil {
 		fmt.Printf("Guardian check failed: %v\n", err)
 		return false
