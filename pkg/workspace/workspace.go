@@ -280,6 +280,17 @@ func (p *Product) GitLog(n int) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
+// HeadCommit returns the current HEAD commit hash (short form).
+func (p *Product) HeadCommit() (string, error) {
+	cmd := exec.Command("git", "rev-parse", "HEAD")
+	cmd.Dir = p.Dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("head commit: %w", err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
 // CreateBranch creates and checks out a new branch.
 func (p *Product) CreateBranch(name string) error {
 	return p.git("checkout", "-b", name)

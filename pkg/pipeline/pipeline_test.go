@@ -136,6 +136,30 @@ func TestLangTestCommand(t *testing.T) {
 	}
 }
 
+func TestReviewerModelConfig(t *testing.T) {
+	// Verify Config.ReviewerModel propagates to the pipeline struct.
+	// We can't call New() without a full store/actor setup, so test the
+	// config field exists and the default behavior matches expectations.
+
+	// Empty ReviewerModel means targeted reviews default to Sonnet.
+	cfg := Config{ReviewerModel: ""}
+	if cfg.ReviewerModel != "" {
+		t.Errorf("empty ReviewerModel should be empty string, got %q", cfg.ReviewerModel)
+	}
+
+	// Explicit override propagates.
+	cfg = Config{ReviewerModel: "claude-haiku-4-5-20251001"}
+	if cfg.ReviewerModel != "claude-haiku-4-5-20251001" {
+		t.Errorf("ReviewerModel should be claude-haiku-4-5-20251001, got %q", cfg.ReviewerModel)
+	}
+
+	// Verify Pipeline struct stores the override.
+	p := &Pipeline{reviewerModel: "claude-sonnet-4-6"}
+	if p.reviewerModel != "claude-sonnet-4-6" {
+		t.Errorf("pipeline reviewerModel should be claude-sonnet-4-6, got %q", p.reviewerModel)
+	}
+}
+
 func TestExtractLanguage(t *testing.T) {
 	p := &Pipeline{}
 

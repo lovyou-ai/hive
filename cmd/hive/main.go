@@ -45,6 +45,7 @@ func run() error {
 	autoApprove := flag.Bool("yes", false, "Auto-approve all authority requests (dev/testing only)")
 	skipGuardian := flag.Bool("skip-guardian", false, "Skip Guardian integrity checks after each phase (dev/testing only)")
 	skipSimplify := flag.Bool("skip-simplify", false, "Skip the simplification loop after design (dev/testing only)")
+	reviewerModel := flag.String("reviewer-model", "", "Override model for targeted reviews (default: claude-sonnet-4-6)")
 	flag.Parse()
 
 	if *idea == "" && *url == "" && *spec == "" {
@@ -147,8 +148,9 @@ func run() error {
 		HumanID:      humanID,
 		WorkDir:      *workdir,
 		Gate:         gate,
-		SkipGuardian: *skipGuardian,
-		SkipSimplify: *skipSimplify,
+		SkipGuardian:  *skipGuardian,
+		SkipSimplify:  *skipSimplify,
+		ReviewerModel: *reviewerModel,
 	})
 	if err != nil {
 		return fmt.Errorf("pipeline: %w", err)

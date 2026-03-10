@@ -79,6 +79,7 @@ type Pipeline struct {
 	trackers      map[roles.Role]*resources.TrackingProvider // per-agent token tracking
 	skipGuardian  bool
 	skipSimplify  bool
+	reviewerModel string // model override for targeted reviews (empty = role default)
 }
 
 // Config for creating a new pipeline.
@@ -98,6 +99,11 @@ type Config struct {
 	// The Architect's design prompt already includes self-review instructions,
 	// so this is often redundant for simple projects. Saves 1-2 Opus calls.
 	SkipSimplify bool
+
+	// ReviewerModel overrides the model used for targeted reviews.
+	// Empty string = use role default. Targeted reviews only check a focused
+	// git diff, so Sonnet is sufficient — no deep architectural reasoning needed.
+	ReviewerModel string
 }
 
 
@@ -117,15 +123,16 @@ func New(ctx context.Context, cfg Config) (*Pipeline, error) {
 	}
 
 	p := &Pipeline{
-		store:        cfg.Store,
-		actors:       cfg.Actors,
-		humanID:      cfg.HumanID,
-		humanName:    human.DisplayName(),
-		ws:           ws,
-		agents:       make(map[roles.Role]*roles.Agent),
-		trackers:     make(map[roles.Role]*resources.TrackingProvider),
-		skipGuardian: cfg.SkipGuardian,
-		skipSimplify: cfg.SkipSimplify,
+		store:         cfg.Store,
+		actors:        cfg.Actors,
+		humanID:       cfg.HumanID,
+		humanName:     human.DisplayName(),
+		ws:            ws,
+		agents:        make(map[roles.Role]*roles.Agent),
+		trackers:      make(map[roles.Role]*resources.TrackingProvider),
+		skipGuardian:  cfg.SkipGuardian,
+		skipSimplify:  cfg.SkipSimplify,
+		reviewerModel: cfg.ReviewerModel,
 	}
 
 	// Wire up spawner if an authority gate is provided.
@@ -178,7 +185,13 @@ func New(ctx context.Context, cfg Config) (*Pipeline, error) {
 // providerForRole creates an intelligence provider with the model and system prompt
 // appropriate for the role. Uses Claude CLI (flat rate via Max plan).
 func (p *Pipeline) providerForRole(role roles.Role) (intelligence.Provider, error) {
-	model := roles.PreferredModel(role)
+	return p.providerForRoleWithModel(role, roles.PreferredModel(role))
+}
+
+// providerForRoleWithModel creates an intelligence provider with the given model
+// and the system prompt for the role. Used when the model needs to differ from
+// the role's default — e.g., targeted reviews use Sonnet instead of Opus.
+func (p *Pipeline) providerForRoleWithModel(role roles.Role, model string) (intelligence.Provider, error) {
 	return intelligence.New(intelligence.Config{
 		Provider:     "claude-cli",
 		Model:        model,
@@ -190,6 +203,13 @@ func (p *Pipeline) providerForRole(role roles.Role) (intelligence.Provider, erro
 // When a spawner is configured, spawn requests go through the authority gate
 // (human approval). Without a spawner, agents are created directly.
 func (p *Pipeline) ensureAgent(ctx context.Context, role roles.Role, name string) (*roles.Agent, error) {
+	return p.ensureAgentWithModel(ctx, role, name, "")
+}
+
+// ensureAgentWithModel creates an agent like ensureAgent, but allows overriding
+// the model. An empty model string uses the role's default (PreferredModel).
+// Used for targeted reviews where Sonnet suffices instead of Opus.
+func (p *Pipeline) ensureAgentWithModel(ctx context.Context, role roles.Role, name string, model string) (*roles.Agent, error) {
 	if agent, ok := p.agents[role]; ok {
 		return agent, nil
 	}
@@ -225,7 +245,10 @@ func (p *Pipeline) ensureAgent(ctx context.Context, role roles.Role, name string
 		actorID = agentActor.ID()
 	}
 
-	rawProvider, err := p.providerForRole(role)
+	if model == "" {
+		model = roles.PreferredModel(role)
+	}
+	rawProvider, err := p.providerForRoleWithModel(role, model)
 	if err != nil {
 		return nil, fmt.Errorf("provider for %s: %w", role, err)
 	}
@@ -242,7 +265,7 @@ func (p *Pipeline) ensureAgent(ctx context.Context, role roles.Role, name string
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("  ↳ %s agent %s using %s\n", role, actorID.Value(), roles.PreferredModel(role))
+	fmt.Printf("  ↳ %s agent %s using %s\n", role, actorID.Value(), model)
 	p.agents[role] = agent
 	return agent, nil
 }
@@ -443,16 +466,14 @@ func (p *Pipeline) RunTargeted(ctx context.Context, input ProductInput) error {
 	// ── Phase 2: Understand ──
 	fmt.Println("═══ Phase 2: Understand ═══")
 	_, ctoAnalysis, err := p.cto.Runtime.Evaluate(ctx, "change_analysis",
-		fmt.Sprintf(`Analyze this change request against the existing codebase. Identify:
-1. Which files need to change and why
-2. What new files (if any) are needed
-3. Key risks or things to watch for
-4. Whether this is feasible without architectural changes
+		fmt.Sprintf(`Analyze this change request. Be BRIEF — the Builder reads files itself.
 
-Be concise — the Builder will read the actual files. Your job is to guide the Builder on WHERE to look and WHAT to do.
+Output ONLY:
+- Which files to change (paths + what to do in each, 1 line per file)
+- Key risks (1-2 sentences max)
+- Nothing else. No tables, no code blocks, no headers.
 
-Change request:
-%s
+Change request: %s
 
 Git history:
 %s
@@ -476,8 +497,8 @@ Project structure:
 	}
 	fmt.Printf("Branch: %s\n", branchName)
 
-	// Remember the base commit for git diff later
-	baseBranch := "main"
+	// Capture base commit before branching — reviewer diffs against this
+	baseCommit, _ := product.HeadCommit()
 
 	// ── Phase 3: Modify ──
 	fmt.Println("═══ Phase 3: Modify ═══")
@@ -493,7 +514,7 @@ Project structure:
 	const maxReviewRounds = 3
 	for round := 1; round <= maxReviewRounds; round++ {
 		fmt.Printf("═══ Phase 4: Review (round %d) ═══\n", round)
-		feedback, approved, err := p.reviewTargeted(ctx, baseBranch, ctoAnalysis, input.Description, lang)
+		feedback, approved, err := p.reviewTargeted(ctx, baseCommit, ctoAnalysis, input.Description, lang)
 		if err != nil {
 			return fmt.Errorf("review round %d: %w", round, err)
 		}
@@ -661,35 +682,36 @@ CRITICAL OUTPUT FORMAT RULES:
 }
 
 // reviewTargeted reviews changes against the original codebase using git diff.
-func (p *Pipeline) reviewTargeted(ctx context.Context, baseBranch string, ctoAnalysis string, changeReq string, lang string) (string, bool, error) {
-	reviewer, err := p.ensureAgent(ctx, roles.RoleReviewer, "reviewer")
+// Uses Sonnet by default — targeted reviews only check a focused diff, not deep
+// architectural reasoning. Override with Config.ReviewerModel.
+func (p *Pipeline) reviewTargeted(ctx context.Context, baseCommit string, ctoAnalysis string, changeReq string, lang string) (string, bool, error) {
+	// Targeted reviews use a lighter model (Sonnet) since they only check a diff.
+	model := p.reviewerModel
+	if model == "" {
+		model = "claude-sonnet-4-6"
+	}
+	reviewer, err := p.ensureAgentWithModel(ctx, roles.RoleReviewer, "reviewer", model)
 	if err != nil {
 		return "", false, err
 	}
 
-	// Use git diff for a focused, compact view of what changed
-	diff, _ := p.product.GitDiff(baseBranch)
+	// Use git diff from the base commit — only the builder's changes, not history
+	diff, _ := p.product.GitDiff(baseCommit)
 	if diff == "" {
 		return "No changes to review.", true, nil
 	}
 
 	_, review, err := reviewer.Runtime.Evaluate(ctx, "change_review",
-		fmt.Sprintf(`Review this diff to an existing %s codebase.
+		fmt.Sprintf(`Review this diff to a %s codebase. Be CONCISE.
 
 CHANGE REQUEST: %s
-
 CTO ANALYSIS: %s
 
-GIT DIFF:
+DIFF:
 %s
 
-Review for:
-1. Correctness — do the changes implement the request without breaking existing behavior?
-2. Style — do changes match existing code conventions?
-3. Completeness — is anything missing?
-4. Risks — could these changes break existing functionality?
-
-End with: APPROVED or CHANGES NEEDED: <issues>`, lang, changeReq, ctoAnalysis, diff))
+Check: correctness, style, risks. Skip boilerplate — no tables, no headers, no section labels.
+End with one word: APPROVED or CHANGES NEEDED: <specific issues>`, lang, changeReq, ctoAnalysis, diff))
 	if err != nil {
 		return "", false, fmt.Errorf("review: %w", err)
 	}
