@@ -104,8 +104,8 @@ type AgentConfig struct {
 }
 
 // NewAgent creates and bootstraps a hive agent with the given role.
-// Boot() emits identity.created as its first event using the agent's registered
-// public key, ensuring correct causal ordering on the shared graph.
+// Uses BootWithoutIdentity because the Spawner path in ensureAgent() already
+// emits identity.created separately — avoids duplicate identity events.
 func NewAgent(ctx context.Context, cfg AgentConfig) (*Agent, error) {
 	rt, err := intelligence.NewRuntime(ctx, intelligence.RuntimeConfig{
 		AgentID:  cfg.ActorID,
@@ -116,8 +116,8 @@ func NewAgent(ctx context.Context, cfg AgentConfig) (*Agent, error) {
 		return nil, fmt.Errorf("runtime: %w", err)
 	}
 
-	// Boot with the agent's registered public key and role-specific soul values.
-	_, err = rt.Boot(
+	// Boot without identity event — the Spawner path emits identity.created separately.
+	_, err = rt.BootWithoutIdentity(
 		cfg.PublicKey,
 		string(event.ActorTypeAI),
 		cfg.Provider.Model(),
