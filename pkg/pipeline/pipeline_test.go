@@ -260,7 +260,10 @@ func TestEnsureAgentNoSpawnerEmitsAuthorityEvents(t *testing.T) {
 	}
 
 	factory := event.NewEventFactory(registry)
-	convID, _ := types.NewConversationID("conv_test_0000000000000000000000001")
+	convID, err := types.NewConversationID("conv_spawn_" + strings.Repeat("0", 24))
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	p := &Pipeline{
 		store:    s,

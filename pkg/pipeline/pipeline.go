@@ -84,7 +84,7 @@ type Pipeline struct {
 	skipSimplify  bool
 	reviewerModel string // model override for targeted reviews (empty = role default)
 
-	// Authority infrastructure — set when Gate is configured.
+	// Authority infrastructure — always initialized; gate is optional.
 	gate    *authority.Gate
 	signer  event.Signer
 	factory *event.EventFactory
