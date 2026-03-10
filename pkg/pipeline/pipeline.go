@@ -973,10 +973,17 @@ func extractKeyFiles(files map[string]string) string {
 
 // sanitizeBranchName converts a description into a valid git branch name.
 func sanitizeBranchName(desc string) string {
-	// Take first 40 chars, lowercase, replace non-alphanumeric with hyphens
+	// Truncate at word boundary before 40 chars, lowercase, replace non-alphanumeric with hyphens
 	s := strings.ToLower(desc)
 	if len(s) > 40 {
-		s = s[:40]
+		// Find last space/separator at or before 40 chars
+		cut := strings.LastIndexAny(s[:40], " _/")
+		if cut > 0 {
+			s = s[:cut]
+		} else {
+			// First word exceeds 40 chars — hard truncate
+			s = s[:40]
+		}
 	}
 	var b strings.Builder
 	for _, c := range s {

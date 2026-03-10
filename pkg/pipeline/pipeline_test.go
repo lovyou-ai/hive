@@ -177,3 +177,40 @@ func TestExtractLanguage(t *testing.T) {
 	}
 }
 
+func TestSanitizeBranchName(t *testing.T) {
+	tests := []struct {
+		desc string
+		want string
+	}{
+		// Short input — no truncation
+		{"add login page", "add-login-page"},
+
+		// Exactly 40 chars — no truncation needed
+		{"a234567890123456789012345678901234567890", "a234567890123456789012345678901234567890"},
+
+		// Over 40 chars — truncate at last word boundary before 40
+		{"build a task management app with kanban boards and dashboards", "build-a-task-management-app-with-kanban"},
+
+		// Char 40 is mid-word — truncate at prior word boundary
+		{"add comprehensive authentication support for enterprise users", "add-comprehensive-authentication"},
+
+		// First word alone exceeds 40 chars — hard truncate fallback
+		{"abcdefghijklmnopqrstuvwxyz1234567890abcdefghij", "abcdefghijklmnopqrstuvwxyz1234567890abcd"},
+
+		// Empty input
+		{"", "change"},
+
+		// Non-alphanumeric only
+		{"!@#$%", "change"},
+
+		// Underscores and slashes become hyphens
+		{"my_feature/branch name", "my-feature-branch-name"},
+	}
+	for _, tt := range tests {
+		got := sanitizeBranchName(tt.desc)
+		if got != tt.want {
+			t.Errorf("sanitizeBranchName(%q) = %q, want %q", tt.desc, got, tt.want)
+		}
+	}
+}
+
