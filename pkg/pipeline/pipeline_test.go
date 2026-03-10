@@ -2,6 +2,8 @@ package pipeline
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -311,6 +313,125 @@ func TestEnsureAgentNoSpawnerEmitsAuthorityEvents(t *testing.T) {
 	}
 	if content.Reason.IsSome() && content.Reason.Unwrap() != "auto-approved (no authority gate)" {
 		t.Errorf("reason = %q, want %q", content.Reason.Unwrap(), "auto-approved (no authority gate)")
+	}
+}
+
+func TestFindModuleDir(t *testing.T) {
+	t.Run("marker in root", func(t *testing.T) {
+		root := t.TempDir()
+		if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module test"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		got := findModuleDir(root, "go")
+		if got != root {
+			t.Errorf("findModuleDir = %q, want root %q", got, root)
+		}
+	})
+
+	t.Run("marker in subdir", func(t *testing.T) {
+		root := t.TempDir()
+		sub := filepath.Join(root, "go")
+		if err := os.MkdirAll(sub, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(sub, "go.mod"), []byte("module test"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		got := findModuleDir(root, "go")
+		if got != sub {
+			t.Errorf("findModuleDir = %q, want subdir %q", got, sub)
+		}
+	})
+
+	t.Run("no marker returns root", func(t *testing.T) {
+		root := t.TempDir()
+		got := findModuleDir(root, "go")
+		if got != root {
+			t.Errorf("findModuleDir = %q, want root %q", got, root)
+		}
+	})
+
+	t.Run("multiple subdirs picks first alphabetical", func(t *testing.T) {
+		root := t.TempDir()
+		// Create two subdirs, only "beta" has the marker.
+		for _, name := range []string{"alpha", "beta"} {
+			if err := os.MkdirAll(filepath.Join(root, name), 0755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := os.WriteFile(filepath.Join(root, "beta", "package.json"), []byte("{}"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		got := findModuleDir(root, "javascript")
+		want := filepath.Join(root, "beta")
+		if got != want {
+			t.Errorf("findModuleDir = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("root preferred over subdir", func(t *testing.T) {
+		root := t.TempDir()
+		sub := filepath.Join(root, "sub")
+		if err := os.MkdirAll(sub, 0755); err != nil {
+			t.Fatal(err)
+		}
+		// Marker in both root and subdir — root wins.
+		for _, dir := range []string{root, sub} {
+			if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module test"), 0644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		got := findModuleDir(root, "go")
+		if got != root {
+			t.Errorf("findModuleDir = %q, want root %q", got, root)
+		}
+	})
+
+	t.Run("python pyproject.toml", func(t *testing.T) {
+		root := t.TempDir()
+		sub := filepath.Join(root, "py")
+		if err := os.MkdirAll(sub, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(sub, "pyproject.toml"), []byte("[project]"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		got := findModuleDir(root, "python")
+		if got != sub {
+			t.Errorf("findModuleDir = %q, want %q", got, sub)
+		}
+	})
+
+	t.Run("rust Cargo.toml", func(t *testing.T) {
+		root := t.TempDir()
+		if err := os.WriteFile(filepath.Join(root, "Cargo.toml"), []byte("[package]"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		got := findModuleDir(root, "rust")
+		if got != root {
+			t.Errorf("findModuleDir = %q, want root %q", got, root)
+		}
+	})
+}
+
+func TestLangMarkerFile(t *testing.T) {
+	tests := []struct {
+		lang string
+		want string
+	}{
+		{"go", "go.mod"},
+		{"typescript", "package.json"},
+		{"javascript", "package.json"},
+		{"python", "pyproject.toml"},
+		{"rust", "Cargo.toml"},
+		{"csharp", "*.csproj"},
+		{"unknown", "go.mod"},
+	}
+	for _, tt := range tests {
+		got := langMarkerFile(tt.lang)
+		if got != tt.want {
+			t.Errorf("langMarkerFile(%q) = %q, want %q", tt.lang, got, tt.want)
+		}
 	}
 }
 

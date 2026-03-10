@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"os"
 	"os/exec"
 	"time"
 	"path/filepath"
@@ -1709,8 +1710,9 @@ func (p *Pipeline) test(ctx context.Context, files map[string]string, lang strin
 	testCmd, testArgs := langTestCommand(lang)
 	fmt.Printf("Running: %s %s\n", testCmd, strings.Join(testArgs, " "))
 
+	moduleDir := findModuleDir(p.product.Dir, lang)
 	cmd := exec.Command(testCmd, testArgs...)
-	cmd.Dir = p.product.Dir
+	cmd.Dir = moduleDir
 	testOutput, testErr := cmd.CombinedOutput()
 
 	testResult := string(testOutput)
@@ -1769,7 +1771,7 @@ Use the project's existing test commands (e.g., go test ./... for Go).
 Preserve existing code style and conventions.`, lang, testResult)
 
 			result, opErr := tracker.Operate(ctx, decision.OperateTask{
-				WorkDir:     p.product.Dir,
+				WorkDir:     moduleDir,
 				Instruction: instruction,
 			})
 			if opErr == nil {
@@ -1818,7 +1820,7 @@ Output ALL files using --- FILE: path --- markers.`, testResult, codeSummary.Str
 
 		// Re-run tests
 		cmd2 := exec.Command(testCmd, testArgs...)
-		cmd2.Dir = p.product.Dir
+		cmd2.Dir = moduleDir
 		retryOutput, retryErr := cmd2.CombinedOutput()
 		if retryErr != nil {
 			fmt.Printf("Tests still failing after fix attempt:\n%s\n", string(retryOutput))
@@ -1853,7 +1855,7 @@ func (p *Pipeline) installDeps(lang string) {
 	}
 
 	if cmd != nil && p.product != nil {
-		cmd.Dir = p.product.Dir
+		cmd.Dir = findModuleDir(p.product.Dir, lang)
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			fmt.Printf("Dep install warning: %s\n", string(out))
@@ -2064,6 +2066,68 @@ func stripMarkdownFences(content string) string {
 	}
 
 	return strings.Join(lines[start:end], "\n")
+}
+
+// langMarkerFile returns the build-system marker file for a language.
+// Used by findModuleDir to locate the module root.
+func langMarkerFile(lang string) string {
+	switch strings.ToLower(lang) {
+	case "go", "golang":
+		return "go.mod"
+	case "typescript", "ts", "javascript", "js":
+		return "package.json"
+	case "python", "py":
+		return "pyproject.toml"
+	case "rust", "rs":
+		return "Cargo.toml"
+	case "csharp", "c#", "cs":
+		// *.csproj — use a glob pattern handled specially below.
+		return "*.csproj"
+	default:
+		return "go.mod"
+	}
+}
+
+// findModuleDir locates the directory containing the language's module marker
+// file (e.g. go.mod for Go). It checks productDir first, then walks one level
+// of subdirectories. Returns productDir as fallback if no marker is found.
+// When multiple subdirectories contain the marker, the first alphabetically
+// is returned for determinism.
+func findModuleDir(productDir, lang string) string {
+	marker := langMarkerFile(lang)
+
+	// Check root first.
+	if markerExists(productDir, marker) {
+		return productDir
+	}
+
+	// Walk one level of subdirectories.
+	entries, err := os.ReadDir(productDir)
+	if err != nil {
+		return productDir
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		subdir := filepath.Join(productDir, entry.Name())
+		if markerExists(subdir, marker) {
+			return subdir
+		}
+	}
+
+	return productDir
+}
+
+// markerExists checks whether a marker file exists in dir.
+// Supports glob patterns (e.g. "*.csproj").
+func markerExists(dir, marker string) bool {
+	if strings.Contains(marker, "*") {
+		matches, err := filepath.Glob(filepath.Join(dir, marker))
+		return err == nil && len(matches) > 0
+	}
+	_, err := os.Stat(filepath.Join(dir, marker))
+	return err == nil
 }
 
 // langExtension returns the default file extension for a language.
