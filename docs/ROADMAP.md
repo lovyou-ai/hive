@@ -64,7 +64,7 @@ The hive can take a product idea, research it, design a Code Graph spec, generat
 | 0.4 | Branch workflow — create branch, commit changes, open PR (not push to main) | `hive/pkg/workspace/` | 0.5d | ✅ Done |
 | 0.5 | CLI: `--repo <path>` flag to target existing repo | `hive/cmd/hive/` | 0.5d | ✅ Done |
 | 0.6 | Test: hive adds a feature to an existing project (end-to-end) | manual test | 0.5d | ✅ Done |
-| 0.7 | Test: hive fixes a bug in its own codebase (end-to-end) | manual test | 0.5d | ||
+| 0.7 | Test: hive fixes a bug in its own codebase (end-to-end) | manual test | 0.5d | ✅ Done ||
 
 **Exit criteria:** The hive can read an existing codebase, understand what needs changing, make targeted modifications, verify tests pass, and open a PR. Tested on both external projects and the hive's own code.
 

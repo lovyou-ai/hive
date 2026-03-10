@@ -251,6 +251,24 @@ func (p *Product) ReadSourceFiles() (map[string]string, error) {
 	return files, err
 }
 
+// GitDiff returns the diff of uncommitted or branch changes.
+// If base is empty, shows uncommitted changes. Otherwise shows diff from base.
+func (p *Product) GitDiff(base string) (string, error) {
+	var args []string
+	if base == "" {
+		args = []string{"diff"}
+	} else {
+		args = []string{"diff", base + "...HEAD"}
+	}
+	cmd := exec.Command("git", args...)
+	cmd.Dir = p.Dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("git diff: %w", err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
 // GitLog returns recent git log entries.
 func (p *Product) GitLog(n int) (string, error) {
 	cmd := exec.Command("git", "log", fmt.Sprintf("-%d", n), "--oneline")

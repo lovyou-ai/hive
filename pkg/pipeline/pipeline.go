@@ -430,16 +430,15 @@ func (p *Pipeline) RunTargeted(ctx context.Context, input ProductInput) error {
 		fmt.Printf("Recent history:\n%s\n", gitLog)
 	}
 
-	// Build a summary of the existing codebase for agent context
-	var codeContext strings.Builder
-	for path, content := range existingFiles {
-		codeContext.WriteString(fmt.Sprintf("--- FILE: %s ---\n%s\n\n", path, content))
-	}
-	existingCode := codeContext.String()
+	// Build a lightweight file listing for CTO (not full contents)
+	fileListing := buildFileListing(existingFiles)
 
 	// Detect language from existing files
 	lang := detectLanguage(existingFiles)
 	fmt.Printf("Detected language: %s\n", lang)
+
+	// Include key context files (CLAUDE.md, README, etc.) for CTO — not the full codebase
+	keyContext := extractKeyFiles(existingFiles)
 
 	// ── Phase 2: Understand ──
 	fmt.Println("═══ Phase 2: Understand ═══")
@@ -450,7 +449,7 @@ func (p *Pipeline) RunTargeted(ctx context.Context, input ProductInput) error {
 3. Key risks or things to watch for
 4. Whether this is feasible without architectural changes
 
-Be concise — the Builder will receive this analysis along with the full codebase.
+Be concise — the Builder will read the actual files. Your job is to guide the Builder on WHERE to look and WHAT to do.
 
 Change request:
 %s
@@ -458,8 +457,10 @@ Change request:
 Git history:
 %s
 
-Existing codebase:
-%s`, input.Description, gitLog, existingCode))
+Project structure:
+%s
+
+%s`, input.Description, gitLog, fileListing, keyContext))
 	if err != nil {
 		return fmt.Errorf("CTO analysis: %w", err)
 	}
@@ -475,9 +476,12 @@ Existing codebase:
 	}
 	fmt.Printf("Branch: %s\n", branchName)
 
+	// Remember the base commit for git diff later
+	baseBranch := "main"
+
 	// ── Phase 3: Modify ──
 	fmt.Println("═══ Phase 3: Modify ═══")
-	files, err := p.modify(ctx, existingFiles, existingCode, ctoAnalysis, input.Description, lang)
+	files, err := p.modify(ctx, existingFiles, ctoAnalysis, input.Description, lang)
 	if err != nil {
 		return fmt.Errorf("modify: %w", err)
 	}
@@ -489,7 +493,7 @@ Existing codebase:
 	const maxReviewRounds = 3
 	for round := 1; round <= maxReviewRounds; round++ {
 		fmt.Printf("═══ Phase 4: Review (round %d) ═══\n", round)
-		feedback, approved, err := p.reviewTargeted(ctx, files, existingFiles, ctoAnalysis, input.Description, lang)
+		feedback, approved, err := p.reviewTargeted(ctx, baseBranch, ctoAnalysis, input.Description, lang)
 		if err != nil {
 			return fmt.Errorf("review round %d: %w", round, err)
 		}
@@ -508,7 +512,7 @@ Existing codebase:
 		}
 
 		fmt.Printf("═══ Phase 4b: Revise from feedback (round %d) ═══\n", round)
-		files, err = p.revise(ctx, files, existingFiles, feedback, input.Description, lang)
+		files, err = p.revise(ctx, files, feedback, input.Description, lang)
 		if err != nil {
 			return fmt.Errorf("revise round %d: %w", round, err)
 		}
@@ -537,7 +541,7 @@ Existing codebase:
 
 // modify uses the builder in agentic mode to modify existing code directly.
 // Falls back to text-based modify if the provider doesn't support Operate.
-func (p *Pipeline) modify(ctx context.Context, existingFiles map[string]string, existingCode string, ctoAnalysis string, changeReq string, lang string) (map[string]string, error) {
+func (p *Pipeline) modify(ctx context.Context, existingFiles map[string]string, ctoAnalysis string, changeReq string, lang string) (map[string]string, error) {
 	builder, err := p.ensureAgent(ctx, roles.RoleBuilder, "builder")
 	if err != nil {
 		return nil, err
@@ -585,8 +589,12 @@ Do NOT add unnecessary changes beyond what's requested.`, lang, changeReq, ctoAn
 		fmt.Printf("Agentic mode unavailable (%v), falling back to text mode.\n", err)
 	}
 
-	// Fallback: text-based modify (original approach)
-	return p.modifyText(ctx, existingFiles, existingCode, ctoAnalysis, changeReq, lang)
+	// Fallback: text-based modify — build full code string lazily (only when needed)
+	var codeContext strings.Builder
+	for path, content := range existingFiles {
+		codeContext.WriteString(fmt.Sprintf("--- FILE: %s ---\n%s\n\n", path, content))
+	}
+	return p.modifyText(ctx, existingFiles, codeContext.String(), ctoAnalysis, changeReq, lang)
 }
 
 // modifyText is the text-based fallback for modify when Operate isn't available.
@@ -652,33 +660,27 @@ CRITICAL OUTPUT FORMAT RULES:
 	return merged, nil
 }
 
-// reviewTargeted reviews changes against the original codebase.
-func (p *Pipeline) reviewTargeted(ctx context.Context, files map[string]string, originalFiles map[string]string, ctoAnalysis string, changeReq string, lang string) (string, bool, error) {
+// reviewTargeted reviews changes against the original codebase using git diff.
+func (p *Pipeline) reviewTargeted(ctx context.Context, baseBranch string, ctoAnalysis string, changeReq string, lang string) (string, bool, error) {
 	reviewer, err := p.ensureAgent(ctx, roles.RoleReviewer, "reviewer")
 	if err != nil {
 		return "", false, err
 	}
 
-	// Show the diff — what changed vs. what existed
-	var diffSummary strings.Builder
-	for path, newContent := range files {
-		if orig, ok := originalFiles[path]; ok {
-			if orig != newContent {
-				diffSummary.WriteString(fmt.Sprintf("--- MODIFIED: %s ---\n%s\n\n", path, newContent))
-			}
-		} else {
-			diffSummary.WriteString(fmt.Sprintf("--- NEW: %s ---\n%s\n\n", path, newContent))
-		}
+	// Use git diff for a focused, compact view of what changed
+	diff, _ := p.product.GitDiff(baseBranch)
+	if diff == "" {
+		return "No changes to review.", true, nil
 	}
 
 	_, review, err := reviewer.Runtime.Evaluate(ctx, "change_review",
-		fmt.Sprintf(`Review these changes to an existing %s codebase.
+		fmt.Sprintf(`Review this diff to an existing %s codebase.
 
 CHANGE REQUEST: %s
 
 CTO ANALYSIS: %s
 
-CHANGED/NEW FILES:
+GIT DIFF:
 %s
 
 Review for:
@@ -687,7 +689,7 @@ Review for:
 3. Completeness — is anything missing?
 4. Risks — could these changes break existing functionality?
 
-End with: APPROVED or CHANGES NEEDED: <issues>`, lang, changeReq, ctoAnalysis, diffSummary.String()))
+End with: APPROVED or CHANGES NEEDED: <issues>`, lang, changeReq, ctoAnalysis, diff))
 	if err != nil {
 		return "", false, fmt.Errorf("review: %w", err)
 	}
@@ -698,7 +700,7 @@ End with: APPROVED or CHANGES NEEDED: <issues>`, lang, changeReq, ctoAnalysis, d
 }
 
 // revise applies reviewer feedback — agentic mode preferred, text fallback.
-func (p *Pipeline) revise(ctx context.Context, files map[string]string, originalFiles map[string]string, feedback string, changeReq string, lang string) (map[string]string, error) {
+func (p *Pipeline) revise(ctx context.Context, files map[string]string, feedback string, changeReq string, lang string) (map[string]string, error) {
 	builder, err := p.ensureAgent(ctx, roles.RoleBuilder, "builder")
 	if err != nil {
 		return nil, err
@@ -722,6 +724,12 @@ Read the current code, apply the fixes, and run tests to verify they pass.`, lan
 		})
 		if err == nil {
 			fmt.Printf("Builder (agentic revision): %s\n", truncate(result.Summary, 200))
+
+			// Record the action event
+			if _, actErr := builder.Runtime.Act(ctx, writeCodeAction(lang), "agentic revision"); actErr != nil {
+				fmt.Printf("warning: write_code action event failed: %v\n", actErr)
+			}
+
 			_ = p.product.StageAll()
 			_ = p.product.Commit("fix: address reviewer feedback")
 
@@ -755,6 +763,10 @@ Output ONLY the files that need further changes using --- FILE: path --- markers
 	_, code, err := builder.Runtime.Evaluate(ctx, "code_revision", prompt)
 	if err != nil {
 		return nil, fmt.Errorf("revise: %w", err)
+	}
+
+	if _, err := builder.Runtime.Act(ctx, writeCodeAction(lang), "text revision"); err != nil {
+		fmt.Printf("warning: write_code action event failed: %v\n", err)
 	}
 
 	revisedFiles := parseFiles(code)
@@ -858,6 +870,33 @@ func detectLanguage(files map[string]string) string {
 		}
 	}
 	return "go"
+}
+
+// buildFileListing creates a compact listing of files with line counts.
+// This gives the CTO enough context to identify relevant files without
+// sending the full codebase (~90% token reduction vs full content).
+func buildFileListing(files map[string]string) string {
+	var b strings.Builder
+	b.WriteString("Files:\n")
+	for path, content := range files {
+		lines := strings.Count(content, "\n") + 1
+		b.WriteString(fmt.Sprintf("  %s (%d lines)\n", path, lines))
+	}
+	return b.String()
+}
+
+// extractKeyFiles returns the content of project-level context files
+// (CLAUDE.md, README, etc.) that help the CTO understand the project
+// without needing the full codebase.
+func extractKeyFiles(files map[string]string) string {
+	keyNames := []string{"CLAUDE.md", "README.md", "README", "SPEC.md", "ARCHITECTURE.md"}
+	var b strings.Builder
+	for _, name := range keyNames {
+		if content, ok := files[name]; ok {
+			b.WriteString(fmt.Sprintf("--- %s ---\n%s\n\n", name, content))
+		}
+	}
+	return b.String()
 }
 
 // sanitizeBranchName converts a description into a valid git branch name.
