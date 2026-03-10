@@ -224,6 +224,7 @@ func (p *Pipeline) ensureAgent(ctx context.Context, role roles.Role, name string
 	}
 
 	var actorID types.ActorID
+	var agentPK types.PublicKey
 
 	if p.spawner != nil {
 		// Spawn through authority gate — human must approve.
@@ -240,13 +241,20 @@ func (p *Pipeline) ensureAgent(ctx context.Context, role roles.Role, name string
 			return nil, fmt.Errorf("spawn %s denied: %s", name, result.Reason)
 		}
 		actorID = result.ActorID
-	} else {
-		// Direct creation — no approval gate (bootstrap or testing).
-		agentPub := spawn.DerivePublicKey("agent:" + name)
-		agentPK, err := types.NewPublicKey([]byte(agentPub))
+		// Derive the same public key the Spawner registered.
+		pk, err := types.NewPublicKey([]byte(spawn.DerivePublicKey("agent:" + name)))
 		if err != nil {
 			return nil, fmt.Errorf("agent public key: %w", err)
 		}
+		agentPK = pk
+	} else {
+		// Direct creation — no approval gate (bootstrap or testing).
+		agentPub := spawn.DerivePublicKey("agent:" + name)
+		pk, err := types.NewPublicKey([]byte(agentPub))
+		if err != nil {
+			return nil, fmt.Errorf("agent public key: %w", err)
+		}
+		agentPK = pk
 		agentActor, err := p.actors.Register(agentPK, name, event.ActorTypeAI)
 		if err != nil {
 			return nil, fmt.Errorf("create agent %s: %w", name, err)
@@ -262,12 +270,13 @@ func (p *Pipeline) ensureAgent(ctx context.Context, role roles.Role, name string
 	tracker := resources.NewTrackingProvider(rawProvider)
 	p.trackers[role] = tracker
 	agent, err := roles.NewAgent(ctx, roles.AgentConfig{
-		Role:     role,
-		Name:     name,
-		ActorID:  actorID,
-		Store:    p.store,
-		Provider: tracker,
-		HumanID:  p.humanID,
+		Role:      role,
+		Name:      name,
+		ActorID:   actorID,
+		PublicKey: agentPK,
+		Store:     p.store,
+		Provider:  tracker,
+		HumanID:   p.humanID,
 	})
 	if err != nil {
 		return nil, err
