@@ -104,8 +104,8 @@ type AgentConfig struct {
 }
 
 // NewAgent creates and bootstraps a hive agent with the given role.
-// BootWithoutIdentity skips the identity.created event because the Spawner path
-// in ensureAgent() already emits it separately — avoids duplicate identity events.
+// Uses BootWithoutIdentity because the Spawner path in ensureAgent() already
+// emits identity.created separately — avoids duplicate identity events.
 func NewAgent(ctx context.Context, cfg AgentConfig) (*Agent, error) {
 	rt, err := intelligence.NewRuntime(ctx, intelligence.RuntimeConfig{
 		AgentID:  cfg.ActorID,
