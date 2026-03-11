@@ -168,29 +168,33 @@ Project structure:
 
 	// ── Phase 4: Review ──
 	phaseStart = time.Now()
-	const maxReviewRounds = 3
-	for round := 1; round <= maxReviewRounds; round++ {
-		fmt.Printf("═══ Phase 4: Review (round %d) ═══\n", round)
-		feedback, approved, err := p.reviewTargeted(ctx, baseCommit, ctoAnalysis, input.Description, lang)
-		if err != nil {
-			return p.failPhase("Review", fmt.Errorf("review round %d: %w", round, err))
-		}
-		p.telemetry.addReviewSignal(approved)
+	if p.skipReviewer {
+		fmt.Println("═══ Phase 4: Review (skipped) ═══")
+	} else {
+		const maxReviewRounds = 3
+		for round := 1; round <= maxReviewRounds; round++ {
+			fmt.Printf("═══ Phase 4: Review (round %d) ═══\n", round)
+			feedback, approved, err := p.reviewTargeted(ctx, baseCommit, ctoAnalysis, input.Description, lang)
+			if err != nil {
+				return p.failPhase("Review", fmt.Errorf("review round %d: %w", round, err))
+			}
+			p.telemetry.addReviewSignal(approved)
 
-		if approved {
-			fmt.Println("Changes approved by reviewer.")
-			break
-		}
+			if approved {
+				fmt.Println("Changes approved by reviewer.")
+				break
+			}
 
-		if round == maxReviewRounds {
-			fmt.Println("Max review rounds reached — proceeding with current code.")
-			break
-		}
+			if round == maxReviewRounds {
+				fmt.Println("Max review rounds reached — proceeding with current code.")
+				break
+			}
 
-		fmt.Printf("═══ Phase 4b: Revise from feedback (round %d) ═══\n", round)
-		files, err = p.revise(ctx, files, feedback, input.Description, lang)
-		if err != nil {
-			return p.failPhase("Review", fmt.Errorf("revise round %d: %w", round, err))
+			fmt.Printf("═══ Phase 4b: Revise from feedback (round %d) ═══\n", round)
+			files, err = p.revise(ctx, files, feedback, input.Description, lang)
+			if err != nil {
+				return p.failPhase("Review", fmt.Errorf("revise round %d: %w", round, err))
+			}
 		}
 	}
 	reviewDuration := time.Since(phaseStart)
