@@ -218,7 +218,7 @@ func filterSelfImproveFiles(files map[string]string) map[string]string {
 	out := make(map[string]string, len(files))
 	for p, content := range files {
 		switch {
-		case strings.HasPrefix(p, "pkg/pipeline/") && strings.HasSuffix(p, ".go"):
+		case strings.HasPrefix(p, "pkg/pipeline/") && strings.HasSuffix(p, ".go") && !strings.HasSuffix(p, "_test.go"):
 			out[p] = content
 		case p == "cmd/hive/main.go", p == "CLAUDE.md":
 			out[p] = content
