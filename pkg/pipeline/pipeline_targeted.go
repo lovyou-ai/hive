@@ -33,6 +33,7 @@ func (p *Pipeline) RunTargeted(ctx context.Context, input ProductInput) error {
 		InputDescription: input.Description,
 		StartedAt:        pipelineStart,
 	}
+	p.trackers = make(map[roles.Role]*resources.TrackingProvider)
 	defer func() {
 		p.telemetry.collectTokenUsage(p.trackers)
 		writeTelemetry(p.telemetryBaseDir(), p.telemetry)
