@@ -130,14 +130,7 @@ Look for:
 - Reviewer friction patterns (CHANGES NEEDED signals that are false alarms)
 - Code quality issues visible in the codebase itself
 
-Respond with ONLY a JSON object (no markdown, no explanation outside the JSON):
-{
-  "description": "what to change — be specific and actionable",
-  "files_to_change": ["path/to/file1.go", "path/to/file2.go"],
-  "expected_impact": "cost/time/quality improvement expected",
-  "priority": "high|medium|low",
-  "skip_reason": "if nothing is worth fixing, explain why here; otherwise empty string"
-}`, telemetrySummary, fileListing, keyContext)
+Respond with ONLY a JSON object: {"description": "what to change, 1-2 sentences", "files_to_change": ["path/to/file"], "expected_impact": "1 sentence", "priority": "high|medium|low", "skip_reason": "if nothing is worth fixing, explain why here; otherwise empty string"}. No preamble, no explanation, no code blocks, no markdown.`, telemetrySummary, fileListing, keyContext)
 
 	ctoResp, err := ctoTracker.Reason(ctx, ctoPrompt, nil)
 	if err != nil {
