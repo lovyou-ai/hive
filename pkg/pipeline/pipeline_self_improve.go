@@ -166,10 +166,15 @@ Respond with ONLY a JSON object: {"description": "what to change, 1-2 sentences"
 	// Step 6: Run targeted pipeline with the recommendation.
 	// Pre-populate p.telemetry with CTO analysis cost so RunTargeted includes it —
 	// the targeted pipeline resets p.trackers on entry, losing ctoTracker.
+	// Pass ContextFiles so the Builder only sees pipeline-scoped files — the
+	// same filterSelfImproveFiles() set used for CTO analysis. Supplying them
+	// directly avoids a second ReadSourceFiles() call in RunTargeted and prevents
+	// context bloat from unrelated packages reaching the Builder.
 	targetedInput := ProductInput{
-		RepoPath:    input.RepoPath,
-		Description: rec.Description,
-		CTOAnalysis: fmt.Sprintf("Description: %s\nFiles to change: %v\nExpected impact: %s", rec.Description, rec.FilesToChange, rec.ExpectedImpact),
+		RepoPath:     input.RepoPath,
+		Description:  rec.Description,
+		CTOAnalysis:  fmt.Sprintf("Description: %s\nFiles to change: %v\nExpected impact: %s", rec.Description, rec.FilesToChange, rec.ExpectedImpact),
+		ContextFiles: pipelineFiles,
 	}
 	if s := ctoTracker.Snapshot(); s.Iterations > 0 {
 		p.telemetry = &PipelineResult{}

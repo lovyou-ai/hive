@@ -59,11 +59,21 @@ func (p *Pipeline) RunTargeted(ctx context.Context, input ProductInput) error {
 	// ── Phase 1: Context Load ──
 	fmt.Println("═══ Phase 1: Context Load ═══")
 	phaseStart := time.Now()
-	existingFiles, err := product.ReadSourceFiles()
-	if err != nil {
-		return p.failPhase("Context Load", fmt.Errorf("read source files: %w", err))
+	var existingFiles map[string]string
+	if input.ContextFiles != nil {
+		// Use pre-filtered files supplied by the caller (e.g. self-improve
+		// passes pipeline-scoped files to avoid sending the full codebase to
+		// the Builder, preventing context bloat from unrelated packages).
+		existingFiles = input.ContextFiles
+		fmt.Printf("Using %d pre-filtered source files (context scoped by caller).\n", len(existingFiles))
+	} else {
+		var err error
+		existingFiles, err = product.ReadSourceFiles()
+		if err != nil {
+			return p.failPhase("Context Load", fmt.Errorf("read source files: %w", err))
+		}
+		fmt.Printf("Loaded %d source files.\n", len(existingFiles))
 	}
-	fmt.Printf("Loaded %d source files.\n", len(existingFiles))
 
 	gitLog, _ := product.GitLog(10)
 	if gitLog != "" {
