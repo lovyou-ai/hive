@@ -85,13 +85,17 @@ func (p *Pipeline) runSelfImproveIteration(parentCtx context.Context, iteration 
 	}
 	fmt.Printf("Telemetry: %d past run(s) found.\n", len(telemetryResults))
 
-	// Step 2: Load codebase context (reuse targeted mode Phase 1)
+	// Step 2: Load codebase context (reuse targeted mode Phase 1).
+	// Filter to pipeline-scoped files only — all 41 self-improve iterations have
+	// targeted pkg/pipeline/ exclusively; sending the full codebase wastes ~65%
+	// of CTO input tokens on packages that have never been touched.
 	existingFiles, err := product.ReadSourceFiles()
 	if err != nil {
 		return fmt.Errorf("read source files: %w", err)
 	}
-	fileListing := buildFileListing(existingFiles)
-	keyContext := extractKeyFiles(existingFiles)
+	pipelineFiles := filterSelfImproveFiles(existingFiles)
+	fileListing := buildFileListing(pipelineFiles)
+	keyContext := extractKeyFiles(pipelineFiles)
 
 	// Step 3: Build telemetry summary for CTO
 	telemetrySummary := summarizeTelemetry(telemetryResults)
@@ -203,6 +207,24 @@ func (p *Pipeline) selfImproveCTOModel() string {
 		return p.ctoModel
 	}
 	return "claude-sonnet-4-6"
+}
+
+// filterSelfImproveFiles returns a filtered copy of files containing only
+// pipeline-scoped paths: pkg/pipeline/*.go, cmd/hive/main.go, and CLAUDE.md.
+// Cuts CTO analysis input tokens by ~65% — all self-improve iterations have
+// targeted pkg/pipeline/ exclusively; mcp, spawn, loop, authority, workspace,
+// roles, resources, and docs are noise that drives cost with no signal value.
+func filterSelfImproveFiles(files map[string]string) map[string]string {
+	out := make(map[string]string, len(files))
+	for p, content := range files {
+		switch {
+		case strings.HasPrefix(p, "pkg/pipeline/") && strings.HasSuffix(p, ".go"):
+			out[p] = content
+		case p == "cmd/hive/main.go", p == "CLAUDE.md":
+			out[p] = content
+		}
+	}
+	return out
 }
 
 // summarizeTelemetry builds a human-readable summary of past pipeline runs for the CTO.

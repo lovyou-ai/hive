@@ -134,7 +134,7 @@ go run ./cmd/hive --human Matt --store "postgres://hive:hive@localhost:5432/hive
 # Auto-approve all agent spawns (dev/testing — skips interactive prompts)
 go run ./cmd/hive --human Matt --yes --store "postgres://hive:hive@localhost:5432/hive" --idea "Build a task management app with kanban boards"
 
-# Fast dev mode — auto-approve + skip Guardian checks (saves ~6 LLM calls)
+# Fast dev mode — auto-approve + skip Guardian checks (NOT recommended, Guardian should run)
 go run ./cmd/hive --human Matt --yes --skip-guardian --store "postgres://hive:hive@localhost:5432/hive" --idea "Build a task management app with kanban boards"
 
 # Agentic loop mode — concurrent self-directing agents
@@ -147,10 +147,10 @@ go run ./cmd/hive --human Matt --name social-grammar --store "postgres://hive:hi
 go run ./cmd/hive --human Matt --store "postgres://hive:hive@localhost:5432/hive" --spec path/to/spec.cg
 
 # Targeted mode — modify existing code (creates branch + PR)
-go run ./cmd/hive --human Matt --yes --skip-guardian --store "postgres://hive:hive@localhost:5432/hive" --repo /path/to/repo --idea "add a has command"
+go run ./cmd/hive --human Matt --yes --store "postgres://hive:hive@localhost:5432/hive" --repo /path/to/repo --idea "add a has command"
 
 # Self-improvement — analyze telemetry + codebase, apply fixes (up to 3 iterations)
-go run ./cmd/hive --human Matt --yes --skip-guardian --self-improve --store "postgres://hive:hive@localhost:5432/hive"
+go run ./cmd/hive --human Matt --yes --self-improve --store "postgres://hive:hive@localhost:5432/hive"
 ```
 
 ## Key Files
