@@ -2225,10 +2225,7 @@ func (p *Pipeline) guardianCheck(ctx context.Context, phase string) bool {
 	_, eval, err := p.guardian.Runtime.Evaluate(ctx, "integrity_check_"+phase,
 		fmt.Sprintf(`Review these recent events (after %s phase) for policy violations, trust anomalies, or authority overreach.
 
-EXTRA SCRUTINY for:
-- Agent spawn events (agent.role.assigned) — verify trust levels
-- Self-modification events — flag for human review
-- Revenue-affecting decisions — verify alignment
+Report ONLY confirmed policy violations. If none found, respond: No violations detected.
 
 Events:
 %s`,
