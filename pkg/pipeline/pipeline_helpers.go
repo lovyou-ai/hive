@@ -10,6 +10,8 @@ import (
 	"github.com/lovyou-ai/eventgraph/go/pkg/event"
 
 	"github.com/lovyou-ai/hive/pkg/loop"
+	"github.com/lovyou-ai/hive/pkg/resources"
+	"github.com/lovyou-ai/hive/pkg/roles"
 )
 
 // ════════════════════════════════════════════════════════════════════════
@@ -32,18 +34,28 @@ func (p *Pipeline) guardianCheck(ctx context.Context, phase string) bool {
 		summary.WriteString(fmt.Sprintf("[%s] %s: %s\n", ev.Type().Value(), ev.Source().Value(), ev.ID().Value()))
 	}
 
-	_, eval, err := p.guardian.Runtime.Evaluate(ctx, "integrity_check_"+phase,
-		fmt.Sprintf(`Review these recent events (after %s phase) for policy violations, trust anomalies, or authority overreach.
+	prompt := fmt.Sprintf(`Review these recent events (after %s phase) for policy violations, trust anomalies, or authority overreach.
 
 Report ONLY confirmed policy violations. If none found, respond: No violations detected.
 
 Events:
 %s`,
-			phase, summary.String()))
+		phase, summary.String())
+
+	rawProvider, err := p.providerForRole(roles.RoleGuardian)
 	if err != nil {
 		fmt.Printf("Guardian check failed: %v\n", err)
 		return false
 	}
+	tracker := resources.NewTrackingProvider(rawProvider)
+	p.trackers[roles.RoleGuardian] = tracker
+
+	resp, err := tracker.Reason(ctx, prompt, nil)
+	if err != nil {
+		fmt.Printf("Guardian check failed: %v\n", err)
+		return false
+	}
+	eval := resp.Content()
 
 	if loop.ContainsSignal(eval, "HALT") {
 		fmt.Printf("🛑 Guardian HALT (after %s):\n%s\n", phase, eval)
