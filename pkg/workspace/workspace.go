@@ -219,7 +219,7 @@ func (p *Product) ReadSourceFiles() (map[string]string, error) {
 		}
 		if info.IsDir() {
 			base := filepath.Base(path)
-			if base == ".git" || base == "node_modules" || base == "vendor" || base == "__pycache__" || base == "target" {
+			if base == ".git" || base == "node_modules" || base == "vendor" || base == "__pycache__" || base == "target" || base == ".hive" || base == "products" {
 				return filepath.SkipDir
 			}
 			return nil
