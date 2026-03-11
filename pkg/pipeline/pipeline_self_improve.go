@@ -207,17 +207,32 @@ func (p *Pipeline) selfImproveCTOModel() string {
 // Cuts CTO analysis input tokens by ~65% — all self-improve iterations have
 // targeted pkg/pipeline/ exclusively; mcp, spawn, loop, authority, workspace,
 // roles, resources, and docs are noise that drives cost with no signal value.
+// Each matched file is truncated to the first maxSelfImproveFileLines lines to
+// prevent input token drift as pipeline files grow across iterations.
+const maxSelfImproveFileLines = 150
+
 func filterSelfImproveFiles(files map[string]string) map[string]string {
 	out := make(map[string]string, len(files))
 	for p, content := range files {
 		switch {
 		case strings.HasPrefix(p, "pkg/pipeline/") && strings.HasSuffix(p, ".go") && !strings.HasSuffix(p, "_test.go"):
-			out[p] = content
+			out[p] = truncateLines(content, maxSelfImproveFileLines)
 		case p == "cmd/hive/main.go", p == "CLAUDE.md":
-			out[p] = content
+			out[p] = truncateLines(content, maxSelfImproveFileLines)
 		}
 	}
 	return out
+}
+
+// truncateLines returns the first n lines of s. If s has more than n lines,
+// a truncation notice is appended. Mirrors the pattern in extractKeyFiles().
+func truncateLines(s string, n int) string {
+	lines := strings.Split(s, "\n")
+	if len(lines) <= n {
+		return s
+	}
+	return strings.Join(lines[:n], "\n") +
+		fmt.Sprintf("\n... [truncated: %d lines omitted]", len(lines)-n)
 }
 
 // summarizeTelemetry builds a human-readable summary of past pipeline runs for the CTO.
