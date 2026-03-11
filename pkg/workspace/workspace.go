@@ -359,6 +359,23 @@ func (p *Product) CleanupForIteration() error {
 		}
 	}
 
+	// Delete remote hive/* branches too — stale remote branches cause
+	// "push -u origin" to fail when the pipeline reuses a branch name.
+	remoteCmd := exec.Command("git", "branch", "-r", "--list", "origin/hive/*")
+	remoteCmd.Dir = p.Dir
+	remoteOut, err := remoteCmd.Output()
+	if err == nil {
+		for _, line := range strings.Split(strings.TrimSpace(string(remoteOut)), "\n") {
+			ref := strings.TrimSpace(line)
+			if ref == "" {
+				continue
+			}
+			// "origin/hive/foo" → "hive/foo"
+			branch := strings.TrimPrefix(ref, "origin/")
+			_ = p.git("push", "origin", "--delete", branch)
+		}
+	}
+
 	// Pull latest main.
 	if err := p.git("pull", "origin", "main"); err != nil {
 		return fmt.Errorf("pull main: %w", err)
