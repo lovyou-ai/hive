@@ -251,9 +251,20 @@ func (p *Pipeline) modify(ctx context.Context, existingFiles map[string]string, 
 		return nil, err
 	}
 
+	// Targeted builds use a temporary Sonnet provider — CTO-directed changes
+	// are small and well-scoped. The builder agent is still ensured normally
+	// (for Runtime.Act event emissions), but Operate calls go through Sonnet.
+	model := p.targetedBuilderModel()
+	rawProvider, err := p.providerForRoleWithModel(roles.RoleBuilder, model)
+	if err != nil {
+		return nil, fmt.Errorf("builder provider: %w", err)
+	}
+	tracker := resources.NewTrackingProvider(rawProvider)
+	p.trackers[roles.RoleBuilder] = tracker
+	fmt.Printf("  ↳ targeted build using %s\n", model)
+
 	// Try agentic mode first — builder reads/writes files directly
-	tracker := p.trackers[roles.RoleBuilder]
-	if tracker != nil {
+	{
 		instruction := fmt.Sprintf(`You are working in a %s repository. Implement the following change:
 
 CHANGE REQUEST: %s
@@ -364,6 +375,16 @@ CRITICAL OUTPUT FORMAT RULES:
 	return merged, nil
 }
 
+// targetedBuilderModel returns the model to use for targeted builds.
+// Defaults to Sonnet — targeted builds are CTO-directed with small,
+// well-scoped modifications that don't need Opus-level reasoning.
+func (p *Pipeline) targetedBuilderModel() string {
+	if p.builderModel != "" {
+		return p.builderModel
+	}
+	return "claude-sonnet-4-6"
+}
+
 // targetedReviewModel returns the model to use for targeted reviews.
 // Defaults to Sonnet — targeted reviews only check a focused diff.
 func (p *Pipeline) targetedReviewModel() string {
@@ -432,9 +453,23 @@ func (p *Pipeline) revise(ctx context.Context, files map[string]string, feedback
 		return nil, err
 	}
 
-	// Try agentic mode
+	// Targeted revisions use the same Sonnet provider as modify — CTO-directed
+	// changes are small and well-scoped. Reuse the tracker already in p.trackers
+	// (set by modify()), or create a fresh one if revise is called independently.
 	tracker := p.trackers[roles.RoleBuilder]
-	if tracker != nil {
+	if tracker == nil {
+		model := p.targetedBuilderModel()
+		rawProvider, provErr := p.providerForRoleWithModel(roles.RoleBuilder, model)
+		if provErr != nil {
+			return nil, fmt.Errorf("builder provider: %w", provErr)
+		}
+		tracker = resources.NewTrackingProvider(rawProvider)
+		p.trackers[roles.RoleBuilder] = tracker
+		fmt.Printf("  ↳ targeted revision using %s\n", model)
+	}
+
+	// Try agentic mode
+	{
 		instruction := fmt.Sprintf(`You are working in a %s repository. Fix the reviewer's feedback:
 
 ORIGINAL CHANGE REQUEST: %s

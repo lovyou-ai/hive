@@ -79,6 +79,7 @@ type Pipeline struct {
 	skipSimplify  bool
 	autoApprove   bool   // --yes flag active (authority requests auto-approved)
 	reviewerModel string // model override for targeted reviews (empty = role default)
+	builderModel  string // model override for targeted builds (empty = role default)
 
 	// Authority infrastructure — always initialized; gate is optional.
 	gate    *authority.Gate
@@ -118,6 +119,11 @@ type Config struct {
 	// Empty string = use role default. Targeted reviews only check a focused
 	// git diff, so Sonnet is sufficient — no deep architectural reasoning needed.
 	ReviewerModel string
+
+	// BuilderModel overrides the model used for targeted builds.
+	// Empty string = use role default (Sonnet). Targeted builds are CTO-directed
+	// with small, well-scoped modifications — Sonnet handles these well.
+	BuilderModel string
 }
 
 
@@ -148,6 +154,7 @@ func New(ctx context.Context, cfg Config) (*Pipeline, error) {
 		skipSimplify:  cfg.SkipSimplify,
 		autoApprove:   cfg.AutoApprove,
 		reviewerModel: cfg.ReviewerModel,
+		builderModel:  cfg.BuilderModel,
 	}
 
 	// Always initialize event infrastructure — needed for OBSERVABLE invariant

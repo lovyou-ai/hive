@@ -46,6 +46,7 @@ func run() error {
 	skipGuardian := flag.Bool("skip-guardian", false, "Skip Guardian integrity checks after each phase (dev/testing only)")
 	skipSimplify := flag.Bool("skip-simplify", false, "Skip the simplification loop after design (dev/testing only)")
 	reviewerModel := flag.String("reviewer-model", "", "Override model for targeted reviews (default: claude-sonnet-4-6)")
+	builderModel := flag.String("builder-model", "", "Override model for targeted builds (default: claude-sonnet-4-6)")
 	selfImprove := flag.Bool("self-improve", false, "Self-improvement mode: analyze telemetry + codebase and apply fixes")
 	flag.Parse()
 
@@ -153,6 +154,7 @@ func run() error {
 		SkipSimplify:  *skipSimplify,
 		AutoApprove:   *autoApprove,
 		ReviewerModel: *reviewerModel,
+		BuilderModel:  *builderModel,
 	})
 	if err != nil {
 		return fmt.Errorf("pipeline: %w", err)
