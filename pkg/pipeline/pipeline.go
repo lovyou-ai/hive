@@ -76,6 +76,7 @@ type Pipeline struct {
 	agents        map[roles.Role]*roles.Agent
 	trackers      map[roles.Role]*resources.TrackingProvider // per-agent token tracking
 	skipGuardian  bool
+	skipReviewer  bool
 	skipSimplify  bool
 	autoApprove   bool   // --yes flag active (authority requests auto-approved)
 	reviewerModel  string // model override for targeted reviews (empty = role default)
