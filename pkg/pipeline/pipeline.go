@@ -67,6 +67,7 @@ type ProductInput struct {
 	Description string // Natural language description
 	SpecFile    string // Path to a Code Graph spec file
 	RepoPath    string // Path to existing repo (targeted mode)
+	CTOAnalysis string // Pre-computed CTO analysis (skips Understand phase when set)
 }
 
 // Pipeline orchestrates agents through the product build phases.
@@ -572,8 +573,14 @@ func (p *Pipeline) RunTargeted(ctx context.Context, input ProductInput) error {
 	// ── Phase 2: Understand ──
 	fmt.Println("═══ Phase 2: Understand ═══")
 	phaseStart = time.Now()
-	_, ctoAnalysis, err := p.cto.Runtime.Evaluate(ctx, "change_analysis",
-		fmt.Sprintf(`Analyze this change request. Be BRIEF — the Builder reads files itself.
+	var ctoAnalysis string
+	if input.CTOAnalysis != "" {
+		ctoAnalysis = input.CTOAnalysis
+		fmt.Println("Using pre-computed CTO analysis (skipped Understand).")
+		fmt.Printf("CTO Analysis:\n%s\n", ctoAnalysis)
+	} else {
+		_, ctoAnalysis, err = p.cto.Runtime.Evaluate(ctx, "change_analysis",
+			fmt.Sprintf(`Analyze this change request. Be BRIEF — the Builder reads files itself.
 
 Output ONLY:
 - Which files to change (paths + what to do in each, 1 line per file)
@@ -589,10 +596,11 @@ Project structure:
 %s
 
 %s`, input.Description, gitLog, fileListing, keyContext))
-	if err != nil {
-		return fmt.Errorf("CTO analysis: %w", err)
+		if err != nil {
+			return fmt.Errorf("CTO analysis: %w", err)
+		}
+		fmt.Printf("CTO Analysis:\n%s\n", ctoAnalysis)
 	}
-	fmt.Printf("CTO Analysis:\n%s\n", ctoAnalysis)
 
 	// Create branch for the changes
 	branchName := "hive/" + sanitizeBranchName(input.Description)
@@ -830,6 +838,7 @@ Respond with ONLY a JSON object (no markdown, no explanation outside the JSON):
 		targetedInput := ProductInput{
 			RepoPath:    input.RepoPath,
 			Description: rec.Description,
+			CTOAnalysis: fmt.Sprintf("Description: %s\nFiles to change: %v\nExpected impact: %s", rec.Description, rec.FilesToChange, rec.ExpectedImpact),
 		}
 		fmt.Printf("\n═══ Self-Improve: Running targeted pipeline ═══\n")
 		if err := p.RunTargeted(ctx, targetedInput); err != nil {

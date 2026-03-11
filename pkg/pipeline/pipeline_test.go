@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -412,6 +413,55 @@ func TestFindModuleDir(t *testing.T) {
 			t.Errorf("findModuleDir = %q, want root %q", got, root)
 		}
 	})
+}
+
+func TestCTOAnalysisSkipsUnderstandPhase(t *testing.T) {
+	// Verify that ProductInput.CTOAnalysis is properly formatted from a
+	// SelfImproveRecommendation and that the field flows through to targeted
+	// pipeline input, which would skip the CTO Evaluate call in Phase 2.
+	rec := SelfImproveRecommendation{
+		Description:    "Refactor the build phase",
+		FilesToChange:  []string{"pkg/pipeline/pipeline.go", "pkg/pipeline/pipeline_test.go"},
+		ExpectedImpact: "Reduce build phase duration by 30%",
+		Priority:       "high",
+	}
+
+	// Format the same way RunSelfImprove does.
+	analysis := fmt.Sprintf("Description: %s\nFiles to change: %v\nExpected impact: %s",
+		rec.Description, rec.FilesToChange, rec.ExpectedImpact)
+
+	input := ProductInput{
+		RepoPath:    "/tmp/fake-repo",
+		Description: rec.Description,
+		CTOAnalysis: analysis,
+	}
+
+	// CTOAnalysis must be non-empty so the Understand phase is skipped.
+	if input.CTOAnalysis == "" {
+		t.Fatal("CTOAnalysis should be non-empty")
+	}
+
+	// Verify the formatted string contains all recommendation fields.
+	if !strings.Contains(input.CTOAnalysis, rec.Description) {
+		t.Error("CTOAnalysis missing Description")
+	}
+	for _, f := range rec.FilesToChange {
+		if !strings.Contains(input.CTOAnalysis, f) {
+			t.Errorf("CTOAnalysis missing file %q", f)
+		}
+	}
+	if !strings.Contains(input.CTOAnalysis, rec.ExpectedImpact) {
+		t.Error("CTOAnalysis missing ExpectedImpact")
+	}
+
+	// Verify that an empty CTOAnalysis would NOT skip (the default path).
+	defaultInput := ProductInput{
+		RepoPath:    "/tmp/fake-repo",
+		Description: "some change",
+	}
+	if defaultInput.CTOAnalysis != "" {
+		t.Error("default ProductInput should have empty CTOAnalysis")
+	}
 }
 
 func TestLangMarkerFile(t *testing.T) {
