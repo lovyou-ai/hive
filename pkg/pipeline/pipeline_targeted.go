@@ -284,6 +284,7 @@ func (p *Pipeline) modify(ctx context.Context, existingFiles map[string]string, 
 
 	// Try agentic mode first — builder reads/writes files directly
 	{
+		relevantFiles := parseRelevantFiles(ctoAnalysis)
 		instruction := fmt.Sprintf(`You are working in a %s repository. Implement the following change:
 
 CHANGE REQUEST: %s
@@ -295,6 +296,9 @@ If tests fail, fix the issues and re-run until tests pass.
 Use the project's existing test commands (e.g., go test ./... for Go).
 Preserve existing code style and conventions.
 Do NOT add unnecessary changes beyond what's requested.`, lang, changeReq, ctoAnalysis)
+		if len(relevantFiles) > 0 {
+			instruction += "\nFocus ONLY on these files (identified by the CTO):\n" + strings.Join(relevantFiles, "\n") + "\nDo NOT read other source files unless a dependency forces it."
+		}
 
 		result, err := tracker.Operate(ctx, decision.OperateTask{
 			WorkDir:     p.product.Dir,
