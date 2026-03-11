@@ -124,6 +124,13 @@ Project structure:
 		fmt.Printf("CTO Analysis:\n%s\n", ctoAnalysis)
 	}
 
+	// Early-exit if the CTO analysis identifies no relevant files — the change
+	// is already implemented or cannot be mapped to specific files.
+	if len(parseRelevantFiles(ctoAnalysis)) == 0 {
+		fmt.Println("CTO analysis identified no relevant files — change may already be implemented. Skipping.")
+		return nil
+	}
+
 	// Create branch for the changes
 	branchName := "hive/" + sanitizeBranchName(input.Description)
 	if err := product.CreateBranch(branchName); err != nil {

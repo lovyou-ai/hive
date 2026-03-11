@@ -2,3 +2,4 @@
 .hive/
 products/
 *.exe
+*.stackdump

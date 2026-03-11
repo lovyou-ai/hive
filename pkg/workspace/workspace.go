@@ -292,7 +292,16 @@ func (p *Product) HeadCommit() (string, error) {
 }
 
 // CreateBranch creates and checks out a new branch.
+// If the branch already exists (e.g., from a previous self-improve run whose PR
+// was never merged), it deletes and recreates it so the pipeline gets a clean base.
 func (p *Product) CreateBranch(name string) error {
+	if err := p.git("checkout", "-b", name); err == nil {
+		return nil
+	}
+	// Branch may already exist — delete and recreate.
+	if err := p.git("branch", "-D", name); err != nil {
+		return fmt.Errorf("branch %q exists and cannot be deleted: %w", name, err)
+	}
 	return p.git("checkout", "-b", name)
 }
 
