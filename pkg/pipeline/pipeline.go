@@ -59,6 +59,10 @@ type ProductInput struct {
 	SpecFile    string // Path to a Code Graph spec file
 	RepoPath    string // Path to existing repo (targeted mode)
 	CTOAnalysis string // Pre-computed CTO analysis (skips Understand phase when set)
+	// ContextFiles, when non-nil, replaces ReadSourceFiles() in the targeted
+	// pipeline. Used by self-improve to pass pre-filtered pipeline files to the
+	// Builder, preventing context bloat from unrelated packages.
+	ContextFiles map[string]string
 }
 
 // Pipeline orchestrates agents through the product build phases.
