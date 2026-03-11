@@ -15,6 +15,10 @@ import (
 // maxSelfImproveIterations is the maximum number of improvements per session.
 const maxSelfImproveIterations = 3
 
+// selfImproveIterationTimeout caps how long a single self-improve iteration
+// (CTO analysis + targeted pipeline run) can take before being killed.
+const selfImproveIterationTimeout = 15 * time.Minute
+
 // telemetryDetailRunLimit is the number of most-recent runs that get full detail
 // in summarizeTelemetry(). Older runs get a one-line summary to cap CTO input tokens.
 const telemetryDetailRunLimit = 3
@@ -40,42 +44,66 @@ func (p *Pipeline) RunSelfImprove(ctx context.Context, input ProductInput) error
 	for iteration := 1; iteration <= maxSelfImproveIterations; iteration++ {
 		fmt.Printf("\n═══ Self-Improve: Iteration %d/%d ═══\n", iteration, maxSelfImproveIterations)
 
-		// Step 1: Read telemetry
-		telemetryResults, err := ReadTelemetry(input.RepoPath)
-		if err != nil {
-			return fmt.Errorf("read telemetry: %w", err)
+		if err := p.runSelfImproveIteration(ctx, iteration, input); err != nil {
+			if err == errSelfImproveStop {
+				break
+			}
+			return fmt.Errorf("self-improve iteration %d: %w", iteration, err)
 		}
-		fmt.Printf("Telemetry: %d past run(s) found.\n", len(telemetryResults))
 
-		// Step 2: Load codebase context (reuse targeted mode Phase 1)
-		product, err := workspace.OpenRepo(input.RepoPath)
-		if err != nil {
-			return fmt.Errorf("open repo: %w", err)
-		}
-		existingFiles, err := product.ReadSourceFiles()
-		if err != nil {
-			return fmt.Errorf("read source files: %w", err)
-		}
-		fileListing := buildFileListing(existingFiles)
-		keyContext := extractKeyFiles(existingFiles)
+		fmt.Printf("═══ Self-Improve: Iteration %d complete ═══\n", iteration)
+	}
 
-		// Step 3: Build telemetry summary for CTO
-		telemetrySummary := summarizeTelemetry(telemetryResults)
+	fmt.Println("\n═══ Self-Improve: Session Complete ═══")
+	return nil
+}
 
-		// Step 4: CTO analysis — fresh provider per iteration to avoid accumulating
-		// prior conversation as input context (each prompt already contains full
-		// telemetry + codebase, so prior messages are pure waste).
-		fmt.Println("CTO analyzing telemetry + codebase...")
-		model := p.selfImproveCTOModel()
-		rawProvider, err := p.providerForRoleWithModel(roles.RoleCTO, model)
-		if err != nil {
-			return fmt.Errorf("CTO provider: %w", err)
-		}
-		ctoTracker := resources.NewTrackingProvider(rawProvider)
-		p.trackers[roles.RoleCTO] = ctoTracker
-		fmt.Printf("  ↳ self-improve CTO analysis using %s\n", model)
+// errSelfImproveStop is returned by runSelfImproveIteration when the CTO
+// says nothing is worth fixing. The caller should stop iterating.
+var errSelfImproveStop = fmt.Errorf("CTO says nothing worth fixing")
 
-		ctoPrompt := fmt.Sprintf(`You are analyzing this codebase and its pipeline telemetry to identify the single highest-impact improvement.
+// runSelfImproveIteration runs a single self-improve iteration with a timeout.
+// Returns errSelfImproveStop if the CTO says nothing is worth fixing.
+func (p *Pipeline) runSelfImproveIteration(parentCtx context.Context, iteration int, input ProductInput) error {
+	ctx, cancel := context.WithTimeout(parentCtx, selfImproveIterationTimeout)
+	defer cancel()
+
+	// Step 1: Read telemetry
+	telemetryResults, err := ReadTelemetry(input.RepoPath)
+	if err != nil {
+		return fmt.Errorf("read telemetry: %w", err)
+	}
+	fmt.Printf("Telemetry: %d past run(s) found.\n", len(telemetryResults))
+
+	// Step 2: Load codebase context (reuse targeted mode Phase 1)
+	product, err := workspace.OpenRepo(input.RepoPath)
+	if err != nil {
+		return fmt.Errorf("open repo: %w", err)
+	}
+	existingFiles, err := product.ReadSourceFiles()
+	if err != nil {
+		return fmt.Errorf("read source files: %w", err)
+	}
+	fileListing := buildFileListing(existingFiles)
+	keyContext := extractKeyFiles(existingFiles)
+
+	// Step 3: Build telemetry summary for CTO
+	telemetrySummary := summarizeTelemetry(telemetryResults)
+
+	// Step 4: CTO analysis — fresh provider per iteration to avoid accumulating
+	// prior conversation as input context (each prompt already contains full
+	// telemetry + codebase, so prior messages are pure waste).
+	fmt.Println("CTO analyzing telemetry + codebase...")
+	model := p.selfImproveCTOModel()
+	rawProvider, err := p.providerForRoleWithModel(roles.RoleCTO, model)
+	if err != nil {
+		return fmt.Errorf("CTO provider: %w", err)
+	}
+	ctoTracker := resources.NewTrackingProvider(rawProvider)
+	p.trackers[roles.RoleCTO] = ctoTracker
+	fmt.Printf("  ↳ self-improve CTO analysis using %s\n", model)
+
+	ctoPrompt := fmt.Sprintf(`You are analyzing this codebase and its pipeline telemetry to identify the single highest-impact improvement.
 
 TELEMETRY DATA (from past pipeline runs):
 %s
@@ -101,52 +129,48 @@ Respond with ONLY a JSON object (no markdown, no explanation outside the JSON):
   "skip_reason": "if nothing is worth fixing, explain why here; otherwise empty string"
 }`, telemetrySummary, fileListing, keyContext)
 
-		ctoResp, err := ctoTracker.Reason(ctx, ctoPrompt, nil)
-		if err != nil {
-			return fmt.Errorf("CTO self-improve analysis: %w", err)
-		}
-		ctoResponse := ctoResp.Content()
+	ctoResp, err := ctoTracker.Reason(ctx, ctoPrompt, nil)
+	if err != nil {
+		return fmt.Errorf("CTO self-improve analysis: %w", err)
+	}
+	ctoResponse := ctoResp.Content()
 
-		// Step 5: Parse recommendation
-		rec, err := parseSelfImproveRecommendation(ctoResponse)
-		if err != nil {
-			return fmt.Errorf("parse CTO recommendation: %w", err)
-		}
-
-		fmt.Printf("CTO recommendation (priority=%s): %s\n", rec.Priority, rec.Description)
-		if rec.SkipReason != "" {
-			fmt.Printf("CTO says nothing worth fixing: %s\n", rec.SkipReason)
-			break
-		}
-		if rec.Description == "" {
-			fmt.Println("CTO returned empty recommendation — stopping.")
-			break
-		}
-
-		fmt.Printf("Expected impact: %s\n", rec.ExpectedImpact)
-		fmt.Printf("Files to change: %v\n", rec.FilesToChange)
-
-		// Step 6: Run targeted pipeline with the recommendation
-		targetedInput := ProductInput{
-			RepoPath:    input.RepoPath,
-			Description: rec.Description,
-			CTOAnalysis: fmt.Sprintf("Description: %s\nFiles to change: %v\nExpected impact: %s", rec.Description, rec.FilesToChange, rec.ExpectedImpact),
-		}
-		fmt.Printf("\n═══ Self-Improve: Running targeted pipeline ═══\n")
-		if err := p.RunTargeted(ctx, targetedInput); err != nil {
-			return fmt.Errorf("self-improve iteration %d: %w", iteration, err)
-		}
-
-		// Sync local main with remote after merge so the next iteration
-		// branches from the up-to-date main, not the stale pre-merge state.
-		if err := product.SyncMain(); err != nil {
-			return fmt.Errorf("sync main after iteration %d: %w", iteration, err)
-		}
-
-		fmt.Printf("═══ Self-Improve: Iteration %d complete ═══\n", iteration)
+	// Step 5: Parse recommendation
+	rec, err := parseSelfImproveRecommendation(ctoResponse)
+	if err != nil {
+		return fmt.Errorf("parse CTO recommendation: %w", err)
 	}
 
-	fmt.Println("\n═══ Self-Improve: Session Complete ═══")
+	fmt.Printf("CTO recommendation (priority=%s): %s\n", rec.Priority, rec.Description)
+	if rec.SkipReason != "" {
+		fmt.Printf("CTO says nothing worth fixing: %s\n", rec.SkipReason)
+		return errSelfImproveStop
+	}
+	if rec.Description == "" {
+		fmt.Println("CTO returned empty recommendation — stopping.")
+		return errSelfImproveStop
+	}
+
+	fmt.Printf("Expected impact: %s\n", rec.ExpectedImpact)
+	fmt.Printf("Files to change: %v\n", rec.FilesToChange)
+
+	// Step 6: Run targeted pipeline with the recommendation
+	targetedInput := ProductInput{
+		RepoPath:    input.RepoPath,
+		Description: rec.Description,
+		CTOAnalysis: fmt.Sprintf("Description: %s\nFiles to change: %v\nExpected impact: %s", rec.Description, rec.FilesToChange, rec.ExpectedImpact),
+	}
+	fmt.Printf("\n═══ Self-Improve: Running targeted pipeline ═══\n")
+	if err := p.RunTargeted(ctx, targetedInput); err != nil {
+		return fmt.Errorf("targeted pipeline: %w", err)
+	}
+
+	// Sync local main with remote after merge so the next iteration
+	// branches from the up-to-date main, not the stale pre-merge state.
+	if err := product.SyncMain(); err != nil {
+		return fmt.Errorf("sync main: %w", err)
+	}
+
 	return nil
 }
 
