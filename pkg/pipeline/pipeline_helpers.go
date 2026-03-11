@@ -42,7 +42,7 @@ Events:
 %s`,
 		phase, summary.String())
 
-	rawProvider, err := p.providerForRole(roles.RoleGuardian)
+	rawProvider, err := p.providerForRoleWithModel(roles.RoleGuardian, p.guardianCheckModel())
 	if err != nil {
 		fmt.Printf("Guardian check failed: %v\n", err)
 		return false
@@ -87,6 +87,16 @@ Events:
 	}
 
 	return false
+}
+
+// guardianCheckModel returns the model to use for Guardian integrity checks.
+// Defaults to Sonnet — Guardian's task is a binary HALT/pass classification
+// (read phase events, emit HALT or pass), not deep architectural reasoning.
+func (p *Pipeline) guardianCheckModel() string {
+	if p.guardianModel != "" {
+		return p.guardianModel
+	}
+	return "claude-sonnet-4-6"
 }
 
 // containsAlert checks if the Guardian's evaluation contains an alert directive.
