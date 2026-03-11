@@ -728,6 +728,10 @@ Project structure:
 // maxSelfImproveIterations is the maximum number of improvements per session.
 const maxSelfImproveIterations = 3
 
+// telemetryDetailRunLimit is the number of most-recent runs that get full detail
+// in summarizeTelemetry(). Older runs get a one-line summary to cap CTO input tokens.
+const telemetryDetailRunLimit = 3
+
 // SelfImproveRecommendation is the CTO's structured response from telemetry analysis.
 type SelfImproveRecommendation struct {
 	Description  string   `json:"description"`
@@ -846,6 +850,9 @@ Respond with ONLY a JSON object (no markdown, no explanation outside the JSON):
 }
 
 // summarizeTelemetry builds a human-readable summary of past pipeline runs for the CTO.
+// To cap CTO input tokens, only the last telemetryDetailRunLimit runs get full detail
+// (phase timings, per-role tokens, guardian alert text, review signals). Older runs
+// get a one-line summary with cost, alert count, and merge status.
 func summarizeTelemetry(results []PipelineResult) string {
 	if len(results) == 0 {
 		return "No telemetry data available (first run)."
@@ -854,7 +861,24 @@ func summarizeTelemetry(results []PipelineResult) string {
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("%d past pipeline run(s):\n\n", len(results)))
 
+	// Index where full detail begins.
+	detailStart := len(results) - telemetryDetailRunLimit
+	if detailStart < 0 {
+		detailStart = 0
+	}
+
 	for i, r := range results {
+		if i < detailStart {
+			// One-line summary for older runs.
+			var totalCost float64
+			for _, tu := range r.TokenUsage {
+				totalCost += tu.CostUSD
+			}
+			sb.WriteString(fmt.Sprintf("Run %d: mode=%s, cost=$%.4f, alerts=%d, merged=%v\n",
+				i+1, r.Mode, totalCost, len(r.GuardianAlerts), r.Merged))
+			continue
+		}
+
 		sb.WriteString(fmt.Sprintf("--- Run %d (mode=%s, %s) ---\n", i+1, r.Mode, r.StartedAt.Format("2006-01-02 15:04")))
 		sb.WriteString(fmt.Sprintf("  Input: %s\n", r.InputDescription))
 		if r.PRURL != "" {
