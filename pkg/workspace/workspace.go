@@ -163,8 +163,11 @@ func (p *Product) StageAll() error {
 }
 
 // Commit commits staged changes in the product repo.
+// Uses the hive agent identity as author so self-improve commits
+// are distinguishable from human commits.
 func (p *Product) Commit(message string) error {
-	return p.git("commit", "-m", message)
+	return p.git("commit", "-m", message,
+		"--author", "hive <hive@lovyou.ai>")
 }
 
 // Push pushes to the product's remote.

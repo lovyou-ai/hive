@@ -162,7 +162,7 @@ Respond with ONLY a JSON object (no markdown, no explanation outside the JSON):
 		Description: rec.Description,
 		CTOAnalysis: fmt.Sprintf("Description: %s\nFiles to change: %v\nExpected impact: %s", rec.Description, rec.FilesToChange, rec.ExpectedImpact),
 	}
-	if s := ctoTracker.Snapshot(); s.TokensUsed > 0 {
+	if s := ctoTracker.Snapshot(); s.Iterations > 0 {
 		p.telemetry = &PipelineResult{}
 		p.telemetry.TokenUsage = append(p.telemetry.TokenUsage, RoleTokenUsage{
 			Role:             "cto_analysis",
