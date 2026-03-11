@@ -113,7 +113,9 @@ func (p *Pipeline) runSelfImproveIteration(parentCtx context.Context, iteration 
 	p.trackers[roles.RoleCTO] = ctoTracker
 	fmt.Printf("  ↳ self-improve CTO analysis using %s\n", model)
 
-	ctoPrompt := fmt.Sprintf(`You are analyzing this codebase and its pipeline telemetry to identify the single highest-impact improvement.
+	ctoPrompt := fmt.Sprintf(`Respond with ONLY a JSON object: {"description": "what to change, 1-2 sentences", "files_to_change": ["path/to/file"], "expected_impact": "1 sentence", "priority": "high|medium|low", "skip_reason": "if nothing is worth fixing, explain why here; otherwise empty string"}. No preamble, no explanation, no code blocks, no markdown.
+
+You are analyzing this codebase and its pipeline telemetry to identify the single highest-impact improvement.
 
 TELEMETRY DATA (from past pipeline runs):
 %s
@@ -128,9 +130,7 @@ Look for:
 - High-cost roles (is Guardian worth the spend? which roles dominate cost?)
 - Slow phases (which phases take disproportionate time?)
 - Reviewer friction patterns (CHANGES NEEDED signals that are false alarms)
-- Code quality issues visible in the codebase itself
-
-Respond with ONLY a JSON object: {"description": "what to change, 1-2 sentences", "files_to_change": ["path/to/file"], "expected_impact": "1 sentence", "priority": "high|medium|low", "skip_reason": "if nothing is worth fixing, explain why here; otherwise empty string"}. No preamble, no explanation, no code blocks, no markdown.`, telemetrySummary, fileListing, keyContext)
+- Code quality issues visible in the codebase itself`, telemetrySummary, fileListing, keyContext)
 
 	ctoResp, err := ctoTracker.Reason(ctx, ctoPrompt, nil)
 	if err != nil {
