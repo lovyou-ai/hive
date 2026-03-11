@@ -243,18 +243,19 @@ func (s *Spawner) emitAuthorityResolved(reqEventID types.EventID, res authority.
 	if res.Reason != "" {
 		reason = types.Some(res.Reason)
 	}
+	// Attribute to the actual resolver; fall back to humanID for auto-approvals
+	// where the resolver is unset.
+	resolver := res.Resolver
+	if resolver == (types.ActorID{}) {
+		resolver = s.humanID
+	}
 	content := event.AuthorityResolvedContent{
 		RequestID: reqEventID,
 		Approved:  res.Approved,
-		Resolver:  res.Resolver,
+		Resolver:  resolver,
 		Reason:    reason,
 	}
-	// Attribute to the actual resolver; fall back to humanID for auto-approvals
-	// where the resolver is unset.
-	source := s.humanID
-	if res.Resolver != (types.ActorID{}) {
-		source = res.Resolver
-	}
+	source := resolver
 	ev, err := s.appendEventAfter(event.EventTypeAuthorityResolved, source, content, reqEventID)
 	if err != nil {
 		return types.EventID{}, err

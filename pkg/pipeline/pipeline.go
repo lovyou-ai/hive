@@ -405,16 +405,17 @@ func (p *Pipeline) emitAuthorityResolved(reqEventID types.EventID, res authority
 	if res.Reason != "" {
 		reason = types.Some(res.Reason)
 	}
+	resolver := res.Resolver
+	if resolver == (types.ActorID{}) {
+		resolver = p.humanID
+	}
 	content := event.AuthorityResolvedContent{
 		RequestID: reqEventID,
 		Approved:  res.Approved,
-		Resolver:  res.Resolver,
+		Resolver:  resolver,
 		Reason:    reason,
 	}
-	source := p.humanID
-	if res.Resolver != (types.ActorID{}) {
-		source = res.Resolver
-	}
+	source := resolver
 	ev, err := p.factory.Create(event.EventTypeAuthorityResolved, source, content, []types.EventID{reqEventID}, p.convID, p.store, p.signer)
 	if err != nil {
 		return types.EventID{}, fmt.Errorf("create event: %w", err)
