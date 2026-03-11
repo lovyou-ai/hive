@@ -247,6 +247,40 @@ func extractKeyFiles(files map[string]string) string {
 	return b.String()
 }
 
+// parseRelevantFiles extracts file paths from CTO analysis output.
+// The CTO is prompted to list one file per line with its path. This scans
+// each word for path-like tokens (e.g. "pkg/pipeline/file.go", "go.mod").
+func parseRelevantFiles(ctoAnalysis string) []string {
+	seen := make(map[string]bool)
+	var paths []string
+	for _, line := range strings.Split(ctoAnalysis, "\n") {
+		for _, word := range strings.Fields(line) {
+			word = strings.Trim(word, "-*•:,;()[]`\"'")
+			if looksLikeFilePath(word) && !seen[word] {
+				seen[word] = true
+				paths = append(paths, word)
+			}
+		}
+	}
+	return paths
+}
+
+// looksLikeFilePath returns true if s looks like a source file path.
+// Accepts paths with a letter-prefixed extension (e.g. ".go", ".md") and
+// rejects URLs, version strings (e.g. "v1.2.3"), and empty strings.
+func looksLikeFilePath(s string) bool {
+	if s == "" || strings.HasPrefix(s, "http") || strings.HasPrefix(s, "//") {
+		return false
+	}
+	ext := filepath.Ext(s)
+	if len(ext) < 2 || len(ext) > 6 {
+		return false
+	}
+	// Extension must start with a letter (rejects version strings like "1.2.3")
+	c := ext[1]
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+}
+
 // ════════════════════════════════════════════════════════════════════════
 // String utilities
 // ════════════════════════════════════════════════════════════════════════

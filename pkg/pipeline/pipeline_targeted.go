@@ -315,9 +315,31 @@ Do NOT add unnecessary changes beyond what's requested.`, lang, changeReq, ctoAn
 		fmt.Printf("Agentic mode unavailable (%v), falling back to text mode.\n", err)
 	}
 
-	// Fallback: text-based modify — build full code string lazily (only when needed)
+	// Fallback: text-based modify — filter to relevant files to reduce token usage.
+	// Parse the CTO analysis for file paths and keep only those plus key doc files.
+	filteredFiles := existingFiles
+	if relevantPaths := parseRelevantFiles(ctoAnalysis); len(relevantPaths) > 0 {
+		relevant := make(map[string]bool, len(relevantPaths)+2)
+		for _, rp := range relevantPaths {
+			relevant[rp] = true
+		}
+		relevant["CLAUDE.md"] = true
+		relevant["go.mod"] = true
+
+		filtered := make(map[string]string)
+		for path, content := range existingFiles {
+			if relevant[path] {
+				filtered[path] = content
+			}
+		}
+		if len(filtered) > 0 {
+			filteredFiles = filtered
+			fmt.Printf("  ↳ text mode: %d/%d files (filtered by CTO analysis)\n", len(filteredFiles), len(existingFiles))
+		}
+	}
+
 	var codeContext strings.Builder
-	for path, content := range existingFiles {
+	for path, content := range filteredFiles {
 		codeContext.WriteString(fmt.Sprintf("--- FILE: %s ---\n%s\n\n", path, content))
 	}
 	return p.modifyText(ctx, existingFiles, codeContext.String(), ctoAnalysis, changeReq, lang)

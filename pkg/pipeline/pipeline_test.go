@@ -483,6 +483,111 @@ func TestCTOAnalysisSkipsUnderstandPhase(t *testing.T) {
 	}
 }
 
+func TestParseRelevantFiles(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		wantAny  []string // paths that must appear in result
+		wantNone []string // tokens that must NOT appear
+	}{
+		{
+			name: "self-improve bracket format",
+			input: "Description: Refactor build phase\n" +
+				"Files to change: [pkg/pipeline/pipeline_targeted.go pkg/pipeline/pipeline_helpers.go]\n" +
+				"Expected impact: Reduce tokens by 30%",
+			wantAny: []string{"pkg/pipeline/pipeline_targeted.go", "pkg/pipeline/pipeline_helpers.go"},
+		},
+		{
+			name: "bullet point format",
+			input: "- pkg/pipeline/pipeline_targeted.go: filter existingFiles in text mode\n" +
+				"- pkg/pipeline/pipeline_helpers.go: add parseRelevantFiles helper\n" +
+				"Key risks: may over-filter if CTO analysis is vague",
+			wantAny: []string{"pkg/pipeline/pipeline_targeted.go", "pkg/pipeline/pipeline_helpers.go"},
+		},
+		{
+			name:    "URLs not extracted",
+			input:   "See https://example.com/foo.go for details\nFile: pkg/foo.go",
+			wantAny: []string{"pkg/foo.go"},
+			wantNone: []string{"https://example.com/foo.go"},
+		},
+		{
+			name:    "version strings not extracted",
+			input:   "Use version v1.2.3\nChange: pkg/bar.go",
+			wantAny: []string{"pkg/bar.go"},
+			wantNone: []string{"v1.2.3", "1.2.3"},
+		},
+		{
+			name:    "no paths returns empty slice",
+			input:   "No changes needed here at all",
+			wantAny: nil,
+		},
+		{
+			name:    "go.mod recognised",
+			input:   "Update go.mod to add dependency",
+			wantAny: []string{"go.mod"},
+		},
+		{
+			name:    "deduplication",
+			input:   "pkg/foo.go: change A\npkg/foo.go: change B",
+			wantAny: []string{"pkg/foo.go"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseRelevantFiles(tt.input)
+			gotSet := make(map[string]bool, len(got))
+			for _, p := range got {
+				gotSet[p] = true
+			}
+			for _, want := range tt.wantAny {
+				if !gotSet[want] {
+					t.Errorf("parseRelevantFiles missing %q; got %v", want, got)
+				}
+			}
+			for _, bad := range tt.wantNone {
+				if gotSet[bad] {
+					t.Errorf("parseRelevantFiles should not contain %q; got %v", bad, got)
+				}
+			}
+			// Deduplication: each path appears at most once
+			seen := make(map[string]bool)
+			for _, p := range got {
+				if seen[p] {
+					t.Errorf("parseRelevantFiles returned duplicate path %q", p)
+				}
+				seen[p] = true
+			}
+		})
+	}
+}
+
+func TestLooksLikeFilePath(t *testing.T) {
+	tests := []struct {
+		s    string
+		want bool
+	}{
+		{"pkg/pipeline/pipeline_targeted.go", true},
+		{"go.mod", true},
+		{"go.sum", true},
+		{"CLAUDE.md", true},
+		{"cmd/hive/main.go", true},
+		{"", false},
+		{"https://example.com/foo.go", false},
+		{"//some/comment", false},
+		{"v1.2.3", false},
+		{"1.5", false},
+		{"noextension", false},
+		{"Makefile", false}, // no extension
+	}
+	for _, tt := range tests {
+		got := looksLikeFilePath(tt.s)
+		if got != tt.want {
+			t.Errorf("looksLikeFilePath(%q) = %v, want %v", tt.s, got, tt.want)
+		}
+	}
+}
+
 func TestLangMarkerFile(t *testing.T) {
 	tests := []struct {
 		lang string
