@@ -1,9 +1,81 @@
 package roles
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
+
+// TestPreferredModelMatchesCLAUDEMd reads the Intelligence tier table from
+// CLAUDE.md and asserts that each role's model constant matches PreferredModel().
+// This catches drift between roles.go and documentation before it triggers
+// costly pipeline runs where the CTO flags a discrepancy.
+func TestPreferredModelMatchesCLAUDEMd(t *testing.T) {
+	data, err := os.ReadFile("../../CLAUDE.md")
+	if err != nil {
+		t.Fatalf("could not read CLAUDE.md: %v", err)
+	}
+
+	// Map from CLAUDE.md role name to Role constant.
+	roleByName := map[string]Role{
+		"CTO":        RoleCTO,
+		"Guardian":   RoleGuardian,
+		"SysMon":     RoleSysMon,
+		"Spawner":    RoleSpawner,
+		"Allocator":  RoleAllocator,
+		"Researcher": RoleResearcher,
+		"Architect":  RoleArchitect,
+		"Builder":    RoleBuilder,
+		"Reviewer":   RoleReviewer,
+		"Tester":     RoleTester,
+		"Integrator": RoleIntegrator,
+	}
+
+	// Map from Intelligence tier name (as written in CLAUDE.md) to model constant.
+	modelByTier := map[string]string{
+		"Sonnet": "claude-sonnet-4-6",
+		"Haiku":  "claude-haiku-4-5-20251001",
+	}
+
+	// Parse table rows from CLAUDE.md.
+	// Each row looks like: | Role | Responsibility | Intelligence | Trust Gate | Reports To |
+	// After splitting on "|": [0]="" [1]=" Role " [2]=" Responsibility " [3]=" Intelligence " ...
+	checked := 0
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "|") {
+			continue
+		}
+		cols := strings.Split(line, "|")
+		if len(cols) < 4 {
+			continue
+		}
+		roleName := strings.TrimSpace(cols[1])
+		tierName := strings.TrimSpace(cols[3])
+
+		role, knownRole := roleByName[roleName]
+		if !knownRole {
+			continue
+		}
+		wantModel, knownTier := modelByTier[tierName]
+		if !knownTier {
+			t.Errorf("CLAUDE.md lists role %q with unknown Intelligence tier %q — update modelByTier in this test", roleName, tierName)
+			checked++
+			continue
+		}
+		got := PreferredModel(role)
+		if got != wantModel {
+			t.Errorf("model mismatch for %s: CLAUDE.md says %q (%s) but PreferredModel(%q) returns %q",
+				roleName, tierName, wantModel, role, got)
+		}
+		checked++
+	}
+
+	if checked != len(roleByName) {
+		t.Errorf("parsed %d roles from CLAUDE.md Intelligence tier table, expected %d — table rows may be missing or role names have changed",
+			checked, len(roleByName))
+	}
+}
 
 func TestPreferredModelUnknownPanics(t *testing.T) {
 	defer func() {
