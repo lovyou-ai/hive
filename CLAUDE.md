@@ -118,43 +118,39 @@ The Spawner grows the workforce through the growth loop: something breaks → "w
 
 ```bash
 cd hive
+docker compose up -d postgres   # local Postgres for event/actor/state stores
 go build ./...
 go test ./...
 ```
 
 ## Running
 
+All examples use `--store` for Postgres persistence. Omit it for in-memory (ephemeral). Can also set `DATABASE_URL` env var instead.
+
 ```bash
-# Local dev (in-memory store) — sequential pipeline
-go run ./cmd/hive --human Matt --idea "Build a task management app with kanban boards"
+# Local dev — sequential pipeline
+go run ./cmd/hive --human Matt --store "postgres://hive:hive@localhost:5432/hive" --idea "Build a task management app with kanban boards"
 
 # Auto-approve all agent spawns (dev/testing — skips interactive prompts)
-go run ./cmd/hive --human Matt --yes --idea "Build a task management app with kanban boards"
+go run ./cmd/hive --human Matt --yes --store "postgres://hive:hive@localhost:5432/hive" --idea "Build a task management app with kanban boards"
 
 # Fast dev mode — auto-approve + skip Guardian checks (saves ~6 LLM calls)
-go run ./cmd/hive --human Matt --yes --skip-guardian --idea "Build a task management app with kanban boards"
+go run ./cmd/hive --human Matt --yes --skip-guardian --store "postgres://hive:hive@localhost:5432/hive" --idea "Build a task management app with kanban boards"
 
 # Agentic loop mode — concurrent self-directing agents
-go run ./cmd/hive --human Matt --loop --idea "Build a task management app with kanban boards"
-
-# With Postgres (Docker locally, Neon in production)
-go run ./cmd/hive --human Matt --store "postgres://hive:hive@localhost:5432/hive" --idea "..."
-
-# Or via DATABASE_URL env var
-export DATABASE_URL="postgres://hive:hive@localhost:5432/hive"
-go run ./cmd/hive --human Matt --idea "..."
+go run ./cmd/hive --human Matt --loop --store "postgres://hive:hive@localhost:5432/hive" --idea "Build a task management app with kanban boards"
 
 # From a URL with an explicit product name
-go run ./cmd/hive --human Matt --name social-grammar --url "https://mattsearles2.substack.com/p/the-missing-social-grammar"
+go run ./cmd/hive --human Matt --name social-grammar --store "postgres://hive:hive@localhost:5432/hive" --url "https://mattsearles2.substack.com/p/the-missing-social-grammar"
 
 # From a Code Graph spec file
-go run ./cmd/hive --human Matt --spec path/to/spec.cg
+go run ./cmd/hive --human Matt --store "postgres://hive:hive@localhost:5432/hive" --spec path/to/spec.cg
 
 # Targeted mode — modify existing code (creates branch + PR)
-go run ./cmd/hive --human Matt --yes --skip-guardian --repo /path/to/repo --idea "add a has command"
+go run ./cmd/hive --human Matt --yes --skip-guardian --store "postgres://hive:hive@localhost:5432/hive" --repo /path/to/repo --idea "add a has command"
 
-# Self-improvement — modify the hive itself
-go run ./cmd/hive --human Matt --yes --repo /path/to/hive --idea "fix the .exe extension bug in test generation"
+# Self-improvement — analyze telemetry + codebase, apply fixes (up to 3 iterations)
+go run ./cmd/hive --human Matt --yes --skip-guardian --self-improve --store "postgres://hive:hive@localhost:5432/hive"
 ```
 
 ## Key Files
@@ -257,11 +253,22 @@ See `eventgraph/docs/generator-function.md` and `eventgraph/docs/generator-funct
 
 ## Store
 
-Event store backend is selected via `--store` flag or `DATABASE_URL` env var:
-- **No flag**: in-memory (local dev, ephemeral)
+All three stores (event, actor, state) use the same backend, selected via `--store` flag or `DATABASE_URL` env var:
+- **No flag**: in-memory (ephemeral, lost on exit)
 - **`postgres://...`**: PostgreSQL (Docker locally, Neon in production)
 
-Actor store is in-memory for now — will move to Postgres alongside the event store.
+Tables auto-create on first connection (`CREATE TABLE IF NOT EXISTS`). Local Postgres runs via `docker compose up -d postgres` with DSN `postgres://hive:hive@localhost:5432/hive`.
+
+Trust state persists across runs in the state store. Events accumulate on the graph. Self-improve telemetry is also written to `.hive/telemetry/` as JSON files for CTO analysis.
+
+## Timeouts
+
+Claude CLI calls have default timeouts to prevent hung subprocesses:
+- **Reason()**: 5 minutes (CTO analysis, reviews, evaluations)
+- **Operate()**: 10 minutes (code generation, test runs)
+- **Self-improve iteration**: 15 minutes (CTO analysis + full targeted pipeline)
+
+Timeouts only apply when the parent context has no explicit deadline.
 
 ## Dependencies
 
