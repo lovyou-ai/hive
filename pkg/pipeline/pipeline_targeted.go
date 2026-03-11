@@ -89,8 +89,16 @@ func (p *Pipeline) RunTargeted(ctx context.Context, input ProductInput) error {
 		fmt.Println("Using pre-computed CTO analysis (skipped Understand).")
 		fmt.Printf("CTO Analysis:\n%s\n", ctoAnalysis)
 	} else {
-		_, ctoAnalysis, err = p.cto.Runtime.Evaluate(ctx, "change_analysis",
-			fmt.Sprintf(`Analyze this change request. Be BRIEF — the Builder reads files itself.
+		model := p.selfImproveCTOModel()
+		rawProvider, err := p.providerForRoleWithModel(roles.RoleCTO, model)
+		if err != nil {
+			return fmt.Errorf("CTO provider: %w", err)
+		}
+		ctoTracker := resources.NewTrackingProvider(rawProvider)
+		p.trackers[roles.RoleCTO] = ctoTracker
+		fmt.Printf("  ↳ targeted understand using %s\n", model)
+
+		ctoPrompt := fmt.Sprintf(`Analyze this change request. Be BRIEF — the Builder reads files itself.
 
 Output ONLY:
 - Which files to change (paths + what to do in each, 1 line per file)
@@ -105,10 +113,13 @@ Git history:
 Project structure:
 %s
 
-%s`, input.Description, gitLog, fileListing, keyContext))
+%s`, input.Description, gitLog, fileListing, keyContext)
+
+		ctoResp, err := ctoTracker.Reason(ctx, ctoPrompt, nil)
 		if err != nil {
 			return fmt.Errorf("CTO analysis: %w", err)
 		}
+		ctoAnalysis = ctoResp.Content()
 		fmt.Printf("CTO Analysis:\n%s\n", ctoAnalysis)
 	}
 
