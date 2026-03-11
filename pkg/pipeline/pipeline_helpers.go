@@ -248,12 +248,46 @@ func extractKeyFiles(files map[string]string) string {
 }
 
 // parseRelevantFiles extracts file paths from CTO analysis output.
-// The CTO is prompted to list one file per line with its path. This scans
-// each word for path-like tokens (e.g. "pkg/pipeline/file.go", "go.mod").
+// If the output contains a FILES_TO_CHANGE: section (as emitted by the CTO
+// system prompt), only paths from that section are returned — stopping at the
+// first blank line or non-path line after the header. This prevents files
+// mentioned in reasoning or risk sections from polluting the result.
+//
+// Falls back to a word-by-word scan for backward compatibility when no
+// FILES_TO_CHANGE: section is present (e.g., pre-computed self-improve analysis).
 func parseRelevantFiles(ctoAnalysis string) []string {
 	seen := make(map[string]bool)
 	var paths []string
-	for _, line := range strings.Split(ctoAnalysis, "\n") {
+
+	lines := strings.Split(ctoAnalysis, "\n")
+
+	// Structured extraction: look for FILES_TO_CHANGE: section header.
+	for i, line := range lines {
+		if strings.TrimSpace(line) == "FILES_TO_CHANGE:" {
+			for _, entry := range lines[i+1:] {
+				trimmed := strings.TrimSpace(entry)
+				if trimmed == "" {
+					break // blank line ends the section
+				}
+				// Each entry is "path — description" or just "path".
+				word := strings.Fields(trimmed)[0]
+				word = strings.Trim(word, "-*•:,;()[]`\"'")
+				if !looksLikeFilePath(word) {
+					break // non-path line ends the section
+				}
+				if !seen[word] {
+					seen[word] = true
+					paths = append(paths, word)
+				}
+			}
+			return paths
+		}
+	}
+
+	// Fallback: word-by-word scan across the entire output.
+	// Used when the CTO analysis predates the structured section format
+	// (e.g., self-improve pre-computed CTOAnalysis).
+	for _, line := range lines {
 		for _, word := range strings.Fields(line) {
 			word = strings.Trim(word, "-*•:,;()[]`\"'")
 			if looksLikeFilePath(word) && !seen[word] {

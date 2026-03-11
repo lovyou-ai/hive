@@ -531,6 +531,26 @@ func TestParseRelevantFiles(t *testing.T) {
 			input:   "pkg/foo.go: change A\npkg/foo.go: change B",
 			wantAny: []string{"pkg/foo.go"},
 		},
+		{
+			name: "FILES_TO_CHANGE section — only section files extracted",
+			input: "FILES_TO_CHANGE:\n" +
+				"pkg/roles/roles.go — update CTO prompt\n" +
+				"pkg/pipeline/pipeline_helpers.go — update parseRelevantFiles\n" +
+				"\n" +
+				"Key risks: parseRelevantFiles is also called from pipeline_targeted.go " +
+				"and telemetry.go is mentioned here but should NOT be included.",
+			wantAny:  []string{"pkg/roles/roles.go", "pkg/pipeline/pipeline_helpers.go"},
+			wantNone: []string{"pipeline_targeted.go", "telemetry.go"},
+		},
+		{
+			name: "FILES_TO_CHANGE section stops at non-path line",
+			input: "FILES_TO_CHANGE:\n" +
+				"pkg/foo/bar.go — change something\n" +
+				"Key risks: some risk\n" +
+				"pkg/should/not/be/included.go — this is after a non-path line",
+			wantAny:  []string{"pkg/foo/bar.go"},
+			wantNone: []string{"pkg/should/not/be/included.go"},
+		},
 	}
 
 	for _, tt := range tests {
