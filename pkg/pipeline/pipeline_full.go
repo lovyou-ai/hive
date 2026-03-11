@@ -580,12 +580,22 @@ CRITICAL OUTPUT FORMAT RULES:
 Specification:
 %s`, lang, design)
 
-	// Use Evaluate instead of CodeWrite — CodeWrite prepends "Return ONLY the code"
-	// which conflicts with our multi-file format.
-	_, code, err := builder.Runtime.Evaluate(ctx, "code_generation", prompt)
+	// Use a fresh Sonnet provider — full-pipeline builds generate entire codebases
+	// with up to 3 rebuild rounds; ~5x cost difference vs Opus per token.
+	buildModel := p.fullBuilderModel()
+	buildProvider, err := p.providerForRoleWithModel(roles.RoleBuilder, buildModel)
+	if err != nil {
+		return nil, fmt.Errorf("builder provider: %w", err)
+	}
+	buildTracker := resources.NewTrackingProvider(buildProvider)
+	p.trackers[roles.RoleBuilder] = buildTracker
+	fmt.Printf("  ↳ build using %s\n", buildModel)
+
+	buildResp, err := buildTracker.Reason(ctx, prompt, nil)
 	if err != nil {
 		return nil, fmt.Errorf("builder code: %w", err)
 	}
+	code := buildResp.Content()
 
 	// Record the build action
 	if _, err := builder.Runtime.Act(ctx, writeCodeAction(lang), "multi-file generation from spec"); err != nil {
@@ -619,11 +629,6 @@ Specification:
 
 // rebuild sends reviewer feedback to the builder and generates revised code.
 func (p *Pipeline) rebuild(ctx context.Context, currentFiles map[string]string, feedback string, design string, lang string) (map[string]string, error) {
-	builder, err := p.ensureAgent(ctx, roles.RoleBuilder, "builder")
-	if err != nil {
-		return nil, err
-	}
-
 	var filesSummary strings.Builder
 	for path, content := range currentFiles {
 		filesSummary.WriteString(fmt.Sprintf("--- FILE: %s ---\n%s\n", path, content))
@@ -642,10 +647,20 @@ Current code:
 
 Output the COMPLETE revised files using --- FILE: path --- markers. Include ALL files, not just changed ones.`, feedback, design, filesSummary.String())
 
-	_, code, err := builder.Runtime.Evaluate(ctx, "code_revision", prompt)
+	rebuildModel := p.fullBuilderModel()
+	rebuildProvider, err := p.providerForRoleWithModel(roles.RoleBuilder, rebuildModel)
+	if err != nil {
+		return nil, fmt.Errorf("builder provider: %w", err)
+	}
+	rebuildTracker := resources.NewTrackingProvider(rebuildProvider)
+	p.trackers[roles.RoleBuilder] = rebuildTracker
+	fmt.Printf("  ↳ rebuild using %s\n", rebuildModel)
+
+	rebuildResp, err := rebuildTracker.Reason(ctx, prompt, nil)
 	if err != nil {
 		return nil, fmt.Errorf("rebuild: %w", err)
 	}
+	code := rebuildResp.Content()
 
 	files := parseFiles(code)
 	if len(files) == 0 {
@@ -670,11 +685,6 @@ Output the COMPLETE revised files using --- FILE: path --- markers. Include ALL 
 // review checks code quality and spec compliance in a single LLM call.
 // Returns feedback and whether approved.
 func (p *Pipeline) review(ctx context.Context, files map[string]string, design string, lang string) (feedback string, approved bool, err error) {
-	reviewer, err := p.ensureAgent(ctx, roles.RoleReviewer, "reviewer")
-	if err != nil {
-		return "", false, err
-	}
-
 	// Build code summary for review
 	var codeSummary strings.Builder
 	for path, content := range files {
@@ -683,8 +693,17 @@ func (p *Pipeline) review(ctx context.Context, files map[string]string, design s
 	allCode := codeSummary.String()
 
 	// Single comprehensive review call — replaces 4 separate calls.
-	_, review, err := reviewer.Runtime.Evaluate(ctx, "code_review",
-		fmt.Sprintf(`Review this %s code comprehensively. Cover ALL of the following in ONE response:
+	// Uses a fresh Sonnet provider — pass/fail classification doesn't require Opus.
+	reviewModel := p.fullReviewerModel()
+	reviewProvider, err := p.providerForRoleWithModel(roles.RoleReviewer, reviewModel)
+	if err != nil {
+		return "", false, fmt.Errorf("reviewer provider: %w", err)
+	}
+	reviewTracker := resources.NewTrackingProvider(reviewProvider)
+	p.trackers[roles.RoleReviewer] = reviewTracker
+	fmt.Printf("  ↳ review using %s\n", reviewModel)
+
+	reviewPrompt := fmt.Sprintf(`Review this %s code comprehensively. Cover ALL of the following in ONE response:
 
 ## 1. Code Quality
 Bugs, security issues, error handling, test coverage, best practices.
@@ -705,10 +724,13 @@ End with exactly one of:
 - CHANGES NEEDED: followed by the specific issues to fix
 
 Code:
-%s`, lang, design, allCode))
+%s`, lang, design, allCode)
+
+	reviewResp, err := reviewTracker.Reason(ctx, reviewPrompt, nil)
 	if err != nil {
 		return "", false, fmt.Errorf("review: %w", err)
 	}
+	review := reviewResp.Content()
 
 	fmt.Printf("Review:\n%s\n", review)
 

@@ -109,6 +109,27 @@ func (p *Pipeline) architectDesignModel() string {
 	return "claude-sonnet-4-6"
 }
 
+// fullBuilderModel returns the model to use for full-pipeline Builder code generation.
+// Defaults to Sonnet — code generation from a spec is structured output, not deep
+// architectural reasoning. Up to 4 calls (build + 3 rebuild rounds) make the ~5x
+// cost difference vs Opus significant. Override with Config.BuilderModel.
+func (p *Pipeline) fullBuilderModel() string {
+	if p.builderModel != "" {
+		return p.builderModel
+	}
+	return "claude-sonnet-4-6"
+}
+
+// fullReviewerModel returns the model to use for full-pipeline code reviews.
+// Defaults to Sonnet — pass/fail classification with specific feedback doesn't
+// require Opus-level reasoning. Override with Config.ReviewerModel.
+func (p *Pipeline) fullReviewerModel() string {
+	if p.reviewerModel != "" {
+		return p.reviewerModel
+	}
+	return "claude-sonnet-4-6"
+}
+
 // containsAlert checks if the Guardian's evaluation contains an alert directive.
 // Uses line-start matching (via ContainsSignal) to avoid false positives from
 // prose like "NO VIOLATIONS DETECTED".

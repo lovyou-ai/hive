@@ -73,8 +73,8 @@ func ReportsTo(role Role) Role {
 // Three tiers: Opus (judgment), Sonnet (execution), Haiku (volume).
 func PreferredModel(role Role) string {
 	switch role {
-	// Judgment roles — high-stakes decisions, code generation
-	case RoleCTO, RoleArchitect, RoleReviewer, RoleGuardian, RoleBuilder:
+	// Judgment roles — high-stakes decisions, architectural reasoning
+	case RoleCTO, RoleArchitect, RoleGuardian:
 		return "claude-opus-4-6"
 	// Volume roles — high-frequency, simple tasks
 	case RoleSysMon, RoleAllocator:
