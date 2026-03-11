@@ -117,8 +117,15 @@ func (p *Pipeline) failPhase(phase string, err error) error {
 }
 
 // collectTokenUsage snapshots token usage from all tracked roles.
+// Guardian is excluded here — its usage is accumulated incrementally via
+// accumulateGuardianUsage (called after each guardianCheck invocation)
+// because each check creates a fresh provider and would otherwise overwrite
+// previous calls, making only the last call visible in telemetry.
 func (r *PipelineResult) collectTokenUsage(trackers map[roles.Role]*resources.TrackingProvider) {
 	for role, tracker := range trackers {
+		if role == roles.RoleGuardian {
+			continue // accumulated incrementally via accumulateGuardianUsage
+		}
 		s := tracker.Snapshot()
 		r.TokenUsage = append(r.TokenUsage, RoleTokenUsage{
 			Role:             string(role),
@@ -131,6 +138,43 @@ func (r *PipelineResult) collectTokenUsage(trackers map[roles.Role]*resources.Tr
 			CostUSD:          s.CostUSD,
 		})
 	}
+}
+
+// accumulateGuardianUsage adds a Guardian check's token usage to the running
+// total in TokenUsage. Called after every guardianCheck invocation so that
+// all phase checks (not just the last one) appear in telemetry.
+// Safe to call when r is nil (no-op).
+func (r *PipelineResult) accumulateGuardianUsage(tracker *resources.TrackingProvider) {
+	if r == nil {
+		return
+	}
+	s := tracker.Snapshot()
+	if s.TokensUsed == 0 {
+		return // nothing to record
+	}
+	// Find an existing Guardian entry and add to it.
+	for i, entry := range r.TokenUsage {
+		if entry.Role == string(roles.RoleGuardian) {
+			r.TokenUsage[i].InputTokens += s.InputTokens
+			r.TokenUsage[i].OutputTokens += s.OutputTokens
+			r.TokenUsage[i].TotalTokens += s.TokensUsed
+			r.TokenUsage[i].CacheReadTokens += s.CacheReadTokens
+			r.TokenUsage[i].CacheWriteTokens += s.CacheWriteTokens
+			r.TokenUsage[i].CostUSD += s.CostUSD
+			return
+		}
+	}
+	// First Guardian call — create the entry.
+	r.TokenUsage = append(r.TokenUsage, RoleTokenUsage{
+		Role:             string(roles.RoleGuardian),
+		Model:            tracker.Model(),
+		InputTokens:      s.InputTokens,
+		OutputTokens:     s.OutputTokens,
+		TotalTokens:      s.TokensUsed,
+		CacheReadTokens:  s.CacheReadTokens,
+		CacheWriteTokens: s.CacheWriteTokens,
+		CostUSD:          s.CostUSD,
+	})
 }
 
 // writeTelemetry writes the pipeline result to .hive/telemetry/<timestamp>.json

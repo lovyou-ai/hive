@@ -51,6 +51,9 @@ Events:
 	p.trackers[roles.RoleGuardian] = tracker
 
 	resp, err := tracker.Reason(ctx, prompt, nil)
+	// Accumulate Guardian usage before error check — partial usage on failure
+	// is still real spend and should appear in telemetry.
+	p.telemetry.accumulateGuardianUsage(tracker)
 	if err != nil {
 		fmt.Printf("Guardian check failed: %v\n", err)
 		return false
