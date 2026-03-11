@@ -47,7 +47,7 @@ func (p *Pipeline) RunTargeted(ctx context.Context, input ProductInput) error {
 	// Open existing repo
 	product, err := workspace.OpenRepo(input.RepoPath)
 	if err != nil {
-		return fmt.Errorf("open repo: %w", err)
+		return p.failPhase("Context Load", fmt.Errorf("open repo: %w", err))
 	}
 	p.product = product
 	fmt.Printf("Repo: %s\n", product.Dir)
@@ -57,7 +57,7 @@ func (p *Pipeline) RunTargeted(ctx context.Context, input ProductInput) error {
 	phaseStart := time.Now()
 	existingFiles, err := product.ReadSourceFiles()
 	if err != nil {
-		return fmt.Errorf("read source files: %w", err)
+		return p.failPhase("Context Load", fmt.Errorf("read source files: %w", err))
 	}
 	fmt.Printf("Loaded %d source files.\n", len(existingFiles))
 
@@ -92,7 +92,7 @@ func (p *Pipeline) RunTargeted(ctx context.Context, input ProductInput) error {
 		model := p.selfImproveCTOModel()
 		rawProvider, err := p.providerForRoleWithModel(roles.RoleCTO, model)
 		if err != nil {
-			return fmt.Errorf("CTO provider: %w", err)
+			return p.failPhase("Understand", fmt.Errorf("CTO provider: %w", err))
 		}
 		ctoTracker := resources.NewTrackingProvider(rawProvider)
 		p.trackers[roles.RoleCTO] = ctoTracker
@@ -117,7 +117,7 @@ Project structure:
 
 		ctoResp, err := ctoTracker.Reason(ctx, ctoPrompt, nil)
 		if err != nil {
-			return fmt.Errorf("CTO analysis: %w", err)
+			return p.failPhase("Understand", fmt.Errorf("CTO analysis: %w", err))
 		}
 		ctoAnalysis = ctoResp.Content()
 		fmt.Printf("CTO Analysis:\n%s\n", ctoAnalysis)
@@ -126,14 +126,14 @@ Project structure:
 	// Create branch for the changes
 	branchName := "hive/" + sanitizeBranchName(input.Description)
 	if err := product.CreateBranch(branchName); err != nil {
-		return fmt.Errorf("create branch: %w", err)
+		return p.failPhase("Understand", fmt.Errorf("create branch: %w", err))
 	}
 	fmt.Printf("Branch: %s\n", branchName)
 
 	// Capture base commit before building — reviewer diffs against this.
 	baseCommit, err := product.HeadCommit()
 	if err != nil {
-		return fmt.Errorf("capture base commit: %w", err)
+		return p.failPhase("Understand", fmt.Errorf("capture base commit: %w", err))
 	}
 
 	understandDuration := time.Since(phaseStart)
@@ -145,10 +145,10 @@ Project structure:
 	phaseStart = time.Now()
 	files, err := p.modify(ctx, existingFiles, ctoAnalysis, input.Description, lang)
 	if err != nil {
-		return fmt.Errorf("modify: %w", err)
+		return p.failPhase("Modify", fmt.Errorf("modify: %w", err))
 	}
 	if halt := p.guardianCheck(ctx, "modify"); halt {
-		return fmt.Errorf("guardian halted pipeline after modify phase")
+		return p.failPhase("Modify", fmt.Errorf("guardian halted pipeline after modify phase"))
 	}
 
 	modifyDuration := time.Since(phaseStart)
@@ -162,7 +162,7 @@ Project structure:
 		fmt.Printf("═══ Phase 4: Review (round %d) ═══\n", round)
 		feedback, approved, err := p.reviewTargeted(ctx, baseCommit, ctoAnalysis, input.Description, lang)
 		if err != nil {
-			return fmt.Errorf("review round %d: %w", round, err)
+			return p.failPhase("Review", fmt.Errorf("review round %d: %w", round, err))
 		}
 		p.telemetry.addReviewSignal(approved)
 
@@ -179,7 +179,7 @@ Project structure:
 		fmt.Printf("═══ Phase 4b: Revise from feedback (round %d) ═══\n", round)
 		files, err = p.revise(ctx, files, feedback, input.Description, lang)
 		if err != nil {
-			return fmt.Errorf("revise round %d: %w", round, err)
+			return p.failPhase("Review", fmt.Errorf("revise round %d: %w", round, err))
 		}
 	}
 	reviewDuration := time.Since(phaseStart)
@@ -191,7 +191,7 @@ Project structure:
 	phaseStart = time.Now()
 	err = p.test(ctx, files, lang)
 	if err != nil {
-		return fmt.Errorf("test: %w", err)
+		return p.failPhase("Test", fmt.Errorf("test: %w", err))
 	}
 
 	testDuration := time.Since(phaseStart)

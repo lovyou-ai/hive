@@ -192,6 +192,9 @@ func summarizeTelemetry(results []PipelineResult) string {
 
 		sb.WriteString(fmt.Sprintf("--- Run %d (mode=%s, %s) ---\n", i+1, r.Mode, r.StartedAt.Format("2006-01-02 15:04")))
 		sb.WriteString(fmt.Sprintf("  Input: %s\n", r.InputDescription))
+		if r.FailedPhase != "" {
+			sb.WriteString(fmt.Sprintf("  FAILED at %s: %s\n", r.FailedPhase, r.FailureReason))
+		}
 		if r.PRURL != "" {
 			sb.WriteString(fmt.Sprintf("  PR: %s (merged=%v)\n", r.PRURL, r.Merged))
 		}

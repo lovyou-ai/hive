@@ -34,11 +34,11 @@ func (p *Pipeline) Run(ctx context.Context, input ProductInput) error {
 	phaseStart := time.Now()
 	spec, ctoEval, err := p.research(ctx, input)
 	if err != nil {
-		return fmt.Errorf("research: %w", err)
+		return p.failPhase("Research", fmt.Errorf("research: %w", err))
 	}
 	p.telemetry.addPhaseTiming("Research", time.Since(phaseStart))
 	if halt := p.guardianCheck(ctx, "research"); halt {
-		return fmt.Errorf("guardian halted pipeline after research phase")
+		return p.failPhase("Research", fmt.Errorf("guardian halted pipeline after research phase"))
 	}
 
 	// Extract product name from CTO evaluation or use provided name.
@@ -50,7 +50,7 @@ func (p *Pipeline) Run(ctx context.Context, input ProductInput) error {
 	// Initialize product repo
 	product, err := p.ws.InitProduct(name)
 	if err != nil {
-		return fmt.Errorf("init product: %w", err)
+		return p.failPhase("Research", fmt.Errorf("init product: %w", err))
 	}
 	p.product = product
 	fmt.Printf("Product repo: %s → %s\n", product.Dir, product.Repo)
@@ -60,10 +60,10 @@ func (p *Pipeline) Run(ctx context.Context, input ProductInput) error {
 	phaseStart = time.Now()
 	design, err := p.design(ctx, spec)
 	if err != nil {
-		return fmt.Errorf("design: %w", err)
+		return p.failPhase("Design", fmt.Errorf("design: %w", err))
 	}
 	if halt := p.guardianCheck(ctx, "design"); halt {
-		return fmt.Errorf("guardian halted pipeline after design phase")
+		return p.failPhase("Design", fmt.Errorf("guardian halted pipeline after design phase"))
 	}
 
 	// ── Phase 2b: Simplify ──
@@ -71,7 +71,7 @@ func (p *Pipeline) Run(ctx context.Context, input ProductInput) error {
 		fmt.Println("═══ Phase 2b: Simplify ═══")
 		design, err = p.simplify(ctx, design)
 		if err != nil {
-			return fmt.Errorf("simplify: %w", err)
+			return p.failPhase("Simplify", fmt.Errorf("simplify: %w", err))
 		}
 	} else {
 		fmt.Println("═══ Phase 2b: Simplify — SKIPPED ═══")
@@ -80,10 +80,10 @@ func (p *Pipeline) Run(ctx context.Context, input ProductInput) error {
 
 	// Save the final spec to the product repo
 	if err := p.product.WriteFile("SPEC.md", design); err != nil {
-		return fmt.Errorf("save spec: %w", err)
+		return p.failPhase("Design", fmt.Errorf("save spec: %w", err))
 	}
 	if err := p.product.Commit("docs: Code Graph specification"); err != nil {
-		return fmt.Errorf("commit spec: %w", err)
+		return p.failPhase("Design", fmt.Errorf("commit spec: %w", err))
 	}
 	fmt.Println("Spec committed to product repo.")
 
@@ -96,11 +96,11 @@ func (p *Pipeline) Run(ctx context.Context, input ProductInput) error {
 	phaseStart = time.Now()
 	files, err := p.build(ctx, design, lang)
 	if err != nil {
-		return fmt.Errorf("build: %w", err)
+		return p.failPhase("Build", fmt.Errorf("build: %w", err))
 	}
 	p.telemetry.addPhaseTiming("Build", time.Since(phaseStart))
 	if halt := p.guardianCheck(ctx, "build"); halt {
-		return fmt.Errorf("guardian halted pipeline after build phase")
+		return p.failPhase("Build", fmt.Errorf("guardian halted pipeline after build phase"))
 	}
 
 	// ── Phase 4: Review → Rebuild loop ──
@@ -110,11 +110,11 @@ func (p *Pipeline) Run(ctx context.Context, input ProductInput) error {
 		fmt.Printf("═══ Phase 4: Review (round %d) ═══\n", round)
 		feedback, approved, err := p.review(ctx, files, design, lang)
 		if err != nil {
-			return fmt.Errorf("review round %d: %w", round, err)
+			return p.failPhase("Review", fmt.Errorf("review round %d: %w", round, err))
 		}
 		p.telemetry.addReviewSignal(approved)
 		if halt := p.guardianCheck(ctx, "review"); halt {
-			return fmt.Errorf("guardian halted pipeline after review phase")
+			return p.failPhase("Review", fmt.Errorf("guardian halted pipeline after review phase"))
 		}
 
 		if approved {
@@ -131,7 +131,7 @@ func (p *Pipeline) Run(ctx context.Context, input ProductInput) error {
 		fmt.Printf("═══ Phase 4b: Rebuild from feedback (round %d) ═══\n", round)
 		files, err = p.rebuild(ctx, files, feedback, design, lang)
 		if err != nil {
-			return fmt.Errorf("rebuild round %d: %w", round, err)
+			return p.failPhase("Review", fmt.Errorf("rebuild round %d: %w", round, err))
 		}
 	}
 	p.telemetry.addPhaseTiming("Review", time.Since(phaseStart))
@@ -141,11 +141,11 @@ func (p *Pipeline) Run(ctx context.Context, input ProductInput) error {
 	phaseStart = time.Now()
 	err = p.test(ctx, files, lang)
 	if err != nil {
-		return fmt.Errorf("test: %w", err)
+		return p.failPhase("Test", fmt.Errorf("test: %w", err))
 	}
 	p.telemetry.addPhaseTiming("Test", time.Since(phaseStart))
 	if halt := p.guardianCheck(ctx, "test"); halt {
-		return fmt.Errorf("guardian halted pipeline after test phase")
+		return p.failPhase("Test", fmt.Errorf("guardian halted pipeline after test phase"))
 	}
 
 	// ── Phase 6: Integrate ──
@@ -153,11 +153,11 @@ func (p *Pipeline) Run(ctx context.Context, input ProductInput) error {
 	phaseStart = time.Now()
 	err = p.integrate(ctx)
 	if err != nil {
-		return fmt.Errorf("integrate: %w", err)
+		return p.failPhase("Integrate", fmt.Errorf("integrate: %w", err))
 	}
 	p.telemetry.addPhaseTiming("Integrate", time.Since(phaseStart))
 	if halt := p.guardianCheck(ctx, "integrate"); halt {
-		return fmt.Errorf("guardian halted pipeline after integrate phase")
+		return p.failPhase("Integrate", fmt.Errorf("guardian halted pipeline after integrate phase"))
 	}
 
 	fmt.Println("═══ Pipeline Complete ═══")
@@ -761,9 +761,8 @@ func (p *Pipeline) test(ctx context.Context, files map[string]string, lang strin
 
 	fmt.Printf("Tests failed:\n%s\n", testResult)
 
-	// Tests failed — have the tester analyze what went wrong.
-	tester, err := p.ensureAgent(ctx, roles.RoleTester, "tester")
-	if err != nil {
+	// Tests failed — spawn the tester agent (side effect: registers agent in actor store).
+	if _, err := p.ensureAgent(ctx, roles.RoleTester, "tester"); err != nil {
 		return err
 	}
 
@@ -772,17 +771,27 @@ func (p *Pipeline) test(ctx context.Context, files map[string]string, lang strin
 		codeSummary.WriteString(fmt.Sprintf("--- %s ---\n%s\n\n", path, content))
 	}
 
-	_, testEval, err := tester.Runtime.Evaluate(ctx, "test_analysis",
-		fmt.Sprintf(`Tests are failing. Analyze the failures and identify root causes.
+	// Fresh provider per call — avoids context accumulation across test iterations.
+	testerModel := p.fullTesterModel()
+	testerProvider, err := p.providerForRoleWithModel(roles.RoleTester, testerModel)
+	if err != nil {
+		return fmt.Errorf("tester provider: %w", err)
+	}
+	testerTracker := resources.NewTrackingProvider(testerProvider)
+	p.trackers[roles.RoleTester] = testerTracker
+	fmt.Printf("  ↳ test analysis using %s\n", testerModel)
+
+	testerResp, err := testerTracker.Reason(ctx, fmt.Sprintf(`Tests are failing. Analyze the failures and identify root causes.
 
 Test output:
 %s
 
 Code:
-%s`, testResult, codeSummary.String()))
+%s`, testResult, codeSummary.String()), nil)
 	if err != nil {
 		return fmt.Errorf("test analysis: %w", err)
 	}
+	testEval := testerResp.Content()
 
 	fmt.Printf("Test Analysis:\n%s\n", testEval)
 
@@ -839,10 +848,21 @@ Current code:
 
 Output ALL files using --- FILE: path --- markers.`, testResult, codeSummary.String())
 
-			_, fixedCode, err := builder.Runtime.Evaluate(ctx, "test_fix", fixPrompt)
+			// Fresh provider per call — avoids context accumulation across test-fix iterations.
+			fixModel := p.fullBuilderModel()
+			fixProvider, err := p.providerForRoleWithModel(roles.RoleBuilder, fixModel)
+			if err != nil {
+				return fmt.Errorf("builder provider (test fix): %w", err)
+			}
+			fixTracker := resources.NewTrackingProvider(fixProvider)
+			p.trackers[roles.RoleBuilder] = fixTracker
+			fmt.Printf("  ↳ test fix using %s\n", fixModel)
+
+			fixResp, err := fixTracker.Reason(ctx, fixPrompt, nil)
 			if err != nil {
 				return fmt.Errorf("fix tests: %w", err)
 			}
+			fixedCode := fixResp.Content()
 
 			fixedFiles := parseFiles(fixedCode)
 			sanitizeGoMod(fixedFiles)

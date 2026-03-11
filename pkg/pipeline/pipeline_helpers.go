@@ -130,6 +130,14 @@ func (p *Pipeline) fullReviewerModel() string {
 	return "claude-sonnet-4-6"
 }
 
+// fullTesterModel returns the model to use for Tester analysis and test-failure
+// evaluation calls. Defaults to Sonnet — pass/fail classification with root-cause
+// analysis doesn't require Opus-level reasoning. Override with Config.TesterModel
+// if needed (no override field yet; extend Pipeline struct when required).
+func (p *Pipeline) fullTesterModel() string {
+	return "claude-sonnet-4-6"
+}
+
 // containsAlert checks if the Guardian's evaluation contains an alert directive.
 // Uses line-start matching (via ContainsSignal) to avoid false positives from
 // prose like "NO VIOLATIONS DETECTED".

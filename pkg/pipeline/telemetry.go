@@ -36,6 +36,12 @@ type PipelineResult struct {
 	// Whether the PR was merged.
 	Merged bool `json:"merged"`
 
+	// FailedPhase is the pipeline phase that halted with an error (empty on success).
+	FailedPhase string `json:"failed_phase,omitempty"`
+
+	// FailureReason is the error message from the failed phase (empty on success).
+	FailureReason string `json:"failure_reason,omitempty"`
+
 	// Pipeline mode: "full" or "targeted".
 	Mode string `json:"mode"`
 
@@ -93,6 +99,21 @@ func (r *PipelineResult) addReviewSignal(approved bool) {
 	} else {
 		r.ReviewSignals = append(r.ReviewSignals, "CHANGES NEEDED")
 	}
+}
+
+// recordFailure records the phase and error message that halted the pipeline.
+func (r *PipelineResult) recordFailure(phase string, err error) {
+	r.FailedPhase = phase
+	r.FailureReason = err.Error()
+}
+
+// failPhase records a phase failure in telemetry and returns the error unchanged.
+// Safe to call when p.telemetry is nil (no-op).
+func (p *Pipeline) failPhase(phase string, err error) error {
+	if p.telemetry != nil {
+		p.telemetry.recordFailure(phase, err)
+	}
+	return err
 }
 
 // collectTokenUsage snapshots token usage from all tracked roles.
