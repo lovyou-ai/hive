@@ -78,9 +78,10 @@ type Pipeline struct {
 	skipGuardian  bool
 	skipSimplify  bool
 	autoApprove   bool   // --yes flag active (authority requests auto-approved)
-	reviewerModel string // model override for targeted reviews (empty = role default)
-	builderModel  string // model override for targeted builds (empty = role default)
-	ctoModel      string // model override for self-improve CTO analysis (empty = role default)
+	reviewerModel  string // model override for targeted reviews (empty = role default)
+	builderModel   string // model override for targeted builds (empty = role default)
+	ctoModel       string // model override for self-improve CTO analysis (empty = role default)
+	guardianModel  string // model override for Guardian integrity checks (empty = Sonnet default)
 
 	// Authority infrastructure — always initialized; gate is optional.
 	gate    *authority.Gate
@@ -131,6 +132,11 @@ type Config struct {
 	// from telemetry data — identify one improvement, list files, output JSON.
 	// Deep architectural reasoning is not required.
 	CTOModel string
+
+	// GuardianModel overrides the model used for Guardian integrity checks.
+	// Empty string = use Sonnet default. Guardian's task is a binary HALT/pass
+	// classification — read phase events, emit HALT or pass. No deep reasoning needed.
+	GuardianModel string
 }
 
 
@@ -160,9 +166,10 @@ func New(ctx context.Context, cfg Config) (*Pipeline, error) {
 		skipGuardian:  cfg.SkipGuardian,
 		skipSimplify:  cfg.SkipSimplify,
 		autoApprove:   cfg.AutoApprove,
-		reviewerModel: cfg.ReviewerModel,
-		builderModel:  cfg.BuilderModel,
-		ctoModel:      cfg.CTOModel,
+		reviewerModel:  cfg.ReviewerModel,
+		builderModel:   cfg.BuilderModel,
+		ctoModel:       cfg.CTOModel,
+		guardianModel:  cfg.GuardianModel,
 	}
 
 	// Always initialize event infrastructure — needed for OBSERVABLE invariant
