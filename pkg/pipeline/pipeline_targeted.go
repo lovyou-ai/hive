@@ -476,7 +476,12 @@ Mention non-blocking concerns briefly but still approve.
 
 End with: APPROVED or CHANGES NEEDED: <specific blocking issues>`, lang, changeReq, ctoAnalysis, diff)
 
-	resp, err := tracker.Reason(ctx, prompt, nil)
+	// Reviewer must ingest full diff + codebase context + CTO analysis before
+	// producing structured output. The ambient 5-minute cap is too tight (Run 35
+	// took 3m9s). Override to 10 minutes for this step only.
+	reviewCtx, reviewCancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer reviewCancel()
+	resp, err := tracker.Reason(reviewCtx, prompt, nil)
 	if err != nil {
 		return "", false, fmt.Errorf("review: %w", err)
 	}
@@ -562,7 +567,13 @@ CURRENT CODE (after modifications):
 
 Output ONLY the files that need further changes using --- FILE: path --- markers.`, lang, changeReq, feedback, codeSummary.String())
 
-	_, code, err := builder.Runtime.Evaluate(ctx, "code_revision", prompt)
+	// Text-based revise must re-evaluate the full diff + codebase + feedback.
+	// The ambient 5-minute cap is too tight — Run 34 hit context deadline exceeded
+	// here (revise: evaluate reasoning: claude CLI error: context deadline exceeded).
+	// Override to 10 minutes for this step only.
+	reviseCtx, reviseCancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer reviseCancel()
+	_, code, err := builder.Runtime.Evaluate(reviseCtx, "code_revision", prompt)
 	if err != nil {
 		return nil, fmt.Errorf("revise: %w", err)
 	}
