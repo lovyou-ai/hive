@@ -21,6 +21,7 @@ import (
 	"github.com/lovyou-ai/hive/pkg/resources"
 	"github.com/lovyou-ai/hive/pkg/roles"
 	"github.com/lovyou-ai/hive/pkg/spawn"
+	"github.com/lovyou-ai/hive/pkg/work"
 	"github.com/lovyou-ai/hive/pkg/workspace"
 )
 
@@ -194,6 +195,7 @@ func New(ctx context.Context, cfg Config) (*Pipeline, error) {
 	signer := deriveSignerFromID(cfg.HumanID)
 	registry := event.DefaultRegistry()
 	registerPipelineEvents(registry)
+	work.RegisterWithRegistry(registry)
 	factory := event.NewEventFactory(registry)
 	convID, err := newConversationID()
 	if err != nil {
