@@ -46,7 +46,7 @@ Events:
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Guardian check failed: %v\n", err)
 		p.emitWarning("", "Guardian check failed: %v", err)
-		return false
+		return true
 	}
 	tracker := resources.NewTrackingProvider(rawProvider)
 	p.trackers[roles.RoleGuardian] = tracker
