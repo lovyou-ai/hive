@@ -229,6 +229,7 @@ Project structure:
 	prURL, prErr := p.openPR(ctx, product, branchName, input.Description, ctoAnalysis)
 	if prErr != nil {
 		fmt.Printf("PR creation failed (may need manual push): %v\n", prErr)
+		return prErr
 	}
 	p.telemetry.PRURL = prURL
 	prDuration := time.Since(phaseStart)
