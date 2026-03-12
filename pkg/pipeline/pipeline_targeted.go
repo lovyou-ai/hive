@@ -223,6 +223,7 @@ Project structure:
 	phaseStart = time.Now()
 	if p.skipReviewer {
 		fmt.Fprintln(os.Stderr, "═══ Phase 4: Review (skipped) ═══")
+		p.emitPhaseStarted(PhaseReview, 0)
 		p.emitProgress(PhaseReview, "review skipped")
 	} else {
 		const maxReviewRounds = 3
