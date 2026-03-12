@@ -69,13 +69,16 @@ func (p *Pipeline) RunSelfImprove(ctx context.Context, input ProductInput) error
 	consecutiveFailures := 0
 	for iteration := 1; iteration <= maxSelfImproveIterations; iteration++ {
 		fmt.Fprintf(os.Stderr, "\n═══ Self-Improve: Iteration %d/%d ═══\n", iteration, maxSelfImproveIterations)
+		iterationStart := time.Now()
 		p.emitPhaseStarted(PhaseSelfImprove, iteration)
 
 		if err := p.runSelfImproveIteration(ctx, iteration, input); err != nil {
 			if err == errSelfImproveStop {
+				p.emitPhaseCompleted(PhaseSelfImprove, time.Since(iterationStart), iteration)
 				break
 			}
 			consecutiveFailures++
+			p.emitPhaseCompleted(PhaseSelfImprove, time.Since(iterationStart), iteration)
 			if consecutiveFailures >= maxConsecutiveFailures {
 				return fmt.Errorf("self-improve iteration %d: %w (aborting after %d consecutive failures)", iteration, err, consecutiveFailures)
 			}
@@ -87,6 +90,7 @@ func (p *Pipeline) RunSelfImprove(ctx context.Context, input ProductInput) error
 		}
 
 		consecutiveFailures = 0
+		p.emitPhaseCompleted(PhaseSelfImprove, time.Since(iterationStart), iteration)
 		fmt.Fprintf(os.Stderr, "═══ Self-Improve: Iteration %d complete ═══\n", iteration)
 	}
 
