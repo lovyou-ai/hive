@@ -36,6 +36,11 @@ func (p *Pipeline) Run(ctx context.Context, input ProductInput) error {
 		p.telemetry = nil
 	}()
 	p.emitRunStarted("full", input.Description)
+	type phaseTiming struct {
+		name     string
+		duration time.Duration
+	}
+	var timings []phaseTiming
 
 	// ── Phase 1: Research ──
 	fmt.Fprintln(os.Stderr, "═══ Phase 1: Research ═══")
@@ -45,7 +50,10 @@ func (p *Pipeline) Run(ctx context.Context, input ProductInput) error {
 	if err != nil {
 		return p.failPhase("Research", fmt.Errorf("research: %w", err))
 	}
-	p.telemetry.addPhaseTiming("Research", time.Since(phaseStart))
+	researchDuration := time.Since(phaseStart)
+	timings = append(timings, phaseTiming{"Research", researchDuration})
+	p.telemetry.addPhaseTiming("Research", researchDuration)
+	p.emitPhaseCompleted(PhaseResearch, researchDuration, 1)
 	if halt := p.guardianCheck(ctx, "research"); halt {
 		return p.failPhase("Research", fmt.Errorf("guardian halted pipeline after research phase"))
 	}
@@ -89,7 +97,10 @@ func (p *Pipeline) Run(ctx context.Context, input ProductInput) error {
 		fmt.Fprintln(os.Stderr, "═══ Phase 2b: Simplify — SKIPPED ═══")
 		p.emitProgress(PhaseDesign, "simplification skipped")
 	}
-	p.telemetry.addPhaseTiming("Design", time.Since(phaseStart))
+	designDuration := time.Since(phaseStart)
+	timings = append(timings, phaseTiming{"Design", designDuration})
+	p.telemetry.addPhaseTiming("Design", designDuration)
+	p.emitPhaseCompleted(PhaseDesign, designDuration, 1)
 
 	// Save the final spec to the product repo
 	if err := p.product.WriteFile("SPEC.md", design); err != nil {
@@ -114,7 +125,10 @@ func (p *Pipeline) Run(ctx context.Context, input ProductInput) error {
 	if err != nil {
 		return p.failPhase("Build", fmt.Errorf("build: %w", err))
 	}
-	p.telemetry.addPhaseTiming("Build", time.Since(phaseStart))
+	buildDuration := time.Since(phaseStart)
+	timings = append(timings, phaseTiming{"Build", buildDuration})
+	p.telemetry.addPhaseTiming("Build", buildDuration)
+	p.emitPhaseCompleted(PhaseBuild, buildDuration, 1)
 	if halt := p.guardianCheck(ctx, "build"); halt {
 		return p.failPhase("Build", fmt.Errorf("guardian halted pipeline after build phase"))
 	}
@@ -154,7 +168,10 @@ func (p *Pipeline) Run(ctx context.Context, input ProductInput) error {
 			return p.failPhase("Review", fmt.Errorf("rebuild round %d: %w", round, err))
 		}
 	}
-	p.telemetry.addPhaseTiming("Review", time.Since(phaseStart))
+	reviewDuration := time.Since(phaseStart)
+	timings = append(timings, phaseTiming{"Review", reviewDuration})
+	p.telemetry.addPhaseTiming("Review", reviewDuration)
+	p.emitPhaseCompleted(PhaseReview, reviewDuration, 1)
 
 	// ── Phase 5: Test ──
 	fmt.Fprintln(os.Stderr, "═══ Phase 5: Test ═══")
@@ -164,7 +181,10 @@ func (p *Pipeline) Run(ctx context.Context, input ProductInput) error {
 	if err != nil {
 		return p.failPhase("Test", fmt.Errorf("test: %w", err))
 	}
-	p.telemetry.addPhaseTiming("Test", time.Since(phaseStart))
+	testDuration := time.Since(phaseStart)
+	timings = append(timings, phaseTiming{"Test", testDuration})
+	p.telemetry.addPhaseTiming("Test", testDuration)
+	p.emitPhaseCompleted(PhaseTest, testDuration, 1)
 	if halt := p.guardianCheck(ctx, "test"); halt {
 		return p.failPhase("Test", fmt.Errorf("guardian halted pipeline after test phase"))
 	}
@@ -177,7 +197,10 @@ func (p *Pipeline) Run(ctx context.Context, input ProductInput) error {
 	if err != nil {
 		return p.failPhase("Integrate", fmt.Errorf("integrate: %w", err))
 	}
-	p.telemetry.addPhaseTiming("Integrate", time.Since(phaseStart))
+	integrateDuration := time.Since(phaseStart)
+	timings = append(timings, phaseTiming{"Integrate", integrateDuration})
+	p.telemetry.addPhaseTiming("Integrate", integrateDuration)
+	p.emitPhaseCompleted(PhaseIntegrate, integrateDuration, 1)
 	if halt := p.guardianCheck(ctx, "integrate"); halt {
 		return p.failPhase("Integrate", fmt.Errorf("guardian halted pipeline after integrate phase"))
 	}
@@ -185,6 +208,15 @@ func (p *Pipeline) Run(ctx context.Context, input ProductInput) error {
 	fmt.Fprintln(os.Stderr, "═══ Pipeline Complete ═══")
 	p.emitProgress(Phase(""), "pipeline complete")
 	p.PrintTokenSummary()
+
+	totalDuration := time.Since(pipelineStart)
+	fmt.Fprintln(os.Stderr, "\n═══ Timing Summary ═══")
+	fmt.Fprintf(os.Stderr, "  %-16s %s\n", "Phase", "Duration")
+	fmt.Fprintf(os.Stderr, "  %-16s %s\n", "─────", "────────")
+	for _, t := range timings {
+		fmt.Fprintf(os.Stderr, "  %-16s %s\n", t.name, t.duration.Round(time.Millisecond))
+	}
+	fmt.Fprintf(os.Stderr, "  %-16s %s\n", "TOTAL", totalDuration.Round(time.Millisecond))
 	return nil
 }
 
