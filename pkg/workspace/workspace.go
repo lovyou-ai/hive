@@ -355,6 +355,10 @@ func (p *Product) SyncMain() error {
 // any uncommitted changes and deleting local hive/* branches left over from
 // failed self-improve iterations. Safe to call at the start of each iteration.
 func (p *Product) CleanupForIteration() error {
+	// Abort any in-progress merge/rebase that might block checkout.
+	_ = p.git("merge", "--abort")
+	_ = p.git("rebase", "--abort")
+
 	// Discard any uncommitted changes.
 	_ = p.git("checkout", "--", ".")
 	_ = p.git("clean", "-fd")
@@ -394,9 +398,12 @@ func (p *Product) CleanupForIteration() error {
 		}
 	}
 
-	// Pull latest main.
-	if err := p.git("pull", "origin", "main"); err != nil {
-		return fmt.Errorf("pull main: %w", err)
+	// Sync with remote main. Use reset --hard so we always match remote
+	// exactly — local-only commits on main are expected (the previous
+	// iteration's PR merge may have already included them).
+	_ = p.git("fetch", "origin", "main")
+	if err := p.git("reset", "--hard", "origin/main"); err != nil {
+		return fmt.Errorf("sync main: %w", err)
 	}
 	return nil
 }
