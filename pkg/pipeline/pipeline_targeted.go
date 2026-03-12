@@ -203,16 +203,17 @@ Project structure:
 	if err != nil {
 		return p.failPhase("Modify", fmt.Errorf("get head commit after modify: %w", err))
 	}
-	if headCommit == baseCommit {
-		fmt.Fprintln(os.Stderr, "Builder made no commits — change is already implemented. Skipping review, test, and PR.")
-		p.emitProgress(Phase("modify"), "builder made no commits — change is already implemented, skipping review, test, and PR")
-		return nil
-	}
 
 	modifyDuration := time.Since(phaseStart)
 	timings = append(timings, phaseTiming{"Modify", modifyDuration})
 	p.telemetry.addPhaseTiming("Modify", modifyDuration)
 	p.emitPhaseCompleted(Phase("modify"), modifyDuration, 0)
+
+	if headCommit == baseCommit {
+		fmt.Fprintln(os.Stderr, "Builder made no commits — change is already implemented. Skipping review, test, and PR.")
+		p.emitProgress(Phase("modify"), "builder made no commits — change is already implemented, skipping review, test, and PR")
+		return nil
+	}
 
 	// ── Phase 4: Review ──
 	phaseStart = time.Now()
