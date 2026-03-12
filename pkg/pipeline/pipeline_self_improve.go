@@ -188,6 +188,7 @@ IMPORTANT constraints:
 
 Respond with ONLY a JSON object: {"description": "what to change, 1-2 sentences", "files_to_change": ["path/to/file"], "expected_impact": "1 sentence", "priority": "high|medium|low", "skip_reason": "if nothing is worth fixing, explain why here; otherwise empty string"}. No preamble, no explanation, no code blocks, no markdown.`, telemetrySummary, fileListing, keyContext)
 
+	ctoStart := time.Now()
 	ctoResp, err := ctoTracker.Reason(ctx, ctoPrompt, nil)
 	ctoCost := ctoTracker.Snapshot().CostUSD
 	if err != nil {
@@ -241,6 +242,7 @@ Respond with ONLY a JSON object: {"description": "what to change, 1-2 sentences"
 			CacheWriteTokens: s.CacheWriteTokens,
 			CostUSD:          s.CostUSD,
 		})
+		p.telemetry.addPhaseTiming("CTO Analysis", time.Since(ctoStart))
 	}
 	// Skip Guardian checks for self-improve iterations — Guardian generates zero
 	// alerts across all self-improve runs (Builder + test validation is
