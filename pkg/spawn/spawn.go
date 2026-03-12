@@ -89,7 +89,7 @@ func NewSpawner(cfg Config) *Spawner {
 
 // Spawn creates a new agent after authority approval.
 // Returns the spawn result (which includes whether it was approved).
-func (s *Spawner) Spawn(_ context.Context, req SpawnRequest) (SpawnResult, error) {
+func (s *Spawner) Spawn(ctx context.Context, req SpawnRequest) (SpawnResult, error) {
 	// Emit the spawn request event.
 	reqEventID, err := s.emitSpawnRequested(req)
 	if err != nil {
@@ -99,7 +99,7 @@ func (s *Spawner) Spawn(_ context.Context, req SpawnRequest) (SpawnResult, error
 	// Check trust gate — the requesting agent must have enough trust
 	// for the target role (unless the human is requesting directly).
 	if req.RequestedBy != s.humanID {
-		if gateErr := s.checkTrustGate(req); gateErr != nil {
+		if gateErr := s.checkTrustGate(ctx, req); gateErr != nil {
 			// Emit denial so the graph is complete — spawn_requested
 			// must always have a causal successor.
 			if err := s.emitSpawnDenied(reqEventID, gateErr.Error()); err != nil {
@@ -180,7 +180,7 @@ func (s *Spawner) Spawn(_ context.Context, req SpawnRequest) (SpawnResult, error
 var ErrTrustNotConfigured = fmt.Errorf("trust model not configured")
 
 // checkTrustGate validates the requester has sufficient trust for the target role.
-func (s *Spawner) checkTrustGate(req SpawnRequest) error {
+func (s *Spawner) checkTrustGate(ctx context.Context, req SpawnRequest) error {
 	gate := roles.TrustGate(req.Role)
 	if gate <= 0 {
 		return nil // no gate for this role
@@ -194,7 +194,7 @@ func (s *Spawner) checkTrustGate(req SpawnRequest) error {
 		return fmt.Errorf("trust gate: requester not found: %w", err)
 	}
 
-	metrics, err := s.trustModel.Score(nil, requester)
+	metrics, err := s.trustModel.Score(ctx, requester)
 	if err != nil {
 		return fmt.Errorf("trust gate: score error: %w", err)
 	}
