@@ -353,8 +353,16 @@ func summarizeTelemetry(results []PipelineResult) string {
 			for _, tu := range r.TokenUsage {
 				totalCost += tu.CostUSD
 			}
-			sb.WriteString(fmt.Sprintf("Run %d: mode=%s, cost=$%.4f, alerts=%d, merged=%v — %s\n",
-				i+1, r.Mode, totalCost, len(r.GuardianAlerts), r.Merged, truncate(r.InputDescription, 80)))
+			oneliner := fmt.Sprintf("Run %d: mode=%s, cost=$%.4f, alerts=%d, merged=%v",
+				i+1, r.Mode, totalCost, len(r.GuardianAlerts), r.Merged)
+			if r.NoChanges {
+				oneliner += ", no_changes=true"
+			}
+			if r.FailedPhase != "" {
+				oneliner += fmt.Sprintf(", failed=%s", r.FailedPhase)
+			}
+			oneliner += " — " + truncate(r.InputDescription, 80)
+			sb.WriteString(oneliner + "\n")
 			continue
 		}
 

@@ -166,6 +166,7 @@ Project structure:
 		p.emitPhaseCompleted(Phase("understand"), understandDuration, 0)
 		fmt.Fprintln(os.Stderr, "CTO analysis identified no relevant files — change may already be implemented. Skipping.")
 		p.emitProgress(Phase("understand"), "CTO analysis identified no relevant files — change may already be implemented, skipping")
+		p.telemetry.NoChanges = true
 		return nil
 	}
 
@@ -216,6 +217,7 @@ Project structure:
 	if headCommit == baseCommit {
 		fmt.Fprintln(os.Stderr, "Builder made no commits — change is already implemented. Skipping review, test, and PR.")
 		p.emitProgress(Phase("modify"), "builder made no commits — change is already implemented, skipping review, test, and PR")
+		p.telemetry.NoChanges = true
 		return nil
 	}
 

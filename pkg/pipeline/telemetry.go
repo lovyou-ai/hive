@@ -42,6 +42,10 @@ type PipelineResult struct {
 	// FailureReason is the error message from the failed phase (empty on success).
 	FailureReason string `json:"failure_reason,omitempty"`
 
+	// NoChanges is true when the pipeline exited early because no files were
+	// identified or the builder made no commits (change already applied).
+	NoChanges bool `json:"no_changes,omitempty"`
+
 	// Pipeline mode: "full" or "targeted".
 	Mode string `json:"mode"`
 
