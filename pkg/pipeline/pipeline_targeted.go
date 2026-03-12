@@ -442,7 +442,8 @@ CRITICAL OUTPUT FORMAT RULES:
 			return nil, fmt.Errorf("write %s: %w", path, err)
 		}
 	}
-	if err := p.product.Commit(fmt.Sprintf("feat: %s", truncate(changeReq, 60))); err != nil {
+	_ = p.product.StageAll()
+	if err := p.product.CommitIfStaged(fmt.Sprintf("feat: %s", truncate(changeReq, 60))); err != nil {
 		return nil, fmt.Errorf("commit changes: %w", err)
 	}
 
