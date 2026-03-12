@@ -171,9 +171,11 @@ Respond with ONLY a JSON object: {"description": "what to change, 1-2 sentences"
 	// directly avoids a second ReadSourceFiles() call in RunTargeted and prevents
 	// context bloat from unrelated packages reaching the Builder.
 	targetedInput := ProductInput{
-		RepoPath:     input.RepoPath,
-		Description:  rec.Description,
-		CTOAnalysis:  fmt.Sprintf("Description: %s\nFiles to change: %v\nExpected impact: %s", rec.Description, rec.FilesToChange, rec.ExpectedImpact),
+		RepoPath:    input.RepoPath,
+		Description: rec.Description,
+		// Use FILES_TO_CHANGE: structured section so parseRelevantFiles uses the
+		// reliable structured extraction path rather than the word-scan fallback.
+		CTOAnalysis:  fmt.Sprintf("Description: %s\nFILES_TO_CHANGE:\n%s\nExpected impact: %s", rec.Description, strings.Join(rec.FilesToChange, "\n"), rec.ExpectedImpact),
 		ContextFiles: pipelineFiles,
 	}
 	if s := ctoTracker.Snapshot(); s.Iterations > 0 {

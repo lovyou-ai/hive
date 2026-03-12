@@ -445,9 +445,9 @@ func TestCTOAnalysisSkipsUnderstandPhase(t *testing.T) {
 		Priority:       "high",
 	}
 
-	// Format the same way RunSelfImprove does.
-	analysis := fmt.Sprintf("Description: %s\nFiles to change: %v\nExpected impact: %s",
-		rec.Description, rec.FilesToChange, rec.ExpectedImpact)
+	// Format the same way RunSelfImprove does (FILES_TO_CHANGE: structured section).
+	analysis := fmt.Sprintf("Description: %s\nFILES_TO_CHANGE:\n%s\nExpected impact: %s",
+		rec.Description, strings.Join(rec.FilesToChange, "\n"), rec.ExpectedImpact)
 
 	input := ProductInput{
 		RepoPath:    "/tmp/fake-repo",

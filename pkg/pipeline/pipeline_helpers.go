@@ -308,6 +308,23 @@ func parseRelevantFiles(ctoAnalysis string) []string {
 	return paths
 }
 
+// buildRelevantFileContext returns the concatenated contents of files from the
+// provided map, limited to the paths in relevantPaths and formatted with
+// --- FILE: path --- markers. Used to embed pre-filtered source context into
+// builder instructions, reducing agentic-mode file reads and stabilising
+// builder token usage across self-improve iterations.
+func buildRelevantFileContext(files map[string]string, relevantPaths []string) string {
+	var b strings.Builder
+	for _, path := range relevantPaths {
+		content, ok := files[path]
+		if !ok {
+			continue
+		}
+		b.WriteString(fmt.Sprintf("--- FILE: %s ---\n%s\n\n", path, content))
+	}
+	return b.String()
+}
+
 // looksLikeFilePath returns true if s looks like a source file path.
 // Accepts paths with a letter-prefixed extension (e.g. ".go", ".md") and
 // rejects URLs, version strings (e.g. "v1.2.3"), and empty strings.

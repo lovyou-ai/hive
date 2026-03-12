@@ -317,6 +317,14 @@ Do NOT add unnecessary changes beyond what's requested.`, lang, changeReq, ctoAn
 			instruction += "\nFocus ONLY on these files (identified by the CTO):\n" + strings.Join(relevantFiles, "\n") + "\nDo NOT read other source files unless a dependency forces it."
 		}
 
+		// Embed relevant file contents from the pre-filtered context so the
+		// builder does not need to read the full codebase from disk. Applies
+		// the same file-filtering pattern used for CTO analysis to stabilise
+		// builder token usage across self-improve iterations.
+		if fileContext := buildRelevantFileContext(existingFiles, relevantFiles); fileContext != "" {
+			instruction += "\n\nRELEVANT FILE CONTENTS (pre-loaded — read these instead of re-reading from disk):\n" + fileContext
+		}
+
 		result, err := tracker.Operate(ctx, decision.OperateTask{
 			WorkDir:     p.product.Dir,
 			Instruction: instruction,
