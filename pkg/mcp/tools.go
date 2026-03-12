@@ -11,6 +11,7 @@ import (
 	"github.com/lovyou-ai/eventgraph/go/pkg/statestore"
 	"github.com/lovyou-ai/eventgraph/go/pkg/trust"
 	"github.com/lovyou-ai/eventgraph/go/pkg/types"
+	"github.com/lovyou-ai/hive/pkg/work"
 )
 
 // Deps holds the dependencies shared by all tool handlers.
@@ -39,6 +40,7 @@ func RegisterAllTools(s *Server, deps Deps) {
 	}
 	signer := &ed25519Signer{key: privKey}
 	registry := event.DefaultRegistry()
+	work.RegisterWithRegistry(registry) // add work.task.* types
 	factory := event.NewEventFactory(registry)
 
 	audit := NewAuditLogger(deps.Store, factory, signer, deps.AgentID, deps.ConvID)
@@ -47,6 +49,7 @@ func RegisterAllTools(s *Server, deps Deps) {
 	registerReadTools(s, deps, audit)
 	registerSelfTools(s, deps, audit)
 	registerWriteTools(s, deps, audit, authCheck, factory, signer)
+	registerWorkTools(s, deps, audit, authCheck, factory, signer)
 }
 
 // regTool registers a tool with audit logging.
@@ -370,6 +373,90 @@ func registerWriteTools(s *Server, deps Deps, audit *AuditLogger, authCheck *Aut
 			"required": ["event_type", "content"]
 		}`),
 		wrapped,
+	)
+}
+
+func registerWorkTools(s *Server, deps Deps, audit *AuditLogger, authCheck *AuthorityChecker, factory *event.EventFactory, signer event.Signer) {
+	ts := work.NewTaskStore(deps.Store, factory, signer)
+
+	// work_create_task — create a task as a signed event on the graph (write, authority-checked)
+	createHandler := func(args map[string]any) (ToolCallResult, error) {
+		title, ok := stringArg(args, "title")
+		if !ok || title == "" {
+			return ErrorResult("title is required"), nil
+		}
+		description, _ := stringArg(args, "description")
+
+		head, err := deps.Store.Head()
+		if err != nil {
+			return ErrorResult(fmt.Sprintf("store error: %v", err)), nil
+		}
+		if !head.IsSome() {
+			return ErrorResult("graph has no events (not bootstrapped)"), nil
+		}
+		causes := []types.EventID{head.Unwrap().ID()}
+
+		task, err := ts.Create(deps.AgentID, title, description, causes, deps.ConvID)
+		if err != nil {
+			return ErrorResult(fmt.Sprintf("create task: %v", err)), nil
+		}
+		result := map[string]any{
+			"id":          task.ID.Value(),
+			"title":       task.Title,
+			"description": task.Description,
+			"created_by":  task.CreatedBy.Value(),
+		}
+		data, _ := json.MarshalIndent(result, "", "  ")
+		return TextResult(string(data)), nil
+	}
+
+	wrapped := WrapHandler(audit, "work_create_task", WrapWriteHandler(authCheck, "work_create_task", createHandler))
+	s.RegisterTool("work_create_task",
+		"Create a work task as a signed, auditable event on the graph. Returns the task ID and details.",
+		mustSchema(`{
+			"type": "object",
+			"properties": {
+				"title":       {"type": "string", "description": "Task title (required)"},
+				"description": {"type": "string", "description": "Optional task description"}
+			},
+			"required": ["title"]
+		}`),
+		wrapped,
+	)
+
+	// work_list_tasks — list tasks from the graph (read, audit-only)
+	regTool(s, audit, "work_list_tasks",
+		"List work tasks from the graph. Returns task IDs, titles, descriptions, and creators.",
+		mustSchema(`{
+			"type": "object",
+			"properties": {
+				"limit": {"type": "integer", "description": "Max tasks to return (default 20, max 100)"}
+			}
+		}`),
+		func(args map[string]any) (ToolCallResult, error) {
+			limit := intArg(args, "limit", 20)
+			if limit <= 0 {
+				limit = 20
+			}
+			if limit > 100 {
+				limit = 100
+			}
+			tasks, err := ts.List(limit)
+			if err != nil {
+				return ErrorResult(fmt.Sprintf("list tasks: %v", err)), nil
+			}
+			items := make([]map[string]any, 0, len(tasks))
+			for _, t := range tasks {
+				items = append(items, map[string]any{
+					"id":          t.ID.Value(),
+					"title":       t.Title,
+					"description": t.Description,
+					"created_by":  t.CreatedBy.Value(),
+				})
+			}
+			data, _ := json.MarshalIndent(items, "", "  ")
+			return TextResult(string(data)), nil
+		},
 	)
 }
 
