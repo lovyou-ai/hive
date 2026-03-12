@@ -248,7 +248,7 @@ Project structure:
 				approved = p.requestMergeApproval(prURL)
 			}
 			if approved {
-				if err := p.mergePR(product, prURL); err != nil {
+				if err := p.mergePR(ctx, product, prURL); err != nil {
 					fmt.Printf("PR merge failed (may need manual merge): %v\n", err)
 				} else {
 					p.telemetry.Merged = true
@@ -676,7 +676,7 @@ func (p *Pipeline) openPR(ctx context.Context, product *workspace.Product, branc
 // mergePR squash-merges a pull request via gh CLI.
 // Non-fatal — logs and returns error if merge fails (e.g., branch protection).
 // Retries up to 3 times on transient GitHub errors (502, 504, "base branch was modified").
-func (p *Pipeline) mergePR(product *workspace.Product, prURL string) error {
+func (p *Pipeline) mergePR(ctx context.Context, product *workspace.Product, prURL string) error {
 	var lastErr error
 	for attempt := 1; attempt <= 3; attempt++ {
 		cmd := exec.Command("gh", "pr", "merge", prURL, "--squash")
@@ -692,7 +692,11 @@ func (p *Pipeline) mergePR(product *workspace.Product, prURL string) error {
 			return lastErr
 		}
 		fmt.Printf("PR merge attempt %d failed (transient), retrying in %ds...\n", attempt, attempt*5)
-		time.Sleep(time.Duration(attempt*5) * time.Second)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Duration(attempt*5) * time.Second):
+		}
 	}
 	return lastErr
 }
