@@ -29,6 +29,11 @@ const telemetryDetailRunLimit = 3
 // impact on recommendation quality while cutting CTO input tokens significantly.
 const maxTelemetryRuns = 20
 
+// maxConsecutiveFailures is the number of back-to-back transient iteration
+// failures (failed tests, network glitches, gh CLI errors) allowed before the
+// entire session is aborted. A single failure skips to the next iteration.
+const maxConsecutiveFailures = 2
+
 // SelfImproveRecommendation is the CTO's structured response from telemetry analysis.
 type SelfImproveRecommendation struct {
 	Description  string   `json:"description"`
@@ -42,11 +47,16 @@ type SelfImproveRecommendation struct {
 // has the CTO identify improvements, then runs targeted pipeline iterations.
 // Loops up to maxSelfImproveIterations times, stopping when the CTO says
 // nothing is worth fixing.
+//
+// Transient failures (failed tests, network glitches, gh CLI errors) skip to
+// the next iteration rather than aborting the session. The session only aborts
+// when maxConsecutiveFailures failures occur back-to-back.
 func (p *Pipeline) RunSelfImprove(ctx context.Context, input ProductInput) error {
 	if input.RepoPath == "" {
 		return fmt.Errorf("RunSelfImprove requires RepoPath")
 	}
 
+	consecutiveFailures := 0
 	for iteration := 1; iteration <= maxSelfImproveIterations; iteration++ {
 		fmt.Printf("\n═══ Self-Improve: Iteration %d/%d ═══\n", iteration, maxSelfImproveIterations)
 
@@ -54,9 +64,16 @@ func (p *Pipeline) RunSelfImprove(ctx context.Context, input ProductInput) error
 			if err == errSelfImproveStop {
 				break
 			}
-			return fmt.Errorf("self-improve iteration %d: %w", iteration, err)
+			consecutiveFailures++
+			if consecutiveFailures >= maxConsecutiveFailures {
+				return fmt.Errorf("self-improve iteration %d: %w (aborting after %d consecutive failures)", iteration, err, consecutiveFailures)
+			}
+			fmt.Printf("Warning: iteration %d failed (%v) — skipping to next iteration (%d/%d consecutive failures)\n",
+				iteration, err, consecutiveFailures, maxConsecutiveFailures)
+			continue
 		}
 
+		consecutiveFailures = 0
 		fmt.Printf("═══ Self-Improve: Iteration %d complete ═══\n", iteration)
 	}
 
