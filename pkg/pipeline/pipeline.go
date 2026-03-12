@@ -91,6 +91,7 @@ type Pipeline struct {
 	ctoModel       string // model override for self-improve CTO analysis (empty = role default)
 	guardianModel  string // model override for Guardian integrity checks (empty = Sonnet default)
 	architectModel string // model override for Architect design and simplify calls (empty = Sonnet default)
+	resume         bool   // resume evolve session from saved state
 
 	// Authority infrastructure — always initialized; gate is optional.
 	gate    *authority.Gate
@@ -151,6 +152,10 @@ type Config struct {
 	// Empty string = use Sonnet default. Spec-writing and simplification are structured
 	// generation tasks — same reasoning as the CTO Understand switch that saved ~$1.60/run.
 	ArchitectModel string
+
+	// Resume resumes an evolve session from saved state (.hive/evolve-state.json),
+	// skipping iterations that have already completed successfully.
+	Resume bool
 }
 
 
@@ -185,6 +190,7 @@ func New(ctx context.Context, cfg Config) (*Pipeline, error) {
 		ctoModel:       cfg.CTOModel,
 		guardianModel:  cfg.GuardianModel,
 		architectModel: cfg.ArchitectModel,
+		resume:         cfg.Resume,
 	}
 
 	// Always initialize event infrastructure — needed for OBSERVABLE invariant

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -33,6 +35,15 @@ type EvolveRecommendation struct {
 	SkipReason     string   `json:"skip_reason"`
 }
 
+// EvolveState persists session progress so evolve can resume after interruption.
+type EvolveState struct {
+	StartedAt     time.Time              `json:"started_at"`
+	LastIteration int                    `json:"last_iteration"`
+	Completed     []EvolveRecommendation `json:"completed"`
+	Failed        []EvolveRecommendation `json:"failed"`
+	TotalCost     float64                `json:"total_cost"`
+}
+
 // RunEvolve enters evolution mode: the CTO reads the full codebase + roadmap
 // and proposes capabilities to build — not just bugs to fix. Each iteration
 // proposes and implements one feature or architectural improvement.
@@ -51,13 +62,32 @@ func (p *Pipeline) RunEvolve(ctx context.Context, input ProductInput) error {
 			"", false, "", "", totalCost)
 	}()
 
+	// Load or create evolve state for resume support.
+	state, err := loadEvolveState(input.RepoPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not load evolve state: %v (starting fresh)\n", err)
+		state = &EvolveState{StartedAt: pipelineStart}
+	}
+	if state.StartedAt.IsZero() {
+		state.StartedAt = pipelineStart
+	}
+
+	startIteration := 1
+	if p.resume && state.LastIteration > 0 {
+		startIteration = state.LastIteration + 1
+		totalCost = state.TotalCost
+		fmt.Fprintf(os.Stderr, "Resuming evolve session from iteration %d (%d completed, %d failed)\n",
+			startIteration, len(state.Completed), len(state.Failed))
+		p.emitProgress(PhaseEvolve, "resuming from iteration %d", startIteration)
+	}
+
 	consecutiveFailures := 0
-	for iteration := 1; iteration <= maxEvolveIterations; iteration++ {
+	for iteration := startIteration; iteration <= maxEvolveIterations; iteration++ {
 		fmt.Fprintf(os.Stderr, "\n═══ Evolve: Iteration %d/%d ═══\n", iteration, maxEvolveIterations)
 		iterationStart := time.Now()
 		p.emitPhaseStarted(PhaseEvolve, iteration)
 
-		iterCost, err := p.runEvolveIteration(ctx, iteration, input)
+		iterCost, rec, err := p.runEvolveIteration(ctx, iteration, input, state)
 		totalCost += iterCost
 
 		if err != nil {
@@ -65,8 +95,27 @@ func (p *Pipeline) RunEvolve(ctx context.Context, input ProductInput) error {
 				p.emitPhaseCompleted(PhaseEvolve, time.Since(iterationStart), iteration)
 				break
 			}
+
+			// Track failed recommendation in state.
+			if rec != nil {
+				state.Failed = append(state.Failed, *rec)
+			}
+
 			consecutiveFailures++
 			p.emitPhaseCompleted(PhaseEvolve, time.Since(iterationStart), iteration)
+
+			// Self-heal: run one self-improve iteration before giving up.
+			fmt.Fprintf(os.Stderr, "Evolve iteration %d failed: %v — attempting self-heal...\n", iteration, err)
+			p.emitProgress(PhaseEvolve, "iteration %d failed — attempting self-heal", iteration)
+			healCost := p.runEvolveSelfHeal(ctx, input)
+			totalCost += healCost
+
+			state.LastIteration = iteration
+			state.TotalCost = totalCost
+			if saveErr := saveEvolveState(input.RepoPath, state); saveErr != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not save evolve state: %v\n", saveErr)
+			}
+
 			if consecutiveFailures >= maxConsecutiveFailures {
 				return fmt.Errorf("evolve iteration %d: %w (aborting after %d consecutive failures)", iteration, err, consecutiveFailures)
 			}
@@ -76,8 +125,22 @@ func (p *Pipeline) RunEvolve(ctx context.Context, input ProductInput) error {
 		}
 
 		consecutiveFailures = 0
+		if rec != nil {
+			state.Completed = append(state.Completed, *rec)
+		}
+		state.LastIteration = iteration
+		state.TotalCost = totalCost
+		if saveErr := saveEvolveState(input.RepoPath, state); saveErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not save evolve state: %v\n", saveErr)
+		}
+
 		p.emitPhaseCompleted(PhaseEvolve, time.Since(iterationStart), iteration)
 		fmt.Fprintf(os.Stderr, "═══ Evolve: Iteration %d complete ═══\n", iteration)
+	}
+
+	// Clear state on successful session completion.
+	if err := clearEvolveState(input.RepoPath); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not clear evolve state: %v\n", err)
 	}
 
 	fmt.Fprintln(os.Stderr, "\n═══ Evolve: Session Complete ═══")
@@ -86,14 +149,14 @@ func (p *Pipeline) RunEvolve(ctx context.Context, input ProductInput) error {
 
 var errEvolveStop = fmt.Errorf("CTO says nothing worth building")
 
-func (p *Pipeline) runEvolveIteration(parentCtx context.Context, iteration int, input ProductInput) (float64, error) {
+func (p *Pipeline) runEvolveIteration(parentCtx context.Context, iteration int, input ProductInput, state *EvolveState) (float64, *EvolveRecommendation, error) {
 	ctx, cancel := context.WithTimeout(parentCtx, evolveIterationTimeout)
 	defer cancel()
 
 	// Clean up from previous iteration.
 	product, err := workspace.OpenRepo(input.RepoPath)
 	if err != nil {
-		return 0, fmt.Errorf("open repo: %w", err)
+		return 0, nil, fmt.Errorf("open repo: %w", err)
 	}
 	if err := product.CleanupForIteration(); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: cleanup failed: %v (continuing anyway)\n", err)
@@ -103,7 +166,7 @@ func (p *Pipeline) runEvolveIteration(parentCtx context.Context, iteration int, 
 	// Read full codebase — no truncation limits for evolve mode.
 	existingFiles, err := product.ReadSourceFiles()
 	if err != nil {
-		return 0, fmt.Errorf("read source files: %w", err)
+		return 0, nil, fmt.Errorf("read source files: %w", err)
 	}
 	goFiles := filterEvolveFiles(existingFiles)
 
@@ -117,7 +180,7 @@ func (p *Pipeline) runEvolveIteration(parentCtx context.Context, iteration int, 
 	// Read telemetry for operational context.
 	telemetryResults, err := ReadTelemetry(input.RepoPath)
 	if err != nil {
-		return 0, fmt.Errorf("read telemetry: %w", err)
+		return 0, nil, fmt.Errorf("read telemetry: %w", err)
 	}
 	telemetrySummary := summarizeTelemetry(telemetryResults)
 
@@ -127,26 +190,26 @@ func (p *Pipeline) runEvolveIteration(parentCtx context.Context, iteration int, 
 	model := p.evolveCTOModel()
 	rawProvider, err := p.providerForRoleWithModel(roles.RoleCTO, model)
 	if err != nil {
-		return 0, fmt.Errorf("CTO provider: %w", err)
+		return 0, nil, fmt.Errorf("CTO provider: %w", err)
 	}
 	ctoTracker := resources.NewTrackingProvider(rawProvider)
 	p.trackers[roles.RoleCTO] = ctoTracker
 	fmt.Fprintf(os.Stderr, "  ↳ evolve CTO analysis using %s\n", model)
 	p.emitProgress(PhaseEvolve, "evolve CTO analysis using %s", model)
 
-	ctoPrompt := buildEvolvePrompt(codeContext.String(), telemetrySummary, input.Description)
+	ctoPrompt := buildEvolvePrompt(codeContext.String(), telemetrySummary, input.Description, state)
 
 	ctoStart := time.Now()
 	ctoResp, err := ctoTracker.Reason(ctx, ctoPrompt, nil)
 	ctoCost := ctoTracker.Snapshot().CostUSD
 	if err != nil {
-		return ctoCost, fmt.Errorf("CTO evolve analysis: %w", err)
+		return ctoCost, nil, fmt.Errorf("CTO evolve analysis: %w", err)
 	}
 
 	// Parse recommendation.
 	rec, err := parseEvolveRecommendation(ctoResp.Content())
 	if err != nil {
-		return ctoCost, fmt.Errorf("parse CTO recommendation: %w", err)
+		return ctoCost, nil, fmt.Errorf("parse CTO recommendation: %w", err)
 	}
 
 	fmt.Fprintf(os.Stderr, "CTO recommendation [%s] (priority=%s): %s\n", rec.Category, rec.Priority, rec.Description)
@@ -154,12 +217,12 @@ func (p *Pipeline) runEvolveIteration(parentCtx context.Context, iteration int, 
 	if rec.SkipReason != "" {
 		fmt.Fprintf(os.Stderr, "CTO says nothing worth building: %s\n", rec.SkipReason)
 		p.emitOutput("cto", "recommendation", fmt.Sprintf("nothing worth building: %s", rec.SkipReason))
-		return ctoCost, errEvolveStop
+		return ctoCost, &rec, errEvolveStop
 	}
 	if rec.Description == "" {
 		fmt.Fprintln(os.Stderr, "CTO returned empty recommendation — stopping.")
 		p.emitOutput("cto", "recommendation", "empty recommendation — stopping")
-		return ctoCost, errEvolveStop
+		return ctoCost, &rec, errEvolveStop
 	}
 
 	fmt.Fprintf(os.Stderr, "Expected impact: %s\n", rec.ExpectedImpact)
@@ -233,7 +296,7 @@ func (p *Pipeline) runEvolveIteration(parentCtx context.Context, iteration int, 
 		for _, t := range p.trackers {
 			iterCost += t.Snapshot().CostUSD
 		}
-		return iterCost, fmt.Errorf("targeted pipeline: %w", err)
+		return iterCost, &rec, fmt.Errorf("targeted pipeline: %w", err)
 	}
 
 	// Mark work task complete on success — best-effort.
@@ -254,10 +317,37 @@ func (p *Pipeline) runEvolveIteration(parentCtx context.Context, iteration int, 
 	}
 
 	if err := product.SyncMain(); err != nil {
-		return iterCost, fmt.Errorf("sync main: %w", err)
+		return iterCost, &rec, fmt.Errorf("sync main: %w", err)
 	}
 
-	return iterCost, nil
+	return iterCost, &rec, nil
+}
+
+// runEvolveSelfHeal runs one self-improve iteration to fix issues that caused
+// the evolve iteration to fail. Returns the cost of the self-heal attempt.
+func (p *Pipeline) runEvolveSelfHeal(ctx context.Context, input ProductInput) float64 {
+	healInput := ProductInput{
+		RepoPath:    input.RepoPath,
+		Description: "Fix compilation or test failures from the most recent evolve iteration",
+	}
+
+	prevSkipReviewer := p.skipReviewer
+	p.skipReviewer = true
+	defer func() { p.skipReviewer = prevSkipReviewer }()
+
+	if _, err := p.runSelfImproveIteration(ctx, 1, healInput); err != nil {
+		fmt.Fprintf(os.Stderr, "Self-heal failed: %v (continuing with next evolve iteration)\n", err)
+		p.emitWarning(PhaseEvolve, "self-heal failed: %v", err)
+	} else {
+		fmt.Fprintln(os.Stderr, "Self-heal completed successfully")
+		p.emitProgress(PhaseEvolve, "self-heal completed")
+	}
+
+	cost := 0.0
+	for _, t := range p.trackers {
+		cost += t.Snapshot().CostUSD
+	}
+	return cost
 }
 
 // evolveCTOModel returns the model for evolve CTO analysis.
@@ -285,7 +375,7 @@ func filterEvolveFiles(files map[string]string) map[string]string {
 }
 
 // buildEvolvePrompt constructs the CTO prompt for evolution mode.
-func buildEvolvePrompt(codeContext, telemetrySummary, humanDirection string) string {
+func buildEvolvePrompt(codeContext, telemetrySummary, humanDirection string, state *EvolveState) string {
 	direction := ""
 	if humanDirection != "" {
 		direction = fmt.Sprintf(`
@@ -294,7 +384,22 @@ HUMAN DIRECTION (prioritize this):
 `, humanDirection)
 	}
 
-	return fmt.Sprintf(`You are the CTO of a self-improving AI agent civilisation. Your job is to EVOLVE the system — build new capabilities, not just fix bugs.
+	priorWork := ""
+	if state != nil && (len(state.Completed) > 0 || len(state.Failed) > 0) {
+		var pw strings.Builder
+		pw.WriteString("\nPRIOR WORK IN THIS SESSION (do NOT repeat these):\n")
+		for _, c := range state.Completed {
+			pw.WriteString(fmt.Sprintf("  ✓ COMPLETED: %s\n", c.Description))
+		}
+		for _, f := range state.Failed {
+			pw.WriteString(fmt.Sprintf("  ✗ FAILED: %s\n", f.Description))
+		}
+		priorWork = pw.String()
+	}
+
+	return fmt.Sprintf(`CRITICAL: You MUST respond with ONLY a JSON object. No prose, no explanation, no markdown, no code blocks. Just raw JSON starting with { and ending with }.
+
+You are the CTO of a self-improving AI agent civilisation. Your job is to EVOLVE the system — build new capabilities, not just fix bugs.
 
 The hive is a civilisation engine built on EventGraph. It builds products autonomously. The soul: "Take care of your human, humanity, and yourself."
 
@@ -329,7 +434,7 @@ RECENT TELEMETRY:
 %s
 %s
 %s
-
+%s
 Analyze the FULL codebase above. Identify the single most valuable capability to build next.
 
 PRIORITY ORDER:
@@ -349,20 +454,111 @@ CONSTRAINTS:
 Respond with ONLY a JSON object:
 {"description": "what to build, 2-3 sentences with enough detail for a builder", "files_to_change": ["existing/files"], "new_files": ["new/files/to/create"], "expected_impact": "1-2 sentences", "priority": "high|medium|low", "category": "feature|architecture|capability|infrastructure", "skip_reason": "if nothing worth building, explain why; otherwise empty string"}
 
-No preamble, no explanation, no code blocks, no markdown.`, codeContext, telemetrySummary, direction)
+No preamble, no explanation, no code blocks, no markdown. ONLY the JSON object.`, codeContext, telemetrySummary, direction, priorWork)
 }
 
 // parseEvolveRecommendation extracts an EvolveRecommendation from LLM output.
+// Falls back to prose parsing if the CTO returns text instead of JSON.
 func parseEvolveRecommendation(response string) (EvolveRecommendation, error) {
 	var rec EvolveRecommendation
 
 	jsonStr := extractJSONBlock(response)
-	if jsonStr == "" {
-		return EvolveRecommendation{SkipReason: response}, nil
+	if jsonStr != "" {
+		if err := json.Unmarshal([]byte(jsonStr), &rec); err == nil {
+			return rec, nil
+		}
 	}
 
-	if err := json.Unmarshal([]byte(jsonStr), &rec); err != nil {
-		return rec, fmt.Errorf("parse evolve recommendation: %w", err)
+	// Fallback: try to extract useful info from prose response.
+	rec = parseEvolveProse(response)
+	if rec.Description != "" {
+		return rec, nil
 	}
-	return rec, nil
+
+	// Nothing parseable — treat entire response as skip reason.
+	return EvolveRecommendation{SkipReason: response}, nil
+}
+
+// parseEvolveProse extracts an EvolveRecommendation from a prose CTO response.
+// Looks for file paths (pkg/... and cmd/...) and uses the first paragraph as description.
+var evolveFilePathRe = regexp.MustCompile(`(?:pkg|cmd)/[\w/._-]+\.go`)
+
+func parseEvolveProse(response string) EvolveRecommendation {
+	// Extract file paths.
+	matches := evolveFilePathRe.FindAllString(response, -1)
+	seen := make(map[string]bool, len(matches))
+	var files []string
+	for _, m := range matches {
+		if !seen[m] {
+			seen[m] = true
+			files = append(files, m)
+		}
+	}
+
+	if len(files) == 0 {
+		return EvolveRecommendation{}
+	}
+
+	// Use first non-empty paragraph as description.
+	desc := ""
+	for _, line := range strings.Split(response, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" && !strings.HasPrefix(line, "FILES") && !strings.HasPrefix(line, "---") {
+			desc = line
+			break
+		}
+	}
+	if desc == "" {
+		desc = "CTO recommendation (parsed from prose)"
+	}
+
+	return EvolveRecommendation{
+		Description:   desc,
+		FilesToChange: files,
+		Priority:      "high",
+		Category:      "capability",
+	}
+}
+
+// evolveStatePath returns the path to the evolve state file.
+func evolveStatePath(repoPath string) string {
+	return filepath.Join(repoPath, ".hive", "evolve-state.json")
+}
+
+// loadEvolveState loads saved evolve session state from disk.
+func loadEvolveState(repoPath string) (*EvolveState, error) {
+	data, err := os.ReadFile(evolveStatePath(repoPath))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return &EvolveState{}, nil
+		}
+		return nil, err
+	}
+	var state EvolveState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return nil, fmt.Errorf("parse evolve state: %w", err)
+	}
+	return &state, nil
+}
+
+// saveEvolveState persists evolve session state to disk.
+func saveEvolveState(repoPath string, state *EvolveState) error {
+	dir := filepath.Dir(evolveStatePath(repoPath))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(evolveStatePath(repoPath), data, 0o644)
+}
+
+// clearEvolveState removes the evolve state file after a successful session.
+func clearEvolveState(repoPath string) error {
+	err := os.Remove(evolveStatePath(repoPath))
+	if os.IsNotExist(err) {
+		return nil
+	}
+	return err
 }

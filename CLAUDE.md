@@ -300,6 +300,28 @@ Claude CLI calls have default timeouts to prevent hung subprocesses:
 
 Timeouts only apply when the parent context has no explicit deadline.
 
+## Division of Labour: Claude Code vs The Hive
+
+The hive's fifth invariant is **SELF-EVOLVE** — agents fix agents, not humans. Claude Code (you) handles infrastructure; the hive handles product work.
+
+**Claude Code should:**
+- Fix hive infrastructure (pipeline modes, flags, parsing, prompts)
+- Add new pipeline capabilities (e.g. `--resume`, self-heal)
+- Fix broken LLM prompt engineering or JSON parsing
+- Make architectural decisions about the hive itself
+- Monitor runs, commit, push, clean up branches/PRs
+- Fix compilation errors or test failures in hive infrastructure
+
+**The hive should (via `--evolve` or `--self-improve`):**
+- Build product features (Work Graph, Market Graph, etc.)
+- Fix its own bugs found through telemetry analysis
+- Write application code and tests for the thirteen products
+- Wire new capabilities into the pipeline (e.g. task tracking)
+
+**Rule of thumb:** If it's infrastructure/plumbing for the hive CLI or pipeline orchestration, Claude Code does it. If it's product work the hive can build autonomously, let the hive do it with `--evolve --idea "..."`.
+
+**Critical workflow rule:** Always commit AND push to origin before running `hive --evolve --repo .` or `hive --self-improve --repo .`. The hive's `CleanupForIteration()` runs `git reset --hard origin/main`, which destroys any unpushed local commits.
+
 ## Dependencies
 
 - `github.com/lovyou-ai/eventgraph/go` — event graph, agent runtime, intelligence, pgstore
