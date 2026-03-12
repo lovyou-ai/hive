@@ -8,8 +8,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lovyou-ai/eventgraph/go/pkg/types"
+
 	"github.com/lovyou-ai/hive/pkg/resources"
 	"github.com/lovyou-ai/hive/pkg/roles"
+	"github.com/lovyou-ai/hive/pkg/work"
 	"github.com/lovyou-ai/hive/pkg/workspace"
 )
 
@@ -258,6 +261,31 @@ Respond with ONLY a JSON object: {"description": "what to change, 1-2 sentences"
 	p.skipReviewer = true
 	defer func() { p.skipReviewer = prevSkipReviewer }()
 
+	// Wire work task — best-effort, log warning and continue on any error.
+	ts := work.NewTaskStore(p.store, p.factory, p.signer)
+	var workTask *work.Task
+	if head, headErr := p.store.Head(); headErr == nil && head.IsSome() {
+		causes := []types.EventID{head.Unwrap().ID()}
+		task, createErr := ts.Create(p.humanID, rec.Description, rec.ExpectedImpact, causes, p.convID)
+		if createErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: work task create failed: %v (continuing)\n", createErr)
+			p.emitWarning(PhaseSelfImprove, "work task create failed: %v", createErr)
+		} else {
+			workTask = &task
+			assignee := p.humanID
+			if builder, ok := p.agents[roles.RoleBuilder]; ok {
+				assignee = builder.Runtime.ID()
+			}
+			if assignErr := ts.Assign(p.humanID, task.ID, assignee, []types.EventID{task.ID}, p.convID); assignErr != nil {
+				fmt.Fprintf(os.Stderr, "Warning: work task assign failed: %v (continuing)\n", assignErr)
+				p.emitWarning(PhaseSelfImprove, "work task assign failed: %v", assignErr)
+			}
+		}
+	} else if headErr != nil {
+		fmt.Fprintf(os.Stderr, "Warning: work task store head failed: %v (continuing)\n", headErr)
+		p.emitWarning(PhaseSelfImprove, "work task store head failed: %v", headErr)
+	}
+
 	fmt.Fprintf(os.Stderr, "\n═══ Self-Improve: Running targeted pipeline ═══\n")
 	if err := p.RunTargeted(ctx, targetedInput); err != nil {
 		iterCost := ctoCost
@@ -265,6 +293,18 @@ Respond with ONLY a JSON object: {"description": "what to change, 1-2 sentences"
 			iterCost += t.Snapshot().CostUSD
 		}
 		return iterCost, fmt.Errorf("targeted pipeline: %w", err)
+	}
+
+	// Mark work task complete on success — best-effort.
+	if workTask != nil {
+		completer := p.humanID
+		if builder, ok := p.agents[roles.RoleBuilder]; ok {
+			completer = builder.Runtime.ID()
+		}
+		if completeErr := ts.Complete(completer, workTask.ID, rec.Description, []types.EventID{workTask.ID}, p.convID); completeErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: work task complete failed: %v (continuing)\n", completeErr)
+			p.emitWarning(PhaseSelfImprove, "work task complete failed: %v", completeErr)
+		}
 	}
 
 	iterCost := ctoCost
