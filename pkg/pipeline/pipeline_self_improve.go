@@ -13,7 +13,7 @@ import (
 )
 
 // maxSelfImproveIterations is the maximum number of improvements per session.
-const maxSelfImproveIterations = 3
+const maxSelfImproveIterations = 5
 
 // selfImproveIterationTimeout caps how long a single self-improve iteration
 // (CTO analysis + targeted pipeline run) can take before being killed.
@@ -91,10 +91,9 @@ func (p *Pipeline) runSelfImproveIteration(parentCtx context.Context, iteration 
 	}
 	fmt.Printf("Telemetry: %d past run(s) found.\n", len(telemetryResults))
 
-	// Step 2: Load codebase context (reuse targeted mode Phase 1).
-	// Filter to pipeline-scoped files only — all 41 self-improve iterations have
-	// targeted pkg/pipeline/ exclusively; sending the full codebase wastes ~65%
-	// of CTO input tokens on packages that have never been touched.
+	// Step 2: Load codebase context for CTO analysis.
+	// Filter to .go source files (no tests) with per-file truncation to keep
+	// total input bounded while giving the CTO visibility across all packages.
 	existingFiles, err := product.ReadSourceFiles()
 	if err != nil {
 		return fmt.Errorf("read source files: %w", err)
@@ -119,7 +118,7 @@ func (p *Pipeline) runSelfImproveIteration(parentCtx context.Context, iteration 
 	p.trackers[roles.RoleCTO] = ctoTracker
 	fmt.Printf("  ↳ self-improve CTO analysis using %s\n", model)
 
-	ctoPrompt := fmt.Sprintf(`You are analyzing this codebase and its pipeline telemetry to identify the single highest-impact improvement.
+	ctoPrompt := fmt.Sprintf(`You are the CTO of a self-improving AI agent system. Analyze this codebase and telemetry to identify the single highest-impact improvement.
 
 TELEMETRY DATA (from past pipeline runs):
 %s
@@ -129,17 +128,20 @@ PROJECT STRUCTURE:
 
 %s
 
-Look for:
-- Recurring Guardian alerts (same alert across multiple runs = wasted spend)
-- Slow phases (which phases take disproportionate time?)
-- Code quality issues visible in the codebase itself
-- Missing error handling or robustness gaps
-- Opportunities to reduce complexity or remove dead code
+You have the FULL codebase above — not just the pipeline. Look across ALL packages for improvements.
+
+PRIORITY ORDER (most to least valuable):
+1. Bugs or correctness issues anywhere in the codebase
+2. Missing features that would make the system more capable (new commands, better error recovery, retry logic, richer telemetry, etc.)
+3. Robustness gaps (missing error handling, race conditions, edge cases)
+4. Code quality (dead code, unnecessary complexity, unclear abstractions)
+5. Efficiency improvements (only if significant and clearly justified)
 
 IMPORTANT constraints:
-- Token variance between runs is NORMAL — larger changes use more tokens. Do NOT recommend "fixing context bloat" or "reducing builder tokens" unless you see a clear code bug causing it.
-- Do NOT recommend changes that are already implemented. Check the codebase before recommending.
-- If skip_reason is empty, your recommendation MUST describe a concrete code change, not a diagnosis task.
+- Token/cost variance between runs is NORMAL. Do NOT recommend token optimizations.
+- Do NOT recommend changes already implemented. Read the code carefully.
+- Your recommendation MUST describe a concrete code change, not a diagnosis or investigation.
+- Look beyond pkg/pipeline/ — workspace, roles, resources, spawn, authority, loop, mcp, and cmd/ are all fair game.
 
 Respond with ONLY a JSON object: {"description": "what to change, 1-2 sentences", "files_to_change": ["path/to/file"], "expected_impact": "1 sentence", "priority": "high|medium|low", "skip_reason": "if nothing is worth fixing, explain why here; otherwise empty string"}. No preamble, no explanation, no code blocks, no markdown.`, telemetrySummary, fileListing, keyContext)
 
@@ -171,17 +173,12 @@ Respond with ONLY a JSON object: {"description": "what to change, 1-2 sentences"
 	// Step 6: Run targeted pipeline with the recommendation.
 	// Pre-populate p.telemetry with CTO analysis cost so RunTargeted includes it —
 	// the targeted pipeline resets p.trackers on entry, losing ctoTracker.
-	// Pass ContextFiles so the Builder only sees pipeline-scoped files — the
-	// same filterSelfImproveFiles() set used for CTO analysis. Supplying them
-	// directly avoids a second ReadSourceFiles() call in RunTargeted and prevents
-	// context bloat from unrelated packages reaching the Builder.
+	// Let RunTargeted read the full codebase (no ContextFiles override) so the
+	// builder can work on any package, not just pipeline files.
 	targetedInput := ProductInput{
 		RepoPath:    input.RepoPath,
 		Description: rec.Description,
-		// Use FILES_TO_CHANGE: structured section so parseRelevantFiles uses the
-		// reliable structured extraction path rather than the word-scan fallback.
-		CTOAnalysis:  fmt.Sprintf("Description: %s\nFILES_TO_CHANGE:\n%s\nExpected impact: %s", rec.Description, strings.Join(rec.FilesToChange, "\n"), rec.ExpectedImpact),
-		ContextFiles: pipelineFiles,
+		CTOAnalysis: fmt.Sprintf("Description: %s\nFILES_TO_CHANGE:\n%s\nExpected impact: %s", rec.Description, strings.Join(rec.FilesToChange, "\n"), rec.ExpectedImpact),
 	}
 	if s := ctoTracker.Snapshot(); s.Iterations > 0 {
 		p.telemetry = &PipelineResult{}
@@ -225,32 +222,29 @@ Respond with ONLY a JSON object: {"description": "what to change, 1-2 sentences"
 }
 
 // selfImproveCTOModel returns the model to use for self-improve CTO analysis.
-// Defaults to Haiku — the task is structured JSON output from telemetry data
-// (identify one improvement, list files, output JSON), not deep architectural reasoning.
-// Use --cto-model claude-sonnet-4-6 to escalate if recommendation quality drops.
+// Defaults to Sonnet — the CTO now analyzes the full codebase (not just pipeline)
+// and needs stronger reasoning to find non-trivial improvements across packages.
 func (p *Pipeline) selfImproveCTOModel() string {
 	if p.ctoModel != "" {
 		return p.ctoModel
 	}
-	return "claude-haiku-4-5-20251001"
+	return "claude-sonnet-4-6"
 }
 
-// filterSelfImproveFiles returns a filtered copy of files containing only
-// pipeline-scoped paths: pkg/pipeline/*.go, cmd/hive/main.go, and CLAUDE.md.
-// Cuts CTO analysis input tokens by ~65% — all self-improve iterations have
-// targeted pkg/pipeline/ exclusively; mcp, spawn, loop, authority, workspace,
-// roles, resources, and docs are noise that drives cost with no signal value.
-// Each matched file is truncated to the first maxSelfImproveFileLines lines to
-// prevent input token drift as pipeline files grow across iterations.
-const maxSelfImproveFileLines = 150
+// filterSelfImproveFiles returns a filtered copy of files containing all Go
+// source files and key config files, excluding test files. The CTO sees the
+// full codebase so it can recommend improvements across all packages — not
+// just pipeline efficiency tweaks.
+// Each file is truncated to maxSelfImproveFileLines to keep total input bounded.
+const maxSelfImproveFileLines = 200
 
 func filterSelfImproveFiles(files map[string]string) map[string]string {
 	out := make(map[string]string, len(files))
 	for p, content := range files {
 		switch {
-		case strings.HasPrefix(p, "pkg/pipeline/") && strings.HasSuffix(p, ".go") && !strings.HasSuffix(p, "_test.go"):
+		case strings.HasSuffix(p, ".go") && !strings.HasSuffix(p, "_test.go"):
 			out[p] = truncateLines(content, maxSelfImproveFileLines)
-		case p == "cmd/hive/main.go", p == "CLAUDE.md":
+		case p == "CLAUDE.md", p == "go.mod":
 			out[p] = truncateLines(content, maxSelfImproveFileLines)
 		}
 	}
