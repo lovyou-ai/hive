@@ -152,6 +152,10 @@ func run() error {
 		return fmt.Errorf("register human: %w", err)
 	}
 
+	// Register pipeline content unmarshalers before any store reads —
+	// Head() deserializes the latest event which may be a pipeline type.
+	pipeline.RegisterEventTypes()
+
 	// Bootstrap the event graph if it has no genesis event.
 	if err := bootstrapGraph(s, humanID); err != nil {
 		return fmt.Errorf("bootstrap graph: %w", err)
