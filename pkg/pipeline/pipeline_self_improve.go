@@ -58,12 +58,13 @@ func (p *Pipeline) RunSelfImprove(ctx context.Context, input ProductInput) error
 	}
 
 	pipelineStart := time.Now()
+	totalCost := 0.0
 	p.emitRunStarted("self-improve", input.Description)
 	defer func() {
 		dur := time.Since(pipelineStart)
 		count, _ := p.store.Count()
 		p.emitRunCompleted("self-improve", count, len(p.Agents()), dur,
-			"", false, "", "", 0)
+			"", false, "", "", totalCost)
 	}()
 
 	consecutiveFailures := 0
@@ -72,7 +73,12 @@ func (p *Pipeline) RunSelfImprove(ctx context.Context, input ProductInput) error
 		iterationStart := time.Now()
 		p.emitPhaseStarted(PhaseSelfImprove, iteration)
 
-		if err := p.runSelfImproveIteration(ctx, iteration, input); err != nil {
+		err := p.runSelfImproveIteration(ctx, iteration, input)
+		for _, t := range p.trackers {
+			totalCost += t.Snapshot().CostUSD
+		}
+
+		if err != nil {
 			if err == errSelfImproveStop {
 				p.emitPhaseCompleted(PhaseSelfImprove, time.Since(iterationStart), iteration)
 				break
