@@ -1,4 +1,7 @@
 {
+  "env": {
+    "PATH": "/c/Users/matt_/go-sdk/go/bin:/c/Users/matt_/sdk/go/bin:/c/Users/matt_/go/bin:/c/Users/matt_/.local/bin:/c/Program Files/Docker/Docker/resources/bin:/usr/bin:/mingw64/bin:${PATH}"
+  },
   "permissions": {
     "allow": [
       "Bash(docker compose:*)",
@@ -10,7 +13,10 @@
       "Read(//c/Users/matt_/scoop/**)",
       "Read(//c/tools/go/**)",
       "Bash(cmd.exe /c \"where go\" 2>/dev/null)",
-      "Bash(cmd.exe /c \"go version\" 2>&1)"
+      "Bash(cmd.exe /c \"go version\" 2>&1)",
+      "Bash(export PATH=\"/c/Users/matt_/go-sdk/go/bin:/c/Users/matt_/sdk/go/bin:/c/Users/matt_/go/bin:/c/Users/matt_/.local/bin:/c/Program Files/Docker/Docker/resources/bin:/usr/bin:/mingw64/bin:$PATH\")",
+      "Read(//tmp/**)",
+      "Bash(export PATH=\"/c/Users/matt_/go-sdk/go/bin:/c/Users/matt_/sdk/go/bin:/c/Users/matt_/go/bin:/c/Users/matt_/.local/bin:/c/Program Files/Docker/Docker/resources/bin:/usr/bin:/mingw64/bin:$PATH\" && git check-ignore .claude/settings.local.json 2>&1)"
     ]
   }
 }
