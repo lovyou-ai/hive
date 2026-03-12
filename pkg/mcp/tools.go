@@ -458,6 +458,167 @@ func registerWorkTools(s *Server, deps Deps, audit *AuditLogger, authCheck *Auth
 			return TextResult(string(data)), nil
 		},
 	)
+
+	// work_assign_task — assign a task to an actor (write, authority-checked)
+	assignHandler := func(args map[string]any) (ToolCallResult, error) {
+		taskIDStr, ok := stringArg(args, "task_id")
+		if !ok || taskIDStr == "" {
+			return ErrorResult("task_id is required"), nil
+		}
+		taskID, err := types.NewEventID(taskIDStr)
+		if err != nil {
+			return ErrorResult(fmt.Sprintf("invalid task_id: %v", err)), nil
+		}
+
+		// assignee defaults to the calling agent if not specified
+		var assignee types.ActorID
+		if assigneeStr, ok := stringArg(args, "assignee"); ok && assigneeStr != "" {
+			assignee, err = types.NewActorID(assigneeStr)
+			if err != nil {
+				return ErrorResult(fmt.Sprintf("invalid assignee: %v", err)), nil
+			}
+		} else {
+			assignee = deps.AgentID
+		}
+
+		head, err := deps.Store.Head()
+		if err != nil {
+			return ErrorResult(fmt.Sprintf("store error: %v", err)), nil
+		}
+		if !head.IsSome() {
+			return ErrorResult("graph has no events (not bootstrapped)"), nil
+		}
+		causes := []types.EventID{head.Unwrap().ID()}
+
+		if err := ts.Assign(deps.AgentID, taskID, assignee, causes, deps.ConvID); err != nil {
+			return ErrorResult(fmt.Sprintf("assign task: %v", err)), nil
+		}
+		result := map[string]any{
+			"task_id":    taskID.Value(),
+			"assignee":   assignee.Value(),
+			"assigned_by": deps.AgentID.Value(),
+		}
+		data, _ := json.MarshalIndent(result, "", "  ")
+		return TextResult(string(data)), nil
+	}
+
+	wrappedAssign := WrapHandler(audit, "work_assign_task", WrapWriteHandler(authCheck, "work_assign_task", assignHandler))
+	s.RegisterTool("work_assign_task",
+		"Assign a work task to an actor. Defaults to assigning to yourself if no assignee is given. Emits a signed work.task.assigned event.",
+		mustSchema(`{
+			"type": "object",
+			"properties": {
+				"task_id":  {"type": "string", "description": "Task event ID (from work_create_task)"},
+				"assignee": {"type": "string", "description": "Actor ID to assign the task to (defaults to yourself)"}
+			},
+			"required": ["task_id"]
+		}`),
+		wrappedAssign,
+	)
+
+	// work_complete_task — mark a task as completed (write, authority-checked)
+	completeHandler := func(args map[string]any) (ToolCallResult, error) {
+		taskIDStr, ok := stringArg(args, "task_id")
+		if !ok || taskIDStr == "" {
+			return ErrorResult("task_id is required"), nil
+		}
+		taskID, err := types.NewEventID(taskIDStr)
+		if err != nil {
+			return ErrorResult(fmt.Sprintf("invalid task_id: %v", err)), nil
+		}
+		summary, _ := stringArg(args, "summary")
+
+		head, err := deps.Store.Head()
+		if err != nil {
+			return ErrorResult(fmt.Sprintf("store error: %v", err)), nil
+		}
+		if !head.IsSome() {
+			return ErrorResult("graph has no events (not bootstrapped)"), nil
+		}
+		causes := []types.EventID{head.Unwrap().ID()}
+
+		if err := ts.Complete(deps.AgentID, taskID, summary, causes, deps.ConvID); err != nil {
+			return ErrorResult(fmt.Sprintf("complete task: %v", err)), nil
+		}
+		result := map[string]any{
+			"task_id":      taskID.Value(),
+			"completed_by": deps.AgentID.Value(),
+			"summary":      summary,
+		}
+		data, _ := json.MarshalIndent(result, "", "  ")
+		return TextResult(string(data)), nil
+	}
+
+	wrappedComplete := WrapHandler(audit, "work_complete_task", WrapWriteHandler(authCheck, "work_complete_task", completeHandler))
+	s.RegisterTool("work_complete_task",
+		"Mark a work task as completed. Emits a signed work.task.completed event with an optional summary.",
+		mustSchema(`{
+			"type": "object",
+			"properties": {
+				"task_id": {"type": "string", "description": "Task event ID to complete"},
+				"summary": {"type": "string", "description": "Optional completion summary"}
+			},
+			"required": ["task_id"]
+		}`),
+		wrappedComplete,
+	)
+
+	// work_query_tasks — query tasks, optionally filtered by assignee (read, audit-only)
+	regTool(s, audit, "work_query_tasks",
+		"Query work tasks. Without filters, lists all tasks. With assignee, returns tasks assigned to that actor.",
+		mustSchema(`{
+			"type": "object",
+			"properties": {
+				"assignee": {"type": "string", "description": "Filter by assignee actor ID (omit to list all tasks)"},
+				"limit":    {"type": "integer", "description": "Max tasks to return when listing all (default 20, max 100)"}
+			}
+		}`),
+		func(args map[string]any) (ToolCallResult, error) {
+			taskToMap := func(t work.Task) map[string]any {
+				return map[string]any{
+					"id":          t.ID.Value(),
+					"title":       t.Title,
+					"description": t.Description,
+					"created_by":  t.CreatedBy.Value(),
+				}
+			}
+
+			if assigneeStr, ok := stringArg(args, "assignee"); ok && assigneeStr != "" {
+				assignee, err := types.NewActorID(assigneeStr)
+				if err != nil {
+					return ErrorResult(fmt.Sprintf("invalid assignee: %v", err)), nil
+				}
+				tasks, err := ts.GetByAssignee(assignee)
+				if err != nil {
+					return ErrorResult(fmt.Sprintf("query tasks: %v", err)), nil
+				}
+				items := make([]map[string]any, 0, len(tasks))
+				for _, t := range tasks {
+					items = append(items, taskToMap(t))
+				}
+				data, _ := json.MarshalIndent(items, "", "  ")
+				return TextResult(string(data)), nil
+			}
+
+			limit := intArg(args, "limit", 20)
+			if limit <= 0 {
+				limit = 20
+			}
+			if limit > 100 {
+				limit = 100
+			}
+			tasks, err := ts.List(limit)
+			if err != nil {
+				return ErrorResult(fmt.Sprintf("list tasks: %v", err)), nil
+			}
+			items := make([]map[string]any, 0, len(tasks))
+			for _, t := range tasks {
+				items = append(items, taskToMap(t))
+			}
+			data, _ := json.MarshalIndent(items, "", "  ")
+			return TextResult(string(data)), nil
+		},
+	)
 }
 
 // unmarshalAgentContent deserializes JSON into the correct EventContent type.
