@@ -131,3 +131,79 @@ func TestTaskStore_List_RespectsLimit(t *testing.T) {
 		t.Errorf("expected 3 tasks (limit=3); got %d", len(tasks))
 	}
 }
+
+var testAssignee = types.MustActorID("actor_00000000000000000000000000000002")
+
+func TestTaskStore_Assign(t *testing.T) {
+	s, causes := setupStore(t)
+	ts := newTaskStore(t, s)
+
+	task, err := ts.Create(testActor, "Do the thing", "", causes, testConv)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	if err := ts.Assign(testActor, task.ID, testAssignee, causes, testConv); err != nil {
+		t.Fatalf("Assign: %v", err)
+	}
+}
+
+func TestTaskStore_Complete(t *testing.T) {
+	s, causes := setupStore(t)
+	ts := newTaskStore(t, s)
+
+	task, err := ts.Create(testActor, "Ship the feature", "needs tests", causes, testConv)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	if err := ts.Complete(testActor, task.ID, "shipped in PR #42", causes, testConv); err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+}
+
+func TestTaskStore_GetByAssignee_Empty(t *testing.T) {
+	s, _ := setupStore(t)
+	ts := newTaskStore(t, s)
+
+	tasks, err := ts.GetByAssignee(testAssignee)
+	if err != nil {
+		t.Fatalf("GetByAssignee (empty): %v", err)
+	}
+	if len(tasks) != 0 {
+		t.Errorf("expected 0 tasks; got %d", len(tasks))
+	}
+}
+
+func TestTaskStore_GetByAssignee(t *testing.T) {
+	s, causes := setupStore(t)
+	ts := newTaskStore(t, s)
+
+	taskA, err := ts.Create(testActor, "Task A", "", causes, testConv)
+	if err != nil {
+		t.Fatalf("Create A: %v", err)
+	}
+	taskB, err := ts.Create(testActor, "Task B", "", causes, testConv)
+	if err != nil {
+		t.Fatalf("Create B: %v", err)
+	}
+
+	// Assign A to testAssignee, B to testActor (not the target assignee).
+	if err := ts.Assign(testActor, taskA.ID, testAssignee, causes, testConv); err != nil {
+		t.Fatalf("Assign A: %v", err)
+	}
+	if err := ts.Assign(testActor, taskB.ID, testActor, causes, testConv); err != nil {
+		t.Fatalf("Assign B: %v", err)
+	}
+
+	tasks, err := ts.GetByAssignee(testAssignee)
+	if err != nil {
+		t.Fatalf("GetByAssignee: %v", err)
+	}
+	if len(tasks) != 1 {
+		t.Fatalf("expected 1 task for testAssignee; got %d", len(tasks))
+	}
+	if tasks[0].Title != "Task A" {
+		t.Errorf("Title = %q; want %q", tasks[0].Title, "Task A")
+	}
+}
