@@ -160,6 +160,10 @@ Project structure:
 	// Early-exit if the CTO analysis identifies no relevant files — the change
 	// is already implemented or cannot be mapped to specific files.
 	if len(parseRelevantFiles(ctoAnalysis)) == 0 {
+		understandDuration := time.Since(phaseStart)
+		timings = append(timings, phaseTiming{"Understand", understandDuration})
+		p.telemetry.addPhaseTiming("Understand", understandDuration)
+		p.emitPhaseCompleted(Phase("understand"), understandDuration, 0)
 		fmt.Fprintln(os.Stderr, "CTO analysis identified no relevant files — change may already be implemented. Skipping.")
 		p.emitProgress(Phase("understand"), "CTO analysis identified no relevant files — change may already be implemented, skipping")
 		return nil
