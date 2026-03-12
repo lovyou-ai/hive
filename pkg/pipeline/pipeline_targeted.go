@@ -569,7 +569,9 @@ Read the current code, apply the fixes, and run tests to verify they pass.`, lan
 			}
 
 			_ = p.product.StageAll()
-			_ = p.product.Commit("fix: address reviewer feedback")
+			if commitErr := p.product.Commit("fix: address reviewer feedback"); commitErr != nil {
+				return nil, fmt.Errorf("commit revision: %w", commitErr)
+			}
 
 			updatedFiles, readErr := p.product.ReadSourceFiles()
 			if readErr != nil {
