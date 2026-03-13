@@ -161,6 +161,116 @@ setInterval(refresh, REFRESH_MS);
 </body>
 </html>`
 
+// workspaceDashboardHTML is the interactive workspace reputation dashboard served at GET /w/{workspace}.
+// Placeholders {{WORKSPACE}} and {{API_TOKEN}} are replaced at serve time.
+const workspaceDashboardHTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{WORKSPACE}} — Market Graph</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: system-ui, -apple-system, sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; padding: 2rem; }
+h1 { font-size: 1.5rem; font-weight: 600; color: #f8fafc; margin-bottom: 0.25rem; }
+.subtitle { font-size: 0.875rem; color: #64748b; margin-bottom: 1.5rem; }
+.meta { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.25rem; font-size: 0.8125rem; color: #64748b; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; animation: pulse 2s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+.error { background: #3b1010; color: #fca5a5; padding: 0.75rem 1rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.875rem; }
+.empty { color: #475569; font-size: 0.875rem; padding: 2rem 0; text-align: center; }
+.actor-card { background: #1e293b; border-radius: 8px; padding: 1.25rem; margin-bottom: 1.25rem; }
+.actor-id { font-family: monospace; font-size: 0.8125rem; color: #7c3aed; margin-bottom: 0.75rem; }
+.card-section { margin-top: 0.75rem; }
+.card-section h3 { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: #475569; margin-bottom: 0.5rem; }
+table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+th { text-align: left; padding: 0.4rem 0.6rem; color: #64748b; font-weight: 500; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid #334155; }
+td { padding: 0.5rem 0.6rem; border-bottom: 1px solid #1e293b; vertical-align: middle; }
+.skill { display: inline-block; padding: 0.2em 0.55em; border-radius: 4px; font-size: 0.72rem; font-weight: 600; background: #1e3a5f; color: #60a5fa; }
+.count { font-weight: 600; color: #f1f5f9; }
+.rating { color: #fbbf24; font-weight: 600; }
+.note { color: #94a3b8; font-size: 0.8125rem; }
+.reviewer { font-family: monospace; font-size: 0.72rem; color: #7c3aed; }
+</style>
+</head>
+<body>
+<h1>{{WORKSPACE}}</h1>
+<p class="subtitle">Workspace reputation dashboard</p>
+<div class="meta">
+  <span class="dot"></span>
+  <span id="status-line">Connecting...</span>
+</div>
+<div id="error-box" class="error" style="display:none"></div>
+<div id="content"></div>
+<script>
+const WORKSPACE = "{{WORKSPACE}}";
+const API_TOKEN = "{{API_TOKEN}}";
+const BASE = "/w/" + WORKSPACE;
+const REFRESH_MS = 15000;
+
+function esc(s) {
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+function shortID(id) {
+  return id ? id.slice(0, 8) + "\u2026" : "\u2014";
+}
+
+async function fetchJSON(path) {
+  const res = await fetch(path, { headers: { Authorization: "Bearer " + API_TOKEN } });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  return res.json();
+}
+
+async function refresh() {
+  try {
+    const data = await fetchJSON(BASE + "/actors");
+    document.getElementById("error-box").style.display = "none";
+    document.getElementById("status-line").textContent = "Live \u2014 " + new Date().toLocaleTimeString();
+    const actors = data.actors || [];
+    if (!actors.length) {
+      document.getElementById("content").innerHTML = '<p class="empty">No reputation data yet.</p>';
+      return;
+    }
+    let html = "";
+    for (const a of actors) {
+      html += '<div class="actor-card">';
+      html += '<div class="actor-id">' + esc(a.id) + '</div>';
+      const skills = a.skills || {};
+      const skillKeys = Object.keys(skills);
+      if (skillKeys.length > 0) {
+        html += '<div class="card-section"><h3>Endorsements</h3><table><thead><tr><th>Skill</th><th>Count</th></tr></thead><tbody>';
+        for (const sk of skillKeys) {
+          html += '<tr><td><span class="skill">' + esc(sk) + '</span></td><td class="count">' + esc(skills[sk]) + '</td></tr>';
+        }
+        html += '</tbody></table></div>';
+      }
+      const reviews = a.reviews || [];
+      if (reviews.length > 0) {
+        html += '<div class="card-section"><h3>Reviews</h3><table><thead><tr><th>Reviewer</th><th>Rating</th><th>Note</th></tr></thead><tbody>';
+        for (const rv of reviews) {
+          html += '<tr><td class="reviewer">' + esc(shortID(rv.reviewer_id)) + '</td>';
+          html += '<td class="rating">' + esc(rv.rating) + '/5</td>';
+          html += '<td class="note">' + esc(rv.note || "") + '</td></tr>';
+        }
+        html += '</tbody></table></div>';
+      }
+      html += '</div>';
+    }
+    document.getElementById("content").innerHTML = html;
+  } catch (err) {
+    document.getElementById("error-box").textContent = "Error: " + err.message;
+    document.getElementById("error-box").style.display = "";
+    document.getElementById("status-line").textContent = "Error";
+  }
+}
+
+refresh();
+setInterval(refresh, REFRESH_MS);
+</script>
+</body>
+</html>`
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "market-server: %v\n", err)
