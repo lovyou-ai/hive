@@ -351,9 +351,10 @@ func (p *Product) SyncMain() error {
 	return nil
 }
 
-// CleanupForIteration resets the repo to a clean main branch, discarding
-// any uncommitted changes and deleting local hive/* branches left over from
-// failed self-improve iterations. Safe to call at the start of each iteration.
+// CleanupForIteration resets the repo to a clean state matching origin/main,
+// discarding any uncommitted changes and deleting local hive/* branches left
+// over from failed iterations. Safe to call at the start of each iteration.
+// Works in both primary checkouts and worktrees (where main may be locked).
 func (p *Product) CleanupForIteration() error {
 	// Abort any in-progress merge/rebase that might block checkout.
 	_ = p.git("merge", "--abort")
@@ -363,10 +364,9 @@ func (p *Product) CleanupForIteration() error {
 	_ = p.git("checkout", "--", ".")
 	_ = p.git("clean", "-fd")
 
-	// Switch to main (may already be there).
-	if err := p.git("checkout", "main"); err != nil {
-		return fmt.Errorf("checkout main: %w", err)
-	}
+	// Try to switch to main. In a worktree, main is locked by the primary
+	// checkout — that's fine, we'll reset whatever branch we're on.
+	_ = p.git("checkout", "main")
 
 	// Delete local hive/* branches (stale feature branches from failed runs).
 	cmd := exec.Command("git", "branch", "--list", "hive/*")
@@ -425,10 +425,12 @@ func (p *Product) PushBranch() error {
 func (p *Product) CreateWorktree(name string) (*Product, error) {
 	dir := filepath.Join(os.TempDir(), fmt.Sprintf("hive-worktree-%s-%d", name, time.Now().UnixNano()))
 
-	// Create the worktree checked out at main (or HEAD if main doesn't exist).
-	if err := p.git("worktree", "add", dir, "main"); err != nil {
-		// Fallback: try HEAD if main branch doesn't exist.
-		if err2 := p.git("worktree", "add", dir); err2 != nil {
+	// Create the worktree on a detached HEAD at origin/main. We can't
+	// check out `main` because it's already checked out in the primary
+	// worktree — git forbids two worktrees on the same branch.
+	if err := p.git("worktree", "add", "--detach", dir, "origin/main"); err != nil {
+		// Fallback: try just HEAD if origin/main doesn't exist.
+		if err2 := p.git("worktree", "add", "--detach", dir); err2 != nil {
 			return nil, fmt.Errorf("create worktree: %w (also tried HEAD: %v)", err, err2)
 		}
 	}
@@ -443,17 +445,53 @@ func (p *Product) CreateWorktree(name string) (*Product, error) {
 	_ = wt.git("config", "user.name", "hive")
 	_ = wt.git("config", "user.email", "hive@lovyou.ai")
 
-	// Symlink .hive/ from source repo so telemetry and evolve state are
-	// accessible in the worktree without copying.
+	// Link .hive/ from source repo so telemetry and evolve state are
+	// accessible in the worktree without copying. Try junction first
+	// (works without admin on Windows), fall back to symlink, then copy.
 	srcHive := filepath.Join(p.Dir, ".hive")
 	if _, err := os.Stat(srcHive); err == nil {
 		dstHive := filepath.Join(dir, ".hive")
-		if linkErr := os.Symlink(srcHive, dstHive); linkErr != nil {
-			fmt.Fprintf(os.Stderr, "Warning: could not symlink .hive: %v (telemetry may be unavailable)\n", linkErr)
+		if !linkDir(srcHive, dstHive) {
+			// Last resort: copy the directory.
+			if cpErr := copyDir(srcHive, dstHive); cpErr != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not link .hive: %v (telemetry may be unavailable)\n", cpErr)
+			}
 		}
 	}
 
 	return wt, nil
+}
+
+// linkDir creates a directory junction (Windows) or symlink (Unix) from src to dst.
+// Returns true on success.
+func linkDir(src, dst string) bool {
+	// On Windows, try a directory junction first (no admin required).
+	if junctionCmd := exec.Command("cmd", "/c", "mklink", "/J", dst, src); junctionCmd != nil {
+		if err := junctionCmd.Run(); err == nil {
+			return true
+		}
+	}
+	// Fall back to symlink (works on Unix, needs admin on Windows).
+	return os.Symlink(src, dst) == nil
+}
+
+// copyDir recursively copies a directory tree.
+func copyDir(src, dst string) error {
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(src, path)
+		target := filepath.Join(dst, rel)
+		if info.IsDir() {
+			return os.MkdirAll(target, info.Mode())
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, info.Mode())
+	})
 }
 
 // RemoveWorktree removes this product's worktree directory and prunes the
