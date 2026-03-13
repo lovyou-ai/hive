@@ -33,6 +33,7 @@ type EndorsementContent struct {
 	EndorserID types.ActorID `json:"EndorserID"`
 	SubjectID  types.ActorID `json:"SubjectID"`
 	Skill      string        `json:"Skill"`
+	Workspace  string        `json:"Workspace,omitempty"`
 }
 
 func (c EndorsementContent) EventTypeName() string { return "market.reputation.endorsement" }
@@ -45,6 +46,7 @@ type ReviewContent struct {
 	TaskID     types.EventID `json:"TaskID"`
 	Rating     int           `json:"Rating"`
 	Note       string        `json:"Note,omitempty"`
+	Workspace  string        `json:"Workspace,omitempty"`
 }
 
 func (c ReviewContent) EventTypeName() string { return "market.reputation.review" }
