@@ -460,10 +460,11 @@ func (p *Product) CreateWorktree(name string) (*Product, error) {
 	}
 
 	// Fix go.mod replace directives that use relative paths. The worktree
-	// lives in a temp dir, so "../sibling" paths won't resolve. Rewrite
-	// them to absolute paths based on the source repo's location.
-	if err := fixGoModReplace(dir, p.Dir); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not fix go.mod replace directives: %v\n", err)
+	// lives in a temp dir, so "../sibling" paths won't resolve. Create
+	// junctions/symlinks for sibling directories so relative paths work
+	// even after git reset --hard restores the original go.mod.
+	if err := linkGoModDeps(dir, p.Dir); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not link go.mod deps: %v\n", err)
 	}
 
 	return wt, nil
@@ -501,23 +502,22 @@ func copyDir(src, dst string) error {
 	})
 }
 
-// fixGoModReplace rewrites relative replace directives in go.mod to absolute
-// paths. In a worktree at /tmp/..., "../eventgraph/go" doesn't resolve, so we
-// rewrite it to the absolute path relative to the source repo.
-func fixGoModReplace(worktreeDir, sourceDir string) error {
+// linkGoModDeps creates junctions/symlinks for relative replace directives in
+// go.mod. Instead of rewriting go.mod (which gets reset by git), we create
+// the expected directory structure so relative paths resolve from the worktree.
+// For example, "replace foo => ../eventgraph/go" needs "../eventgraph/go" to
+// exist relative to the worktree, so we link it to the real location.
+func linkGoModDeps(worktreeDir, sourceDir string) error {
 	gomod := filepath.Join(worktreeDir, "go.mod")
 	data, err := os.ReadFile(gomod)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil // no go.mod, nothing to fix
+			return nil
 		}
 		return err
 	}
 
-	lines := strings.Split(string(data), "\n")
-	changed := false
-	for i, line := range lines {
-		// Match: replace module => ../relative/path
+	for _, line := range strings.Split(string(data), "\n") {
 		if !strings.HasPrefix(strings.TrimSpace(line), "replace ") {
 			continue
 		}
@@ -527,20 +527,33 @@ func fixGoModReplace(worktreeDir, sourceDir string) error {
 		}
 		target := strings.TrimSpace(parts[1])
 		if !strings.HasPrefix(target, ".") {
-			continue // already absolute or a module version
+			continue
 		}
-		// Resolve relative to source repo, then make absolute.
-		abs := filepath.Join(sourceDir, target)
-		abs = filepath.Clean(abs)
-		abs = filepath.ToSlash(abs) // go.mod uses forward slashes
-		lines[i] = parts[0] + "=> " + abs
-		changed = true
-	}
 
-	if !changed {
-		return nil
+		// Resolve where the replace target actually lives (relative to source repo).
+		realPath := filepath.Join(sourceDir, target)
+		realPath = filepath.Clean(realPath)
+		if _, err := os.Stat(realPath); err != nil {
+			continue // target doesn't exist in source repo either
+		}
+
+		// Resolve where the worktree expects it (relative to worktree dir).
+		expectedPath := filepath.Join(worktreeDir, target)
+		expectedPath = filepath.Clean(expectedPath)
+		if _, err := os.Stat(expectedPath); err == nil {
+			continue // already exists
+		}
+
+		// Create parent directory and link.
+		if err := os.MkdirAll(filepath.Dir(expectedPath), 0755); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not create parent for %s: %v\n", target, err)
+			continue
+		}
+		if !linkDir(realPath, expectedPath) {
+			fmt.Fprintf(os.Stderr, "Warning: could not link %s → %s\n", target, realPath)
+		}
 	}
-	return os.WriteFile(gomod, []byte(strings.Join(lines, "\n")), 0644)
+	return nil
 }
 
 // RemoveWorktree removes this product's worktree directory and prunes the
