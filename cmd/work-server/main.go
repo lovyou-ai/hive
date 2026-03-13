@@ -12,7 +12,9 @@
 //
 //	POST /tasks                    create a task
 //	GET  /tasks                    list tasks (?open=true, ?priority=high)
+//	GET  /tasks/{id}               get full task details (title, description, priority, status, assignee, blocked)
 //	GET  /tasks/{id}/status        get task status
+//	GET  /tasks/{id}/events        get audit trail (ordered work.task.* events for this task)
 //	POST /tasks/{id}/assign        assign task (body: {"assignee":"..."})
 //	POST /tasks/{id}/complete      complete task (body: {"summary":"..."})
 package main
@@ -26,6 +28,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
 	"strings"
 	"syscall"
 
@@ -130,7 +133,9 @@ func run() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /tasks", srv.auth(srv.createTask))
 	mux.HandleFunc("GET /tasks", srv.auth(srv.listTasks))
+	mux.HandleFunc("GET /tasks/{id}", srv.auth(srv.getTask))
 	mux.HandleFunc("GET /tasks/{id}/status", srv.auth(srv.getTaskStatus))
+	mux.HandleFunc("GET /tasks/{id}/events", srv.auth(srv.getTaskEvents))
 	mux.HandleFunc("POST /tasks/{id}/assign", srv.auth(srv.assignTask))
 	mux.HandleFunc("POST /tasks/{id}/complete", srv.auth(srv.completeTask))
 
@@ -353,6 +358,135 @@ func (sv *server) completeTask(w http.ResponseWriter, r *http.Request) {
 		"task_id": taskID.Value(),
 		"status":  "completed",
 	})
+}
+
+// getTask handles GET /tasks/{id}
+// Returns full task details: title, description, priority, status, assignee, blocked.
+func (sv *server) getTask(w http.ResponseWriter, r *http.Request) {
+	taskID, ok := parseTaskID(w, r)
+	if !ok {
+		return
+	}
+
+	// Fetch the creation event for base task fields.
+	ev, err := sv.store.Get(taskID)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "task not found: "+err.Error())
+		return
+	}
+	c, ok := ev.Content().(work.TaskCreatedContent)
+	if !ok {
+		writeErr(w, http.StatusNotFound, "event is not a task")
+		return
+	}
+
+	status, err := sv.ts.GetStatus(taskID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "get status: "+err.Error())
+		return
+	}
+	priority, err := sv.ts.GetPriority(taskID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "get priority: "+err.Error())
+		return
+	}
+	blocked, err := sv.ts.IsBlocked(taskID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "blocked check: "+err.Error())
+		return
+	}
+
+	// Find current assignee: assigned events are returned newest-first, so the first match wins.
+	var assignee string
+	assignedPage, err := sv.store.ByType(work.EventTypeTaskAssigned, 1000, types.None[types.Cursor]())
+	if err == nil {
+		for _, ae := range assignedPage.Items() {
+			ac, ok := ae.Content().(work.TaskAssignedContent)
+			if ok && ac.TaskID == taskID {
+				assignee = ac.AssignedTo.Value()
+				break
+			}
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id":          taskID.Value(),
+		"title":       c.Title,
+		"description": c.Description,
+		"priority":    string(priority),
+		"status":      string(status),
+		"created_by":  c.CreatedBy.Value(),
+		"assignee":    assignee,
+		"blocked":     blocked,
+	})
+}
+
+// getTaskEvents handles GET /tasks/{id}/events
+// Returns the ordered audit trail of all work.task.* events causally linked to this task.
+func (sv *server) getTaskEvents(w http.ResponseWriter, r *http.Request) {
+	taskID, ok := parseTaskID(w, r)
+	if !ok {
+		return
+	}
+
+	var collected []event.Event
+
+	// Include the task creation event itself.
+	if ev, err := sv.store.Get(taskID); err == nil {
+		if _, ok := ev.Content().(work.TaskCreatedContent); ok {
+			collected = append(collected, ev)
+		}
+	}
+
+	// Scan all other work event types for events that reference this task.
+	for _, et := range []types.EventType{
+		work.EventTypeTaskAssigned,
+		work.EventTypeTaskCompleted,
+		work.EventTypeTaskDependencyAdded,
+		work.EventTypeTaskPrioritySet,
+	} {
+		page, err := sv.store.ByType(et, 1000, types.None[types.Cursor]())
+		if err != nil {
+			continue
+		}
+		for _, ev := range page.Items() {
+			if taskIDFromContent(ev.Content()) == taskID {
+				collected = append(collected, ev)
+			}
+		}
+	}
+
+	// Sort chronologically (oldest first) for a readable audit trail.
+	sort.Slice(collected, func(i, j int) bool {
+		return collected[i].Timestamp().Value().Before(collected[j].Timestamp().Value())
+	})
+
+	items := make([]map[string]any, 0, len(collected))
+	for _, ev := range collected {
+		items = append(items, map[string]any{
+			"id":        ev.ID().Value(),
+			"type":      ev.Type().Value(),
+			"source":    ev.Source().Value(),
+			"timestamp": ev.Timestamp().String(),
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"task_id": taskID.Value(), "events": items})
+}
+
+// taskIDFromContent extracts the TaskID field from a work event content struct.
+// Returns zero value EventID if the content type does not reference a task ID.
+func taskIDFromContent(content any) types.EventID {
+	switch c := content.(type) {
+	case work.TaskAssignedContent:
+		return c.TaskID
+	case work.TaskCompletedContent:
+		return c.TaskID
+	case work.TaskDependencyContent:
+		return c.TaskID
+	case work.TaskPrioritySetContent:
+		return c.TaskID
+	}
+	return types.EventID{}
 }
 
 // --- Helpers ---
