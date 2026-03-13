@@ -3,20 +3,29 @@
 //
 // Environment variables:
 //
-//	MARKET_HUMAN   — display name of the human operator (defaults to "operator")
-//	MARKET_API_KEY — API key for auth; callers pass Authorization: Bearer <key> (required)
-//	DATABASE_URL   — Postgres DSN (optional; defaults to in-memory)
-//	PORT           — HTTP port to listen on (optional; defaults to 8081)
+//	MARKET_HUMAN      — display name of the human operator (defaults to "operator")
+//	MARKET_API_KEY    — API key for auth; callers pass Authorization: Bearer <key> (required)
+//	MARKET_API_TOKEN  — bearer token for workspace-scoped external API; falls back to MARKET_API_KEY if unset
+//	DATABASE_URL      — Postgres DSN (optional; defaults to in-memory)
+//	PORT              — HTTP port to listen on (optional; defaults to 8081)
 //
 // Endpoints:
 //
-//	GET  /                          read-only dashboard (HTML, no auth required)
-//	GET  /health                    liveness probe
-//	GET  /actors                    list all actors with reputation data
-//	POST /actors/{id}/endorse       endorse an actor for a skill
-//	GET  /actors/{id}/reputation    get accumulated skill endorsements for an actor
-//	POST /actors/{id}/review        leave a review for an actor after a task
-//	GET  /actors/{id}/reviews       list all reviews for an actor
+//	GET  /                                          read-only dashboard (HTML, no auth required)
+//	GET  /health                                    liveness probe
+//	GET  /actors                                    list all actors with reputation data
+//	POST /actors/{id}/endorse                       endorse an actor for a skill
+//	GET  /actors/{id}/reputation                    get accumulated skill endorsements for an actor
+//	POST /actors/{id}/review                        leave a review for an actor after a task
+//	GET  /actors/{id}/reviews                       list all reviews for an actor
+//
+// Workspace-scoped routes (authenticated via MARKET_API_TOKEN):
+//
+//	GET  /w/{workspace}                             workspace reputation dashboard (HTML, no auth required)
+//	GET  /w/{workspace}/actors                      list actors with reputation data in the workspace
+//	POST /w/{workspace}/actors/{id}/endorse         endorse an actor in the workspace
+//	GET  /w/{workspace}/actors/{id}/reputation      get workspace-scoped reputation for an actor
+//	POST /w/{workspace}/actors/{id}/review          leave a review for an actor in the workspace
 package main
 
 import (
@@ -152,6 +161,116 @@ setInterval(refresh, REFRESH_MS);
 </body>
 </html>`
 
+// workspaceDashboardHTML is the interactive workspace reputation dashboard served at GET /w/{workspace}.
+// Placeholders {{WORKSPACE}} and {{API_TOKEN}} are replaced at serve time.
+const workspaceDashboardHTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{WORKSPACE}} — Market Graph</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: system-ui, -apple-system, sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; padding: 2rem; }
+h1 { font-size: 1.5rem; font-weight: 600; color: #f8fafc; margin-bottom: 0.25rem; }
+.subtitle { font-size: 0.875rem; color: #64748b; margin-bottom: 1.5rem; }
+.meta { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.25rem; font-size: 0.8125rem; color: #64748b; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; animation: pulse 2s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+.error { background: #3b1010; color: #fca5a5; padding: 0.75rem 1rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.875rem; }
+.empty { color: #475569; font-size: 0.875rem; padding: 2rem 0; text-align: center; }
+.actor-card { background: #1e293b; border-radius: 8px; padding: 1.25rem; margin-bottom: 1.25rem; }
+.actor-id { font-family: monospace; font-size: 0.8125rem; color: #7c3aed; margin-bottom: 0.75rem; }
+.card-section { margin-top: 0.75rem; }
+.card-section h3 { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: #475569; margin-bottom: 0.5rem; }
+table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+th { text-align: left; padding: 0.4rem 0.6rem; color: #64748b; font-weight: 500; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid #334155; }
+td { padding: 0.5rem 0.6rem; border-bottom: 1px solid #1e293b; vertical-align: middle; }
+.skill { display: inline-block; padding: 0.2em 0.55em; border-radius: 4px; font-size: 0.72rem; font-weight: 600; background: #1e3a5f; color: #60a5fa; }
+.count { font-weight: 600; color: #f1f5f9; }
+.rating { color: #fbbf24; font-weight: 600; }
+.note { color: #94a3b8; font-size: 0.8125rem; }
+.reviewer { font-family: monospace; font-size: 0.72rem; color: #7c3aed; }
+</style>
+</head>
+<body>
+<h1>{{WORKSPACE}}</h1>
+<p class="subtitle">Workspace reputation dashboard</p>
+<div class="meta">
+  <span class="dot"></span>
+  <span id="status-line">Connecting...</span>
+</div>
+<div id="error-box" class="error" style="display:none"></div>
+<div id="content"></div>
+<script>
+const WORKSPACE = "{{WORKSPACE}}";
+const API_TOKEN = "{{API_TOKEN}}";
+const BASE = "/w/" + WORKSPACE;
+const REFRESH_MS = 15000;
+
+function esc(s) {
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+function shortID(id) {
+  return id ? id.slice(0, 8) + "\u2026" : "\u2014";
+}
+
+async function fetchJSON(path) {
+  const res = await fetch(path, { headers: { Authorization: "Bearer " + API_TOKEN } });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  return res.json();
+}
+
+async function refresh() {
+  try {
+    const data = await fetchJSON(BASE + "/actors");
+    document.getElementById("error-box").style.display = "none";
+    document.getElementById("status-line").textContent = "Live \u2014 " + new Date().toLocaleTimeString();
+    const actors = data.actors || [];
+    if (!actors.length) {
+      document.getElementById("content").innerHTML = '<p class="empty">No reputation data yet.</p>';
+      return;
+    }
+    let html = "";
+    for (const a of actors) {
+      html += '<div class="actor-card">';
+      html += '<div class="actor-id">' + esc(a.id) + '</div>';
+      const skills = a.skills || {};
+      const skillKeys = Object.keys(skills);
+      if (skillKeys.length > 0) {
+        html += '<div class="card-section"><h3>Endorsements</h3><table><thead><tr><th>Skill</th><th>Count</th></tr></thead><tbody>';
+        for (const sk of skillKeys) {
+          html += '<tr><td><span class="skill">' + esc(sk) + '</span></td><td class="count">' + esc(skills[sk]) + '</td></tr>';
+        }
+        html += '</tbody></table></div>';
+      }
+      const reviews = a.reviews || [];
+      if (reviews.length > 0) {
+        html += '<div class="card-section"><h3>Reviews</h3><table><thead><tr><th>Reviewer</th><th>Rating</th><th>Note</th></tr></thead><tbody>';
+        for (const rv of reviews) {
+          html += '<tr><td class="reviewer">' + esc(shortID(rv.reviewer_id)) + '</td>';
+          html += '<td class="rating">' + esc(rv.rating) + '/5</td>';
+          html += '<td class="note">' + esc(rv.note || "") + '</td></tr>';
+        }
+        html += '</tbody></table></div>';
+      }
+      html += '</div>';
+    }
+    document.getElementById("content").innerHTML = html;
+  } catch (err) {
+    document.getElementById("error-box").textContent = "Error: " + err.message;
+    document.getElementById("error-box").style.display = "";
+    document.getElementById("status-line").textContent = "Error";
+  }
+}
+
+refresh();
+setInterval(refresh, REFRESH_MS);
+</script>
+</body>
+</html>`
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "market-server: %v\n", err)
@@ -167,6 +286,10 @@ func run() error {
 	apiKey := os.Getenv("MARKET_API_KEY")
 	if apiKey == "" {
 		return fmt.Errorf("MARKET_API_KEY is required")
+	}
+	apiToken := os.Getenv("MARKET_API_TOKEN")
+	if apiToken == "" {
+		apiToken = apiKey
 	}
 	dsn := os.Getenv("DATABASE_URL")
 	port := os.Getenv("PORT")
@@ -232,10 +355,11 @@ func run() error {
 	rs := market.NewReputationStore(s, factory, signer)
 
 	srv := &server{
-		rs:      rs,
-		store:   s,
-		humanID: humanID,
-		apiKey:  apiKey,
+		rs:       rs,
+		store:    s,
+		humanID:  humanID,
+		apiKey:   apiKey,
+		apiToken: apiToken,
 	}
 
 	mux := http.NewServeMux()
@@ -246,6 +370,13 @@ func run() error {
 	mux.HandleFunc("GET /actors/{id}/reputation", srv.auth(srv.getReputation))
 	mux.HandleFunc("POST /actors/{id}/review", srv.auth(srv.addReview))
 	mux.HandleFunc("GET /actors/{id}/reviews", srv.auth(srv.listReviews))
+
+	// Workspace-scoped routes — isolated namespace per team, auth via MARKET_API_TOKEN.
+	mux.HandleFunc("GET /w/{workspace}", srv.workspaceDashboard)
+	mux.HandleFunc("GET /w/{workspace}/actors", srv.tokenAuth(srv.listWorkspaceActors))
+	mux.HandleFunc("POST /w/{workspace}/actors/{id}/endorse", srv.tokenAuth(srv.workspaceEndorse))
+	mux.HandleFunc("GET /w/{workspace}/actors/{id}/reputation", srv.tokenAuth(srv.workspaceGetReputation))
+	mux.HandleFunc("POST /w/{workspace}/actors/{id}/review", srv.tokenAuth(srv.workspaceAddReview))
 
 	addr := ":" + port
 	fmt.Fprintf(os.Stderr, "market-server listening on %s\n", addr)
@@ -262,10 +393,11 @@ func run() error {
 
 // server holds shared dependencies for HTTP handlers.
 type server struct {
-	rs      *market.ReputationStore
-	store   store.Store
-	humanID types.ActorID
-	apiKey  string
+	rs       *market.ReputationStore
+	store    store.Store
+	humanID  types.ActorID
+	apiKey   string
+	apiToken string
 }
 
 // dashboard handles GET / — serves the read-only HTML reputation dashboard.
@@ -307,6 +439,241 @@ func (sv *server) auth(next http.HandlerFunc) http.HandlerFunc {
 		}
 		next(w, r)
 	}
+}
+
+// tokenAuth is middleware for workspace routes that validates the MARKET_API_TOKEN bearer token.
+func (sv *server) tokenAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token, found := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if !found || token != sv.apiToken {
+			writeErr(w, http.StatusUnauthorized, "invalid or missing API token")
+			return
+		}
+		next(w, r)
+	}
+}
+
+// workspaceDashboard handles GET /w/{workspace} — serves the interactive workspace reputation dashboard.
+// No auth required on the GET; the API token is injected into the page for browser fetch() calls.
+func (sv *server) workspaceDashboard(w http.ResponseWriter, r *http.Request) {
+	workspace := r.PathValue("workspace")
+	if workspace == "" {
+		writeErr(w, http.StatusBadRequest, "workspace is required")
+		return
+	}
+	html := strings.ReplaceAll(workspaceDashboardHTML, "{{WORKSPACE}}", workspace)
+	html = strings.ReplaceAll(html, "{{API_TOKEN}}", sv.apiToken)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprint(w, html)
+}
+
+// workspaceEndorse handles POST /w/{workspace}/actors/{id}/endorse
+// Body: {"endorser":"actor_id", "skill":"go"} — omit endorser to use the human operator.
+func (sv *server) workspaceEndorse(w http.ResponseWriter, r *http.Request) {
+	workspace := r.PathValue("workspace")
+	if workspace == "" {
+		writeErr(w, http.StatusBadRequest, "workspace is required")
+		return
+	}
+	subjectID, ok := parseActorID(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		Endorser string `json:"endorser"`
+		Skill    string `json:"skill"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		return
+	}
+	if body.Skill == "" {
+		writeErr(w, http.StatusBadRequest, "skill is required")
+		return
+	}
+	endorser := sv.humanID
+	if body.Endorser != "" {
+		aid, err := types.NewActorID(body.Endorser)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "invalid endorser: "+err.Error())
+			return
+		}
+		endorser = aid
+	}
+	causes, err := sv.currentCauses()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "get causes: "+err.Error())
+		return
+	}
+	convID, err := newConversationID()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "conversation id: "+err.Error())
+		return
+	}
+	endorsement, err := sv.rs.AddEndorsementInWorkspace(endorser, subjectID, body.Skill, workspace, causes, convID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "add endorsement: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"id":          endorsement.ID.Value(),
+		"endorser_id": endorsement.EndorserID.Value(),
+		"subject_id":  endorsement.SubjectID.Value(),
+		"skill":       endorsement.Skill,
+		"workspace":   endorsement.Workspace,
+	})
+}
+
+// workspaceGetReputation handles GET /w/{workspace}/actors/{id}/reputation
+// Returns workspace-scoped accumulated endorsement counts per skill for the actor.
+func (sv *server) workspaceGetReputation(w http.ResponseWriter, r *http.Request) {
+	workspace := r.PathValue("workspace")
+	if workspace == "" {
+		writeErr(w, http.StatusBadRequest, "workspace is required")
+		return
+	}
+	subjectID, ok := parseActorID(w, r)
+	if !ok {
+		return
+	}
+	rep, err := sv.rs.GetReputationByWorkspace(subjectID, workspace)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "get reputation: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"subject_id": rep.SubjectID.Value(),
+		"workspace":  workspace,
+		"skills":     rep.SkillCounts,
+	})
+}
+
+// workspaceAddReview handles POST /w/{workspace}/actors/{id}/review
+// Body: {"reviewer":"actor_id", "task_id":"event_id", "rating":5, "note":"..."}
+func (sv *server) workspaceAddReview(w http.ResponseWriter, r *http.Request) {
+	workspace := r.PathValue("workspace")
+	if workspace == "" {
+		writeErr(w, http.StatusBadRequest, "workspace is required")
+		return
+	}
+	subjectID, ok := parseActorID(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		Reviewer string `json:"reviewer"`
+		TaskID   string `json:"task_id"`
+		Rating   int    `json:"rating"`
+		Note     string `json:"note"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		return
+	}
+	if body.Rating < 1 || body.Rating > 5 {
+		writeErr(w, http.StatusBadRequest, "rating must be between 1 and 5")
+		return
+	}
+	reviewer := sv.humanID
+	if body.Reviewer != "" {
+		aid, err := types.NewActorID(body.Reviewer)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "invalid reviewer: "+err.Error())
+			return
+		}
+		reviewer = aid
+	}
+	var taskID types.EventID
+	if body.TaskID != "" {
+		tid, err := types.NewEventID(body.TaskID)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "invalid task_id: "+err.Error())
+			return
+		}
+		taskID = tid
+	}
+	causes, err := sv.currentCauses()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "get causes: "+err.Error())
+		return
+	}
+	convID, err := newConversationID()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "conversation id: "+err.Error())
+		return
+	}
+	review, err := sv.rs.AddReviewInWorkspace(reviewer, subjectID, taskID, body.Rating, body.Note, workspace, causes, convID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "add review: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"id":          review.ID.Value(),
+		"reviewer_id": review.ReviewerID.Value(),
+		"subject_id":  review.SubjectID.Value(),
+		"task_id":     review.TaskID.Value(),
+		"rating":      review.Rating,
+		"note":        review.Note,
+		"workspace":   review.Workspace,
+	})
+}
+
+// listWorkspaceActors handles GET /w/{workspace}/actors — returns all actors with reputation data in the workspace.
+func (sv *server) listWorkspaceActors(w http.ResponseWriter, r *http.Request) {
+	workspace := r.PathValue("workspace")
+	if workspace == "" {
+		writeErr(w, http.StatusBadRequest, "workspace is required")
+		return
+	}
+	// Collect unique subject IDs from workspace-scoped endorsement and review events.
+	subjectSet := make(map[types.ActorID]bool)
+	endorsements, err := sv.rs.ListEndorsementsByWorkspace(workspace)
+	if err == nil {
+		for _, e := range endorsements {
+			subjectSet[e.SubjectID] = true
+		}
+	}
+	reviews, err := sv.rs.ListReviewsByWorkspace(workspace)
+	if err == nil {
+		for _, rv := range reviews {
+			subjectSet[rv.SubjectID] = true
+		}
+	}
+
+	type actorData struct {
+		ID      string           `json:"id"`
+		Skills  map[string]int   `json:"skills"`
+		Reviews []map[string]any `json:"reviews"`
+	}
+	result := make([]actorData, 0, len(subjectSet))
+	for subjectID := range subjectSet {
+		rep, err := sv.rs.GetReputationByWorkspace(subjectID, workspace)
+		if err != nil {
+			continue
+		}
+		wRevs, err := sv.rs.ListReviewsByWorkspace(workspace)
+		if err != nil {
+			continue
+		}
+		revItems := make([]map[string]any, 0)
+		for _, rv := range wRevs {
+			if rv.SubjectID != subjectID {
+				continue
+			}
+			revItems = append(revItems, map[string]any{
+				"id":          rv.ID.Value(),
+				"reviewer_id": rv.ReviewerID.Value(),
+				"rating":      rv.Rating,
+				"note":        rv.Note,
+			})
+		}
+		result = append(result, actorData{
+			ID:      subjectID.Value(),
+			Skills:  rep.SkillCounts,
+			Reviews: revItems,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"workspace": workspace, "actors": result})
 }
 
 // endorse handles POST /actors/{id}/endorse
