@@ -12,6 +12,7 @@ import (
 
 	"github.com/lovyou-ai/eventgraph/go/pkg/types"
 
+	"github.com/lovyou-ai/hive/pkg/mind"
 	"github.com/lovyou-ai/hive/pkg/resources"
 	"github.com/lovyou-ai/hive/pkg/roles"
 	"github.com/lovyou-ai/hive/pkg/work"
@@ -270,7 +271,17 @@ func (p *Pipeline) runEvolveIteration(parentCtx context.Context, iteration int, 
 		existingTasksStr = formatTaskSummaries(summaries)
 	}
 
-	ctoPrompt := buildEvolvePrompt(codeContext.String(), telemetrySummary, input.Description, state, existingTasksStr, pmPriorities)
+	// Load prior CTO decisions — best-effort, proceed without them on error.
+	mindStore := mind.NewMindStore(p.store, p.factory, p.signer)
+	priorDecisions := ""
+	if priorObs, obsErr := mindStore.Recent(20); obsErr != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not load prior decisions: %v (continuing)\n", obsErr)
+		p.emitWarning(PhaseEvolve, "could not load prior decisions: %v", obsErr)
+	} else {
+		priorDecisions = mind.FormatPriorDecisions(priorObs)
+	}
+
+	ctoPrompt := buildEvolvePrompt(codeContext.String(), telemetrySummary, input.Description, state, existingTasksStr, pmPriorities, priorDecisions)
 
 	ctoStart := time.Now()
 	ctoResp, err := ctoTracker.Reason(ctx, ctoPrompt, nil)
@@ -300,6 +311,16 @@ func (p *Pipeline) runEvolveIteration(parentCtx context.Context, iteration int, 
 
 	fmt.Fprintf(os.Stderr, "Expected impact: %s\n", rec.ExpectedImpact)
 	p.emitOutput("cto", "analysis", fmt.Sprintf("expected impact: %s", rec.ExpectedImpact))
+
+	// Persist this decision to the mind store for future sessions.
+	if head, headErr := p.store.Head(); headErr == nil && head.IsSome() {
+		obs := mind.Observation{Proposed: rec.Description, Why: rec.ExpectedImpact, Mode: "evolve"}
+		if saveErr := mindStore.Save(p.humanID, obs, []types.EventID{head.Unwrap().ID()}, p.convID); saveErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: mind observation save failed: %v (continuing)\n", saveErr)
+			p.emitWarning(PhaseEvolve, "mind observation save failed: %v", saveErr)
+		}
+	}
+
 	if len(rec.FilesToChange) > 0 {
 		fmt.Fprintf(os.Stderr, "Files to change: %v\n", rec.FilesToChange)
 		p.emitOutput("cto", "analysis", fmt.Sprintf("files to change: %v", rec.FilesToChange))
@@ -573,7 +594,7 @@ func filterEvolveFiles(files map[string]string) map[string]string {
 }
 
 // buildEvolvePrompt constructs the CTO prompt for evolution mode.
-func buildEvolvePrompt(codeContext, telemetrySummary, humanDirection string, state *EvolveState, existingTasks, pmPriorities string) string {
+func buildEvolvePrompt(codeContext, telemetrySummary, humanDirection string, state *EvolveState, existingTasks, pmPriorities, priorDecisions string) string {
 	direction := ""
 	if humanDirection != "" {
 		direction = fmt.Sprintf(`
@@ -644,6 +665,7 @@ RECENT TELEMETRY:
 %s
 %s
 %s
+%s
 Analyze the FULL codebase above. Identify the single most valuable capability to build next.
 The PM priorities should guide your choice — translate product needs into technical work.
 
@@ -665,7 +687,7 @@ CONSTRAINTS:
 Respond with ONLY a JSON object:
 {"description": "what to build, 2-3 sentences with enough detail for a builder", "files_to_change": ["existing/files"], "new_files": ["new/files/to/create"], "expected_impact": "1-2 sentences", "priority": "high|medium|low", "category": "feature|architecture|capability|infrastructure", "skip_reason": "if nothing worth building, explain why; otherwise empty string"}
 
-No preamble, no explanation, no code blocks, no markdown. ONLY the JSON object.`, codeContext, telemetrySummary, direction, priorWork, existingTasksSection, pmSection)
+No preamble, no explanation, no code blocks, no markdown. ONLY the JSON object.`, codeContext, telemetrySummary, direction, priorWork, priorDecisions, existingTasksSection, pmSection)
 }
 
 // parseEvolveRecommendation extracts an EvolveRecommendation from LLM output.

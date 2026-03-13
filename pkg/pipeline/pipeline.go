@@ -18,6 +18,7 @@ import (
 	"github.com/lovyou-ai/eventgraph/go/pkg/types"
 
 	"github.com/lovyou-ai/hive/pkg/authority"
+	"github.com/lovyou-ai/hive/pkg/mind"
 	"github.com/lovyou-ai/hive/pkg/resources"
 	"github.com/lovyou-ai/hive/pkg/roles"
 	"github.com/lovyou-ai/hive/pkg/spawn"
@@ -202,6 +203,7 @@ func New(ctx context.Context, cfg Config) (*Pipeline, error) {
 	registry := event.DefaultRegistry()
 	registerPipelineEvents(registry)
 	work.RegisterWithRegistry(registry)
+	mind.RegisterWithRegistry(registry)
 	factory := event.NewEventFactory(registry)
 	convID, err := newConversationID()
 	if err != nil {
