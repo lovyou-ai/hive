@@ -16,6 +16,7 @@ import (
 	"github.com/lovyou-ai/hive/pkg/resources"
 	"github.com/lovyou-ai/hive/pkg/roles"
 	"github.com/lovyou-ai/hive/pkg/spawn"
+	"github.com/lovyou-ai/hive/pkg/work"
 )
 
 func TestContainsAlert(t *testing.T) {
@@ -629,3 +630,339 @@ func TestLangMarkerFile(t *testing.T) {
 	}
 }
 
+// ════════════════════════════════════════════════════════════════════════
+// buildFileListing
+// ════════════════════════════════════════════════════════════════════════
+
+func TestBuildFileListing_Header(t *testing.T) {
+	got := buildFileListing(map[string]string{})
+	if !strings.HasPrefix(got, "Files:\n") {
+		t.Errorf("buildFileListing should start with 'Files:\\n', got %q", got)
+	}
+}
+
+func TestBuildFileListing_ContainsFilesAndLineCounts(t *testing.T) {
+	files := map[string]string{
+		"main.go":     "package main\n\nfunc main() {}\n",
+		"lib/util.go": "package lib\n",
+	}
+	got := buildFileListing(files)
+	if !strings.Contains(got, "main.go") {
+		t.Error("buildFileListing should contain main.go")
+	}
+	if !strings.Contains(got, "lib/util.go") {
+		t.Error("buildFileListing should contain lib/util.go")
+	}
+	// "package main\n\nfunc main() {}\n" has 3 newlines → 4 lines.
+	if !strings.Contains(got, "(4 lines)") {
+		t.Errorf("buildFileListing line count wrong for main.go content, got %q", got)
+	}
+	// "package lib\n" has 1 newline → 2 lines.
+	if !strings.Contains(got, "(2 lines)") {
+		t.Errorf("buildFileListing line count wrong for lib/util.go content, got %q", got)
+	}
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// extractKeyFiles
+// ════════════════════════════════════════════════════════════════════════
+
+func TestExtractKeyFiles_IncludesKnownFiles(t *testing.T) {
+	files := map[string]string{
+		"CLAUDE.md":       "# Hive\nproject docs",
+		"README.md":       "# readme",
+		"go.mod":          "module test",
+		"main.go":         "package main",
+	}
+	got := extractKeyFiles(files)
+	if !strings.Contains(got, "--- CLAUDE.md ---") {
+		t.Error("extractKeyFiles should include CLAUDE.md")
+	}
+	if !strings.Contains(got, "--- README.md ---") {
+		t.Error("extractKeyFiles should include README.md")
+	}
+	// go.mod and main.go are not key files.
+	if strings.Contains(got, "--- go.mod ---") {
+		t.Error("extractKeyFiles should not include go.mod")
+	}
+	if strings.Contains(got, "--- main.go ---") {
+		t.Error("extractKeyFiles should not include main.go")
+	}
+}
+
+func TestExtractKeyFiles_TruncatesLongFiles(t *testing.T) {
+	// 100 lines — exceeds the 60-line cap.
+	src := make([]string, 100)
+	for i := range src {
+		src[i] = "line"
+	}
+	files := map[string]string{
+		"CLAUDE.md": strings.Join(src, "\n"),
+	}
+	got := extractKeyFiles(files)
+	if !strings.Contains(got, "[truncated: 40 lines omitted]") {
+		t.Errorf("extractKeyFiles should truncate long files at 60 lines, got %q", got)
+	}
+}
+
+func TestExtractKeyFiles_EmptyWhenNoKeyFiles(t *testing.T) {
+	files := map[string]string{
+		"main.go": "package main",
+		"go.mod":  "module test",
+	}
+	got := extractKeyFiles(files)
+	if got != "" {
+		t.Errorf("extractKeyFiles with no key files = %q, want empty", got)
+	}
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// buildRelevantFileContext
+// ════════════════════════════════════════════════════════════════════════
+
+func TestBuildRelevantFileContext_IncludesRequestedFiles(t *testing.T) {
+	files := map[string]string{
+		"pkg/foo.go": "package foo\nfunc Foo() {}",
+		"pkg/bar.go": "package bar\nfunc Bar() {}",
+		"pkg/baz.go": "package baz",
+	}
+	paths := []string{"pkg/foo.go", "pkg/bar.go"}
+	got := buildRelevantFileContext(files, paths)
+	if !strings.Contains(got, "--- FILE: pkg/foo.go ---") {
+		t.Error("buildRelevantFileContext should include foo.go header")
+	}
+	if !strings.Contains(got, "func Foo()") {
+		t.Error("buildRelevantFileContext should include foo.go content")
+	}
+	if !strings.Contains(got, "--- FILE: pkg/bar.go ---") {
+		t.Error("buildRelevantFileContext should include bar.go header")
+	}
+	if strings.Contains(got, "pkg/baz.go") {
+		t.Error("buildRelevantFileContext should not include baz.go (not in relevantPaths)")
+	}
+}
+
+func TestBuildRelevantFileContext_MissingPathSkipped(t *testing.T) {
+	files := map[string]string{
+		"pkg/foo.go": "package foo",
+	}
+	paths := []string{"pkg/foo.go", "pkg/missing.go"}
+	got := buildRelevantFileContext(files, paths)
+	if !strings.Contains(got, "pkg/foo.go") {
+		t.Error("buildRelevantFileContext should include existing file")
+	}
+	if strings.Contains(got, "pkg/missing.go") {
+		t.Error("buildRelevantFileContext should skip missing file")
+	}
+}
+
+func TestBuildRelevantFileContext_EmptyPaths(t *testing.T) {
+	files := map[string]string{"pkg/foo.go": "package foo"}
+	got := buildRelevantFileContext(files, nil)
+	if got != "" {
+		t.Errorf("buildRelevantFileContext with no paths = %q, want empty", got)
+	}
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// formatTaskList
+// ════════════════════════════════════════════════════════════════════════
+
+func TestFormatTaskList_Empty(t *testing.T) {
+	if got := formatTaskList(nil); got != "" {
+		t.Errorf("formatTaskList(nil) = %q, want empty", got)
+	}
+	if got := formatTaskList([]work.Task{}); got != "" {
+		t.Errorf("formatTaskList([]) = %q, want empty", got)
+	}
+}
+
+func TestFormatTaskList_TitleOnly(t *testing.T) {
+	tasks := []work.Task{{Title: "Fix build phase"}}
+	got := formatTaskList(tasks)
+	if !strings.Contains(got, "- Fix build phase") {
+		t.Errorf("formatTaskList missing task title, got %q", got)
+	}
+	// No description — colon separator must not appear.
+	if strings.Contains(got, ": ") {
+		t.Errorf("formatTaskList should not add colon when description is empty, got %q", got)
+	}
+}
+
+func TestFormatTaskList_WithDescription(t *testing.T) {
+	tasks := []work.Task{
+		{Title: "Add retry logic", Description: "retry on transient errors"},
+	}
+	got := formatTaskList(tasks)
+	if !strings.Contains(got, "- Add retry logic: retry on transient errors") {
+		t.Errorf("formatTaskList missing description, got %q", got)
+	}
+}
+
+func TestFormatTaskList_MultipleTasks(t *testing.T) {
+	tasks := []work.Task{
+		{Title: "Task A"},
+		{Title: "Task B", Description: "desc B"},
+	}
+	got := formatTaskList(tasks)
+	if !strings.Contains(got, "- Task A") {
+		t.Error("formatTaskList missing Task A")
+	}
+	if !strings.Contains(got, "- Task B: desc B") {
+		t.Error("formatTaskList missing Task B with description")
+	}
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// detectApproval
+// ════════════════════════════════════════════════════════════════════════
+
+func TestDetectApproval(t *testing.T) {
+	tests := []struct {
+		review string
+		want   bool
+	}{
+		{"Looks good.\n\nAPPROVED", true},
+		{"Some issues.\n\nCHANGES NEEDED", false},
+		{"Missing error handling.\n\nCHANGES REQUIRED", false},
+		{"This is wrong.\n\nREJECT", false},
+		// Both present — changes take precedence.
+		{"APPROVED but also CHANGES NEEDED", false},
+		{"No verdict at all", false},
+		// Case-insensitive via ToUpper in implementation.
+		{"approved", true},
+		{"", false},
+	}
+	for _, tt := range tests {
+		got := detectApproval(tt.review)
+		if got != tt.want {
+			t.Errorf("detectApproval(%q) = %v, want %v", tt.review, got, tt.want)
+		}
+	}
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// detectLanguage
+// ════════════════════════════════════════════════════════════════════════
+
+func TestDetectLanguage(t *testing.T) {
+	tests := []struct {
+		files map[string]string
+		want  string
+	}{
+		// Marker-file priority.
+		{map[string]string{"go.mod": "module test"}, "go"},
+		{map[string]string{"package.json": "{}"}, "typescript"},
+		{map[string]string{"Cargo.toml": "[package]"}, "rust"},
+		{map[string]string{"requirements.txt": "flask"}, "python"},
+		{map[string]string{"setup.py": "from setuptools import setup"}, "python"},
+		{map[string]string{"pyproject.toml": "[project]"}, "python"},
+		// Extension fallback.
+		{map[string]string{"src/main.go": "package main"}, "go"},
+		{map[string]string{"src/app.ts": "export {}"}, "typescript"},
+		{map[string]string{"src/app.rs": "fn main() {}"}, "rust"},
+		{map[string]string{"src/app.py": "print()"}, "python"},
+		{map[string]string{"src/app.cs": "class Foo {}"}, "csharp"},
+		// Empty map defaults to go.
+		{map[string]string{}, "go"},
+	}
+	for _, tt := range tests {
+		got := detectLanguage(tt.files)
+		if got != tt.want {
+			t.Errorf("detectLanguage(%v) = %q, want %q", tt.files, got, tt.want)
+		}
+	}
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// sanitizeGoMod
+// ════════════════════════════════════════════════════════════════════════
+
+func TestSanitizeGoMod_NoGoMod(t *testing.T) {
+	files := map[string]string{"main.go": "package main"}
+	sanitizeGoMod(files) // must not panic
+}
+
+func TestSanitizeGoMod_CleanFile(t *testing.T) {
+	files := map[string]string{
+		"go.mod": "module github.com/foo/bar\n\ngo 1.21\n",
+	}
+	before := files["go.mod"]
+	sanitizeGoMod(files)
+	if files["go.mod"] != before {
+		t.Errorf("sanitizeGoMod modified a clean go.mod: %q", files["go.mod"])
+	}
+}
+
+func TestSanitizeGoMod_SplitModulePath(t *testing.T) {
+	// Simulates LLM corruption: module path split across lines with embedded quotes.
+	files := map[string]string{
+		"go.mod": "module \"github.com/\nfoo/bar\"\n\ngo 1.21\n",
+	}
+	sanitizeGoMod(files)
+	result := files["go.mod"]
+
+	// The rejoined module directive must be on a single line without quotes.
+	found := false
+	for _, l := range strings.Split(result, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(l), "module ") {
+			if strings.Contains(l, "\"") {
+				t.Errorf("module directive still has quotes: %q", l)
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("sanitizeGoMod result has no module directive: %q", result)
+	}
+	// The original corrupted split must be gone.
+	if strings.Contains(result, "module \"github.com/\nfoo") {
+		t.Errorf("module path still split across lines: %q", result)
+	}
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// stripMarkdownFences
+// ════════════════════════════════════════════════════════════════════════
+
+func TestStripMarkdownFences(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "no fences",
+			input: "package main\n\nfunc main() {}",
+			want:  "package main\n\nfunc main() {}",
+		},
+		{
+			name:  "go fence",
+			input: "```go\npackage main\n\nfunc main() {}\n```",
+			want:  "package main\n\nfunc main() {}",
+		},
+		{
+			name:  "plain fence",
+			input: "```\npackage main\n```",
+			want:  "package main",
+		},
+		{
+			name:  "fence with trailing prose",
+			input: "```go\npackage main\n```\nThis is the main package.",
+			want:  "package main",
+		},
+		{
+			name:  "empty content",
+			input: "",
+			want:  "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := stripMarkdownFences(tt.input)
+			if got != tt.want {
+				t.Errorf("stripMarkdownFences() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
