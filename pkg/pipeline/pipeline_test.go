@@ -966,3 +966,153 @@ func TestStripMarkdownFences(t *testing.T) {
 		})
 	}
 }
+
+// ════════════════════════════════════════════════════════════════════════
+// extractName
+// ════════════════════════════════════════════════════════════════════════
+
+func TestExtractName(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		// NAME: kebab-case parsed correctly.
+		{"FEASIBLE: yes\nNAME: task-manager\nOther stuff", "task-manager"},
+		// Case-insensitive prefix match.
+		{"name: kanban-board\n", "kanban-board"},
+		// Leading/trailing whitespace trimmed.
+		{"NAME:  social-graph  \n", "social-graph"},
+		// Spaces in name become hyphens.
+		{"NAME: social graph\n", "social-graph"},
+		// Digits allowed.
+		{"NAME: product2-0\n", "product2-0"},
+		// Non-alphanumeric/non-hyphen chars stripped.
+		{"NAME: task_manager!\n", "taskmanager"},
+		// No NAME line → fallback to "product".
+		{"FEASIBLE: yes\nNo name here", "product"},
+		// Empty input → fallback.
+		{"", "product"},
+		// NAME with no valid characters after cleaning → fallback.
+		{"NAME: !!!\n", "product"},
+	}
+	for _, tt := range tests {
+		got := extractName(tt.input)
+		if got != tt.want {
+			t.Errorf("extractName(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// lastNonEmptyLine
+// ════════════════════════════════════════════════════════════════════════
+
+func TestLastNonEmptyLine(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		// Normal multi-line string.
+		{"line1\nline2\nline3", "line3"},
+		// Trailing blank lines skipped.
+		{"line1\nline2\n\n", "line2"},
+		// Warning lines before URL (typical gh pr create output).
+		{"Warning: something\nhttps://github.com/foo/bar/pull/42\n", "https://github.com/foo/bar/pull/42"},
+		// Single non-empty line.
+		{"only-line", "only-line"},
+		// Leading/trailing whitespace on last line trimmed.
+		{"  line with spaces  \n", "line with spaces"},
+		// Empty input returns empty string.
+		{"", ""},
+	}
+	for _, tt := range tests {
+		got := lastNonEmptyLine(tt.input)
+		if got != tt.want {
+			t.Errorf("lastNonEmptyLine(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// isTransientGHError
+// ════════════════════════════════════════════════════════════════════════
+
+func TestIsTransientGHError(t *testing.T) {
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		// Transient: 502 substring.
+		{"error: 502 response from GitHub", true},
+		// Transient: 504 substring.
+		{"received 504 status", true},
+		// Transient: "Gateway Timeout" phrase.
+		{"Gateway Timeout occurred", true},
+		// Transient: "Bad Gateway" phrase.
+		{"Bad Gateway response", true},
+		// Transient: ETIMEDOUT.
+		{"ETIMEDOUT: connection timed out", true},
+		// Transient: ECONNRESET.
+		{"ECONNRESET while pushing", true},
+		// Non-transient errors.
+		{"404 Not Found", false},
+		{"401 Unauthorized", false},
+		{"Permission denied", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		got := isTransientGHError(tt.input)
+		if got != tt.want {
+			t.Errorf("isTransientGHError(%q) = %v, want %v", tt.input, got, tt.want)
+		}
+	}
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// truncate
+// ════════════════════════════════════════════════════════════════════════
+
+func TestTruncate(t *testing.T) {
+	tests := []struct {
+		input string
+		n     int
+		want  string
+	}{
+		// Short string — no truncation.
+		{"hello", 10, "hello"},
+		// Exactly at limit — no truncation.
+		{"hello", 5, "hello"},
+		// Truncate: last 3 chars replaced by ellipsis.
+		{"hello world", 8, "hello..."},
+		// Empty string.
+		{"", 5, ""},
+	}
+	for _, tt := range tests {
+		got := truncate(tt.input, tt.n)
+		if got != tt.want {
+			t.Errorf("truncate(%q, %d) = %q, want %q", tt.input, tt.n, got, tt.want)
+		}
+	}
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// writeCodeAction
+// ════════════════════════════════════════════════════════════════════════
+
+func TestWriteCodeAction(t *testing.T) {
+	tests := []struct {
+		lang string
+		want string
+	}{
+		{"go", ActionWriteCode + ":go"},
+		{"typescript", ActionWriteCode + ":typescript"},
+		{"python", ActionWriteCode + ":python"},
+		{"rust", ActionWriteCode + ":rust"},
+	}
+	for _, tt := range tests {
+		got := writeCodeAction(tt.lang)
+		if got != tt.want {
+			t.Errorf("writeCodeAction(%q) = %q, want %q", tt.lang, got, tt.want)
+		}
+	}
+}
