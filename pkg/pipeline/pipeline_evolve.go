@@ -527,11 +527,6 @@ func filterEvolveFiles(files map[string]string) map[string]string {
 	out := make(map[string]string, len(files))
 	for p, content := range files {
 		switch {
-		case strings.HasSuffix(p, "_test.go"):
-			// Exclude test files — the PM reads the full codebase, the CTO
-			// only needs production code to decide what to build. Test files
-			// add ~2000+ lines that push the prompt beyond the context limit.
-			continue
 		case strings.HasSuffix(p, ".go"):
 			out[p] = content
 		case p == "CLAUDE.md", p == "go.mod", p == "SPEC.md", p == "README.md":
