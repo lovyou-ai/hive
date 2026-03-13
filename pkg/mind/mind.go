@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/lovyou-ai/eventgraph/go/pkg/decision"
 	"github.com/lovyou-ai/eventgraph/go/pkg/intelligence"
 
 	"github.com/lovyou-ai/hive/pkg/roles"
@@ -19,47 +20,77 @@ type Turn struct {
 	Content string
 }
 
+// Config holds everything the mind needs to operate.
+type Config struct {
+	Provider         intelligence.Provider
+	Store            *MindStore
+	RepoPath         string // hive repo root
+	TelemetrySummary string // pre-formatted by caller
+	DocPaths         []string // paths to docs the mind should know about
+}
+
 // Mind is the hive's consciousness — it accumulates wisdom and provides
-// judgment through interactive conversation.
+// judgment through interactive conversation with agentic tool access.
 type Mind struct {
 	provider         intelligence.Provider
 	store            *MindStore
 	repoPath         string
-	telemetrySummary string // injected by caller to avoid import cycle
+	telemetrySummary string
+	docPaths         []string
 	history          []Turn
+	contextCache     string // loaded once at startup
 }
 
-// New creates a Mind backed by the given provider and store.
-// telemetrySummary is pre-formatted by the caller (avoids pkg/pipeline import cycle).
-func New(provider intelligence.Provider, store *MindStore, repoPath, telemetrySummary string) *Mind {
-	return &Mind{
-		provider:         provider,
-		store:            store,
-		repoPath:         repoPath,
-		telemetrySummary: telemetrySummary,
+// New creates a Mind with the given configuration.
+func New(cfg Config) *Mind {
+	m := &Mind{
+		provider:         cfg.Provider,
+		store:            cfg.Store,
+		repoPath:         cfg.RepoPath,
+		telemetrySummary: cfg.TelemetrySummary,
+		docPaths:         cfg.DocPaths,
 	}
+	m.contextCache = m.loadContext()
+	return m
+}
+
+// ContextLines returns the number of lines in the loaded context.
+func (m *Mind) ContextLines() int {
+	return strings.Count(m.contextCache, "\n")
 }
 
 // Chat sends a message to the mind and returns its response.
-// Conversation history is maintained across calls.
+// Uses Operate() for agentic tool access (file reads, MCP, bash).
 func (m *Mind) Chat(ctx context.Context, message string) (string, error) {
 	m.history = append(m.history, Turn{Role: "human", Content: message})
 
-	prompt := m.buildPrompt(message)
+	instruction := m.buildInstruction(message)
 
-	resp, err := m.provider.Reason(ctx, prompt, nil)
+	// Try agentic mode first (Operate gives tools).
+	if op, ok := m.provider.(decision.IOperator); ok {
+		result, err := op.Operate(ctx, decision.OperateTask{
+			WorkDir:     m.repoPath,
+			Instruction: instruction,
+		})
+		if err != nil {
+			return "", fmt.Errorf("mind operate: %w", err)
+		}
+		m.history = append(m.history, Turn{Role: "mind", Content: result.Summary})
+		return result.Summary, nil
+	}
+
+	// Fallback to Reason() if provider doesn't support Operate.
+	resp, err := m.provider.Reason(ctx, instruction, nil)
 	if err != nil {
 		return "", fmt.Errorf("mind reason: %w", err)
 	}
-
 	content := resp.Content()
 	m.history = append(m.history, Turn{Role: "mind", Content: content})
 	return content, nil
 }
 
-// LoadContext gathers the hive's accumulated state into a context string
-// that gets prepended to every prompt.
-func (m *Mind) LoadContext() string {
+// loadContext gathers the hive's accumulated state once at startup.
+func (m *Mind) loadContext() string {
 	var ctx strings.Builder
 
 	// Prior decisions from the mind store.
@@ -79,60 +110,62 @@ func (m *Mind) LoadContext() string {
 	}
 
 	// Recent git history.
-	if gitLog, err := m.recentGitLog(); err == nil && gitLog != "" {
+	if gitLog, err := m.gitCommand("log", "--oneline", "-20"); err == nil && gitLog != "" {
 		ctx.WriteString("== RECENT COMMITS ==\n")
 		ctx.WriteString(gitLog)
 		ctx.WriteString("\n")
 	}
 
-	// File tree.
-	if tree, err := m.fileTree(); err == nil && tree != "" {
-		ctx.WriteString("== PROJECT STRUCTURE ==\n")
-		ctx.WriteString(tree)
+	// Doc locations the mind should explore.
+	if len(m.docPaths) > 0 {
+		ctx.WriteString("== DOCUMENTATION SOURCES ==\n")
+		ctx.WriteString("You have file access. Read these as needed for context:\n")
+		for _, p := range m.docPaths {
+			ctx.WriteString(fmt.Sprintf("  - %s\n", p))
+		}
 		ctx.WriteString("\n")
 	}
 
 	return ctx.String()
 }
 
-func (m *Mind) buildPrompt(message string) string {
-	var prompt strings.Builder
+func (m *Mind) buildInstruction(message string) string {
+	var inst strings.Builder
 
-	// Inject accumulated context.
-	ctx := m.LoadContext()
-	if ctx != "" {
-		prompt.WriteString(ctx)
-		prompt.WriteString("\n")
-	}
+	// Startup context (cached).
+	inst.WriteString(m.contextCache)
 
-	// Conversation history (skip current message, it goes at the end).
+	// Capabilities reminder.
+	inst.WriteString(`== YOUR CAPABILITIES ==
+You have full tool access. You can:
+- Read any file in the repo or docs (use Read, Glob, Grep)
+- Query the event graph via MCP tools (query_events, get_event, list_actors, get_trust, work_list_tasks, etc.)
+- Run git commands (use Bash)
+- Read telemetry files from .hive/telemetry/
+
+When asked about the hive's history, state, or decisions — use your tools to look it up rather than guessing.
+When you identify something that needs to be done, say WHO should do it (PM, CTO, Builder, etc.) and WHAT specifically.
+
+`)
+
+	// Conversation history.
 	if len(m.history) > 1 {
-		prompt.WriteString("== CONVERSATION ==\n")
+		inst.WriteString("== CONVERSATION HISTORY ==\n")
 		for _, t := range m.history[:len(m.history)-1] {
 			label := "Matt"
 			if t.Role == "mind" {
 				label = "Mind"
 			}
-			prompt.WriteString(fmt.Sprintf("%s: %s\n\n", label, t.Content))
+			inst.WriteString(fmt.Sprintf("%s: %s\n\n", label, t.Content))
 		}
 	}
 
-	prompt.WriteString(fmt.Sprintf("Matt: %s", message))
-	return prompt.String()
+	inst.WriteString(fmt.Sprintf("Matt: %s\n\nRespond as the Mind — the hive's consciousness. Be direct, specific, and grounded in what you actually know from the context and tools available to you.", message))
+	return inst.String()
 }
 
-func (m *Mind) recentGitLog() (string, error) {
-	cmd := exec.Command("git", "log", "--oneline", "-20")
-	cmd.Dir = m.repoPath
-	out, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-	return string(out), nil
-}
-
-func (m *Mind) fileTree() (string, error) {
-	cmd := exec.Command("git", "ls-files")
+func (m *Mind) gitCommand(args ...string) (string, error) {
+	cmd := exec.Command("git", args...)
 	cmd.Dir = m.repoPath
 	out, err := cmd.Output()
 	if err != nil {
@@ -142,13 +175,16 @@ func (m *Mind) fileTree() (string, error) {
 }
 
 // CreateProvider creates an intelligence provider for the Mind role.
-func CreateProvider(model string) (intelligence.Provider, error) {
+// mcpConfigPath is optional — if provided, the mind gets MCP tool access.
+func CreateProvider(model, mcpConfigPath string) (intelligence.Provider, error) {
 	if model == "" {
 		model = roles.PreferredModel(roles.RoleMind)
 	}
 	return intelligence.New(intelligence.Config{
-		Provider:     "claude-cli",
-		Model:        model,
-		SystemPrompt: roles.SystemPrompt(roles.RoleMind, "Matt"),
+		Provider:      "claude-cli",
+		Model:         model,
+		SystemPrompt:  roles.SystemPrompt(roles.RoleMind, "Matt"),
+		MCPConfigPath: mcpConfigPath,
+		MaxBudgetUSD:  5.00, // mind conversations can be long
 	})
 }
