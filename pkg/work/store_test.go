@@ -207,3 +207,117 @@ func TestTaskStore_GetByAssignee(t *testing.T) {
 		t.Errorf("Title = %q; want %q", tasks[0].Title, "Task A")
 	}
 }
+
+func TestTaskStore_GetStatus_Pending(t *testing.T) {
+	s, causes := setupStore(t)
+	ts := newTaskStore(t, s)
+
+	task, err := ts.Create(testActor, "Pending task", "", causes, testConv)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	status, err := ts.GetStatus(task.ID)
+	if err != nil {
+		t.Fatalf("GetStatus: %v", err)
+	}
+	if status != work.StatusPending {
+		t.Errorf("status = %q; want %q", status, work.StatusPending)
+	}
+}
+
+func TestTaskStore_GetStatus_Assigned(t *testing.T) {
+	s, causes := setupStore(t)
+	ts := newTaskStore(t, s)
+
+	task, err := ts.Create(testActor, "Assigned task", "", causes, testConv)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := ts.Assign(testActor, task.ID, testAssignee, causes, testConv); err != nil {
+		t.Fatalf("Assign: %v", err)
+	}
+
+	status, err := ts.GetStatus(task.ID)
+	if err != nil {
+		t.Fatalf("GetStatus: %v", err)
+	}
+	if status != work.StatusAssigned {
+		t.Errorf("status = %q; want %q", status, work.StatusAssigned)
+	}
+}
+
+func TestTaskStore_GetStatus_Completed(t *testing.T) {
+	s, causes := setupStore(t)
+	ts := newTaskStore(t, s)
+
+	task, err := ts.Create(testActor, "Completed task", "", causes, testConv)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := ts.Assign(testActor, task.ID, testAssignee, causes, testConv); err != nil {
+		t.Fatalf("Assign: %v", err)
+	}
+	if err := ts.Complete(testActor, task.ID, "done", causes, testConv); err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+
+	status, err := ts.GetStatus(task.ID)
+	if err != nil {
+		t.Fatalf("GetStatus: %v", err)
+	}
+	if status != work.StatusCompleted {
+		t.Errorf("status = %q; want %q", status, work.StatusCompleted)
+	}
+}
+
+func TestTaskStore_ListOpen_Empty(t *testing.T) {
+	s, _ := setupStore(t)
+	ts := newTaskStore(t, s)
+
+	tasks, err := ts.ListOpen()
+	if err != nil {
+		t.Fatalf("ListOpen (empty): %v", err)
+	}
+	if len(tasks) != 0 {
+		t.Errorf("expected 0 open tasks; got %d", len(tasks))
+	}
+}
+
+func TestTaskStore_ListOpen_FiltersCompleted(t *testing.T) {
+	s, causes := setupStore(t)
+	ts := newTaskStore(t, s)
+
+	// Create three tasks.
+	taskA, err := ts.Create(testActor, "Task A", "", causes, testConv)
+	if err != nil {
+		t.Fatalf("Create A: %v", err)
+	}
+	taskB, err := ts.Create(testActor, "Task B", "", causes, testConv)
+	if err != nil {
+		t.Fatalf("Create B: %v", err)
+	}
+	_, err = ts.Create(testActor, "Task C", "", causes, testConv)
+	if err != nil {
+		t.Fatalf("Create C: %v", err)
+	}
+
+	// Complete A and B; leave C open.
+	if err := ts.Complete(testActor, taskA.ID, "done A", causes, testConv); err != nil {
+		t.Fatalf("Complete A: %v", err)
+	}
+	if err := ts.Complete(testActor, taskB.ID, "done B", causes, testConv); err != nil {
+		t.Fatalf("Complete B: %v", err)
+	}
+
+	open, err := ts.ListOpen()
+	if err != nil {
+		t.Fatalf("ListOpen: %v", err)
+	}
+	if len(open) != 1 {
+		t.Fatalf("expected 1 open task; got %d", len(open))
+	}
+	if open[0].Title != "Task C" {
+		t.Errorf("open task title = %q; want %q", open[0].Title, "Task C")
+	}
+}

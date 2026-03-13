@@ -176,7 +176,7 @@ func (p *Pipeline) runSelfImproveIteration(parentCtx context.Context, iteration 
 	// Step 4: List existing tasks so the CTO avoids re-proposing completed work.
 	ts := work.NewTaskStore(p.store, p.factory, p.signer)
 	existingTasksStr := ""
-	if existingTasks, listErr := ts.List(50); listErr != nil {
+	if existingTasks, listErr := ts.ListOpen(); listErr != nil {
 		fmt.Fprintf(os.Stderr, "Warning: list tasks failed: %v (continuing)\n", listErr)
 		p.emitWarning(PhaseSelfImprove, "list tasks failed: %v", listErr)
 	} else {
