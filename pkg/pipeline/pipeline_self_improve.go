@@ -174,19 +174,15 @@ func (p *Pipeline) runSelfImproveIteration(parentCtx context.Context, iteration 
 	telemetrySummary := summarizeTelemetry(telemetryResults)
 
 	// Step 4: List existing tasks so the CTO avoids re-proposing completed work.
+	// ListSummaries returns ALL tasks (including completed ones) via three
+	// batch scans — the CTO needs to see completed work to avoid re-proposals.
 	ts := work.NewTaskStore(p.store, p.factory, p.signer)
 	existingTasksStr := ""
-	if existingTasks, listErr := ts.ListOpen(); listErr != nil {
+	if summaries, listErr := ts.ListSummaries(50); listErr != nil {
 		fmt.Fprintf(os.Stderr, "Warning: list tasks failed: %v (continuing)\n", listErr)
 		p.emitWarning(PhaseSelfImprove, "list tasks failed: %v", listErr)
 	} else {
-		statusMap := make(map[types.EventID]work.TaskStatus, len(existingTasks))
-		for _, t := range existingTasks {
-			if status, sErr := ts.GetStatus(t.ID); sErr == nil {
-				statusMap[t.ID] = status
-			}
-		}
-		existingTasksStr = formatTaskList(existingTasks, statusMap)
+		existingTasksStr = formatTaskSummaries(summaries)
 	}
 
 	// Step 5: CTO analysis — fresh provider per iteration to avoid accumulating

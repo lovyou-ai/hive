@@ -385,6 +385,30 @@ func formatTaskList(tasks []work.Task, statuses ...map[types.EventID]work.TaskSt
 	return b.String()
 }
 
+// formatTaskSummaries formats a slice of TaskSummary as a bullet list for CTO context.
+// Each line includes the task title, status (pending/assigned/completed), priority,
+// and description. Returns an empty string if there are no summaries.
+// Prefer this over formatTaskList — ListSummaries returns ALL tasks (including
+// completed ones) via three batch scans, eliminating the N per-task GetStatus calls
+// and giving the CTO visibility into already-shipped work to avoid re-proposals.
+func formatTaskSummaries(summaries []work.TaskSummary) string {
+	if len(summaries) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for _, s := range summaries {
+		b.WriteString(fmt.Sprintf("  - %s[%s]", s.Title, s.Status))
+		if s.Priority != "" {
+			b.WriteString(fmt.Sprintf("[%s]", s.Priority))
+		}
+		if s.Description != "" {
+			b.WriteString(fmt.Sprintf(": %s", s.Description))
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
 // ════════════════════════════════════════════════════════════════════════
 // String utilities
 // ════════════════════════════════════════════════════════════════════════
