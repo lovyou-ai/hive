@@ -30,6 +30,7 @@ var (
 	EventTypeTaskDependencyAdded = types.MustEventType("work.task.dependency.added")
 	EventTypeTaskPrioritySet     = types.MustEventType("work.task.priority.set")
 	EventTypeTaskComment         = types.MustEventType("work.task.comment")
+	EventTypeTaskUnblocked       = types.MustEventType("work.task.unblocked")
 )
 
 // allWorkEventTypes returns all work event types for registration.
@@ -37,6 +38,7 @@ func allWorkEventTypes() []types.EventType {
 	return []types.EventType{
 		EventTypeTaskCreated, EventTypeTaskAssigned, EventTypeTaskCompleted,
 		EventTypeTaskDependencyAdded, EventTypeTaskPrioritySet, EventTypeTaskComment,
+		EventTypeTaskUnblocked,
 	}
 }
 
@@ -110,6 +112,16 @@ type CommentContent struct {
 
 func (c CommentContent) EventTypeName() string { return "work.task.comment" }
 
+// TaskUnblockedContent is emitted when a task's blockers are explicitly marked resolved.
+// It overrides any active dependency-based blocked state for the task.
+type TaskUnblockedContent struct {
+	workContent
+	TaskID      types.EventID `json:"TaskID"`
+	UnblockedBy types.ActorID `json:"UnblockedBy"`
+}
+
+func (c TaskUnblockedContent) EventTypeName() string { return "work.task.unblocked" }
+
 // RegisterEventTypes registers work content unmarshalers for Postgres
 // deserialization. Call this before querying work events from the store.
 func RegisterEventTypes() {
@@ -119,6 +131,7 @@ func RegisterEventTypes() {
 	event.RegisterContentUnmarshaler("work.task.dependency.added", event.Unmarshal[TaskDependencyContent])
 	event.RegisterContentUnmarshaler("work.task.priority.set", event.Unmarshal[TaskPrioritySetContent])
 	event.RegisterContentUnmarshaler("work.task.comment", event.Unmarshal[CommentContent])
+	event.RegisterContentUnmarshaler("work.task.unblocked", event.Unmarshal[TaskUnblockedContent])
 }
 
 // RegisterWithRegistry registers all work event types with the given registry

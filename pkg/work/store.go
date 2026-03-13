@@ -249,7 +249,8 @@ func (ts *TaskStore) GetDependencies(taskID types.EventID) ([]types.EventID, err
 	return deps, nil
 }
 
-// IsBlocked returns true if taskID has any declared dependency that is not yet completed.
+// IsBlocked returns true if taskID has any declared dependency that is not yet completed
+// and has not been explicitly unblocked via a work.task.unblocked event.
 func (ts *TaskStore) IsBlocked(taskID types.EventID) (bool, error) {
 	deps, err := ts.GetDependencies(taskID)
 	if err != nil {
@@ -257,6 +258,17 @@ func (ts *TaskStore) IsBlocked(taskID types.EventID) (bool, error) {
 	}
 	if len(deps) == 0 {
 		return false, nil
+	}
+
+	// A work.task.unblocked event explicitly clears the blocked state.
+	unblockedPage, err := ts.store.ByType(EventTypeTaskUnblocked, 1000, types.None[types.Cursor]())
+	if err != nil {
+		return false, fmt.Errorf("fetch unblocked events: %w", err)
+	}
+	for _, ev := range unblockedPage.Items() {
+		if c, ok := ev.Content().(TaskUnblockedContent); ok && c.TaskID == taskID {
+			return false, nil
+		}
 	}
 
 	// Collect all completed task IDs once.
@@ -278,6 +290,29 @@ func (ts *TaskStore) IsBlocked(taskID types.EventID) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+// UnblockTask records a work.task.unblocked event, explicitly marking the task's
+// blockers as resolved. After this event, IsBlocked returns false for the task
+// regardless of its dependency state.
+func (ts *TaskStore) UnblockTask(
+	source types.ActorID,
+	taskID types.EventID,
+	causes []types.EventID,
+	convID types.ConversationID,
+) error {
+	content := TaskUnblockedContent{
+		TaskID:      taskID,
+		UnblockedBy: source,
+	}
+	ev, err := ts.factory.Create(EventTypeTaskUnblocked, source, content, causes, convID, ts.store, ts.signer)
+	if err != nil {
+		return fmt.Errorf("create unblock event: %w", err)
+	}
+	if _, err := ts.store.Append(ev); err != nil {
+		return fmt.Errorf("append unblock event: %w", err)
+	}
+	return nil
 }
 
 // ListOpen returns all tasks that do not have a matching work.task.completed event
@@ -314,6 +349,18 @@ func (ts *TaskStore) ListOpen() ([]Task, error) {
 		}
 	}
 
+	// Collect explicitly unblocked tasks — these override the blocked state.
+	unblockedPage, err := ts.store.ByType(EventTypeTaskUnblocked, 1000, types.None[types.Cursor]())
+	if err != nil {
+		return nil, fmt.Errorf("fetch unblocked events: %w", err)
+	}
+	unblockedIDs := make(map[types.EventID]bool)
+	for _, ev := range unblockedPage.Items() {
+		if c, ok := ev.Content().(TaskUnblockedContent); ok {
+			unblockedIDs[c.TaskID] = true
+		}
+	}
+
 	// List all tasks and filter out completed and blocked ones.
 	all, err := ts.List(1000)
 	if err != nil {
@@ -321,7 +368,8 @@ func (ts *TaskStore) ListOpen() ([]Task, error) {
 	}
 	open := make([]Task, 0, len(all))
 	for _, t := range all {
-		if !completedIDs[t.ID] && len(blockedBy[t.ID]) == 0 {
+		isBlocked := len(blockedBy[t.ID]) > 0 && !unblockedIDs[t.ID]
+		if !completedIDs[t.ID] && !isBlocked {
 			open = append(open, t)
 		}
 	}
@@ -467,6 +515,18 @@ func (ts *TaskStore) batchStatus(tasks []Task) ([]TaskSummary, error) {
 		}
 	}
 
+	// Scan 4: unblocked events → explicitly unblocked set (clears blocked state).
+	unblockedPage, err := ts.store.ByType(EventTypeTaskUnblocked, 1000, types.None[types.Cursor]())
+	if err != nil {
+		return nil, fmt.Errorf("fetch unblocked events: %w", err)
+	}
+	unblockedMap := make(map[types.EventID]bool)
+	for _, ev := range unblockedPage.Items() {
+		if c, ok := ev.Content().(TaskUnblockedContent); ok {
+			unblockedMap[c.TaskID] = true
+		}
+	}
+
 	summaries := make([]TaskSummary, 0, len(tasks))
 	for _, t := range tasks {
 		status := StatusPending
@@ -479,7 +539,7 @@ func (ts *TaskStore) batchStatus(tasks []Task) ([]TaskSummary, error) {
 			Task:     t,
 			Status:   status,
 			Assignee: assigneeMap[t.ID],
-			Blocked:  blockedMap[t.ID],
+			Blocked:  blockedMap[t.ID] && !unblockedMap[t.ID],
 		})
 	}
 	return summaries, nil

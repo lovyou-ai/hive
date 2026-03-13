@@ -17,6 +17,7 @@
 //	GET  /tasks/{id}/status        get task status
 //	GET  /tasks/{id}/events        get audit trail (ordered work.task.* events for this task, including comments)
 //	POST /tasks/{id}/assign        assign task (body: {"assignee":"..."})
+//	POST /tasks/{id}/unblock       mark task blockers resolved (body: {})
 //	POST /tasks/{id}/complete      complete task (body: {"summary":"..."})
 //	POST /tasks/{id}/comment       add a comment (body: {"body":"..."})
 //	GET  /tasks/{id}/comments      list comments for a task
@@ -83,11 +84,16 @@ tr:hover td { background: #1e293b; }
 .blocked-yes { color: #f87171; font-weight: 600; }
 .blocked-no  { color: #334155; }
 .assignee { font-family: monospace; font-size: 0.75rem; color: #7c3aed; max-width: 12rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.btn { display: inline-block; padding: 0.25em 0.6em; border-radius: 4px; font-size: 0.72rem; font-weight: 600; cursor: pointer; border: none; letter-spacing: 0.02em; transition: opacity 0.15s; }
+.btn:hover { opacity: 0.8; }
+.btn-assign { background: #1e3a5f; color: #60a5fa; }
+.btn-unblock { background: #3b0a0a; color: #f87171; }
+.btn-loading { opacity: 0.5; cursor: not-allowed; }
 </style>
 </head>
 <body>
 <h1>Work Graph</h1>
-<p class="subtitle">Live pipeline dashboard — read-only</p>
+<p class="subtitle">Live pipeline dashboard</p>
 <div class="meta">
   <span class="dot"></span>
   <span id="status-line">Connecting...</span>
@@ -102,6 +108,7 @@ tr:hover td { background: #1e293b; }
       <th>Priority</th>
       <th>Assignee</th>
       <th>Blocked</th>
+      <th>Actions</th>
     </tr>
   </thead>
   <tbody id="task-body"></tbody>
@@ -134,6 +141,37 @@ function shortID(id) {
   return id ? id.slice(0, 8) + "\u2026" : "\u2014";
 }
 
+async function apiPost(path) {
+  const res = await fetch(path, {
+    method: "POST",
+    headers: { Authorization: "Bearer " + API_KEY, "Content-Type": "application/json" },
+    body: "{}",
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error((data.error || "HTTP " + res.status));
+  }
+  return res.json();
+}
+
+async function assignSelf(taskId) {
+  try {
+    await apiPost("/tasks/" + taskId + "/assign");
+    refresh();
+  } catch (err) {
+    alert("Assign failed: " + err.message);
+  }
+}
+
+async function unblockTask(taskId) {
+  try {
+    await apiPost("/tasks/" + taskId + "/unblock");
+    refresh();
+  } catch (err) {
+    alert("Unblock failed: " + err.message);
+  }
+}
+
 async function refresh() {
   try {
     const res = await fetch("/tasks", { headers: { Authorization: "Bearer " + API_KEY } });
@@ -156,6 +194,11 @@ async function refresh() {
         const assigneeCell = t.assignee
           ? '<span class="assignee" title="' + esc(t.assignee) + '">' + esc(shortID(t.assignee)) + '</span>'
           : '<span class="blocked-no">\u2014</span>';
+        const assignLabel = t.assignee ? 'Reassign' : 'Assign';
+        let actions = '<button class="btn btn-assign" onclick="assignSelf(\'' + esc(t.id) + '\')">' + assignLabel + '</button>';
+        if (t.blocked) {
+          actions += ' <button class="btn btn-unblock" onclick="unblockTask(\'' + esc(t.id) + '\')">Unblock</button>';
+        }
         return '<tr>'
           + '<td><div class="title">' + esc(t.title) + '</div>'
           + (t.description ? '<div class="desc">' + esc(t.description.slice(0, 80)) + (t.description.length > 80 ? "\u2026" : "") + '</div>' : '')
@@ -164,6 +207,7 @@ async function refresh() {
           + '<td>' + priorityBadge(t.priority) + '</td>'
           + '<td>' + assigneeCell + '</td>'
           + '<td>' + blockedCell + '</td>'
+          + '<td>' + actions + '</td>'
           + '</tr>';
       }).join("");
     }
@@ -288,6 +332,7 @@ func run() error {
 	mux.HandleFunc("GET /tasks/{id}/status", srv.auth(srv.getTaskStatus))
 	mux.HandleFunc("GET /tasks/{id}/events", srv.auth(srv.getTaskEvents))
 	mux.HandleFunc("POST /tasks/{id}/assign", srv.auth(srv.assignTask))
+	mux.HandleFunc("POST /tasks/{id}/unblock", srv.auth(srv.unblockTask))
 	mux.HandleFunc("POST /tasks/{id}/complete", srv.auth(srv.completeTask))
 	mux.HandleFunc("POST /tasks/{id}/comment", srv.auth(srv.addComment))
 	mux.HandleFunc("GET /tasks/{id}/comments", srv.auth(srv.listComments))
@@ -531,6 +576,34 @@ func (sv *server) assignTask(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// unblockTask handles POST /tasks/{id}/unblock
+// Emits a work.task.unblocked event, explicitly marking the task's blockers resolved.
+// Body: {} (no fields required; actor is the authenticated human operator)
+func (sv *server) unblockTask(w http.ResponseWriter, r *http.Request) {
+	taskID, ok := parseTaskID(w, r)
+	if !ok {
+		return
+	}
+	causes, err := sv.currentCauses()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "get causes: "+err.Error())
+		return
+	}
+	convID, err := newConversationID()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "conversation id: "+err.Error())
+		return
+	}
+	if err := sv.ts.UnblockTask(sv.humanID, taskID, causes, convID); err != nil {
+		writeErr(w, http.StatusInternalServerError, "unblock: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"task_id": taskID.Value(),
+		"blocked": false,
+	})
+}
+
 // completeTask handles POST /tasks/{id}/complete
 // Body: {"summary":"..."}
 func (sv *server) completeTask(w http.ResponseWriter, r *http.Request) {
@@ -713,6 +786,7 @@ func (sv *server) getTaskEvents(w http.ResponseWriter, r *http.Request) {
 		work.EventTypeTaskDependencyAdded,
 		work.EventTypeTaskPrioritySet,
 		work.EventTypeTaskComment,
+		work.EventTypeTaskUnblocked,
 	} {
 		page, err := sv.store.ByType(et, 1000, types.None[types.Cursor]())
 		if err != nil {
@@ -755,6 +829,8 @@ func taskIDFromContent(content any) types.EventID {
 	case work.TaskPrioritySetContent:
 		return c.TaskID
 	case work.CommentContent:
+		return c.TaskID
+	case work.TaskUnblockedContent:
 		return c.TaskID
 	}
 	return types.EventID{}
