@@ -25,6 +25,7 @@
 //
 // Workspace-scoped routes (authenticated via WORK_API_TOKEN):
 //
+//	GET  /w/{workspace}                         workspace task dashboard (HTML, no auth required)
 //	POST /w/{workspace}/tasks                   create a task in the workspace
 //	GET  /w/{workspace}/tasks                   list tasks in the workspace
 //	POST /w/{workspace}/tasks/{id}/assign       assign a workspace task
@@ -246,6 +247,318 @@ setInterval(tick, 1000);
 </body>
 </html>`
 
+// workspaceDashboardHTML is the interactive task dashboard served at GET /w/{workspace}.
+// Placeholders {{WORKSPACE}} and {{API_TOKEN}} are replaced at serve time.
+const workspaceDashboardHTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{WORKSPACE}} — Work Graph</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: system-ui, -apple-system, sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; padding: 2rem; }
+h1 { font-size: 1.5rem; font-weight: 600; color: #f8fafc; margin-bottom: 0.25rem; }
+.subtitle { font-size: 0.875rem; color: #64748b; margin-bottom: 1.5rem; }
+.meta { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.25rem; font-size: 0.8125rem; color: #64748b; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; animation: pulse 2s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+.toolbar { display: flex; align-items: center; justify-content: flex-end; margin-bottom: 1.25rem; }
+.error { background: #3b1010; color: #fca5a5; padding: 0.75rem 1rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.875rem; }
+.empty { color: #475569; font-size: 0.875rem; padding: 2rem 0; text-align: center; }
+table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+th { text-align: left; padding: 0.5rem 0.75rem; color: #64748b; font-weight: 500; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid #1e293b; }
+td { padding: 0.625rem 0.75rem; border-bottom: 1px solid #1e293b; vertical-align: middle; }
+tr:hover td { background: #1e293b; }
+.title { font-weight: 500; color: #f1f5f9; max-width: 28rem; }
+.desc { font-size: 0.75rem; color: #64748b; margin-top: 0.125rem; }
+.badge { display: inline-block; padding: 0.2em 0.55em; border-radius: 4px; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
+.s-open       { background: #1e3a5f; color: #60a5fa; }
+.s-in_progress{ background: #3b2400; color: #fb923c; }
+.s-completed  { background: #052e16; color: #4ade80; }
+.s-blocked    { background: #3b0a0a; color: #f87171; }
+.p-high   { background: #3b0a0a; color: #f87171; }
+.p-medium { background: #3b2400; color: #fb923c; }
+.p-low    { background: #1e293b; color: #94a3b8; }
+.blocked-yes { color: #f87171; font-weight: 600; }
+.blocked-no  { color: #334155; }
+.assignee { font-family: monospace; font-size: 0.75rem; color: #7c3aed; max-width: 12rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.btn { display: inline-block; padding: 0.25em 0.6em; border-radius: 4px; font-size: 0.72rem; font-weight: 600; cursor: pointer; border: none; letter-spacing: 0.02em; transition: opacity 0.15s; margin-right: 0.25rem; }
+.btn:hover { opacity: 0.8; }
+.btn-primary  { background: #1d4ed8; color: #fff; padding: 0.5em 1em; font-size: 0.8125rem; }
+.btn-assign   { background: #1e3a5f; color: #60a5fa; }
+.btn-complete { background: #052e16; color: #4ade80; }
+.btn-comment  { background: #1e293b; color: #94a3b8; }
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 100; align-items: center; justify-content: center; }
+.modal-overlay.open { display: flex; }
+.modal { background: #1e293b; border-radius: 8px; padding: 1.5rem; min-width: 22rem; max-width: 32rem; width: 100%; }
+.modal h2 { font-size: 1rem; font-weight: 600; color: #f1f5f9; margin-bottom: 1rem; }
+.form-field { margin-bottom: 0.875rem; }
+.form-field label { display: block; font-size: 0.8125rem; color: #94a3b8; margin-bottom: 0.25rem; }
+.form-field input, .form-field textarea, .form-field select { width: 100%; background: #0f1117; border: 1px solid #334155; border-radius: 4px; color: #e2e8f0; padding: 0.5rem 0.625rem; font-size: 0.875rem; font-family: inherit; }
+.form-field textarea { resize: vertical; min-height: 5rem; }
+.form-field input:focus, .form-field textarea:focus, .form-field select:focus { outline: none; border-color: #3b82f6; }
+.modal-actions { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1rem; }
+.btn-cancel { background: #0f1117; color: #94a3b8; border: 1px solid #334155; }
+.btn-submit { background: #1d4ed8; color: #fff; }
+</style>
+</head>
+<body>
+<h1>{{WORKSPACE}}</h1>
+<p class="subtitle">Workspace task board</p>
+<div class="meta">
+  <span class="dot"></span>
+  <span id="status-line">Connecting...</span>
+  <span id="countdown"></span>
+</div>
+<div id="error-box" class="error" style="display:none"></div>
+<div class="toolbar">
+  <button class="btn btn-primary" onclick="openCreate()">+ New Task</button>
+</div>
+<table id="task-table" style="display:none">
+  <thead>
+    <tr>
+      <th>Task</th>
+      <th>Status</th>
+      <th>Priority</th>
+      <th>Assignee</th>
+      <th>Blocked</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody id="task-body"></tbody>
+</table>
+<div id="empty-msg" class="empty" style="display:none">No tasks yet. Create one above.</div>
+
+<!-- Create Task Modal -->
+<div class="modal-overlay" id="create-modal" onclick="if(event.target===this)closeCreate()">
+  <div class="modal">
+    <h2>New Task</h2>
+    <div class="form-field">
+      <label>Title *</label>
+      <input type="text" id="create-title" placeholder="Task title" />
+    </div>
+    <div class="form-field">
+      <label>Description</label>
+      <textarea id="create-desc" placeholder="Optional description"></textarea>
+    </div>
+    <div class="form-field">
+      <label>Priority</label>
+      <select id="create-priority">
+        <option value="medium">Medium</option>
+        <option value="high">High</option>
+        <option value="low">Low</option>
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-cancel" onclick="closeCreate()">Cancel</button>
+      <button class="btn btn-submit" onclick="submitCreate()">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- Comment Modal -->
+<div class="modal-overlay" id="comment-modal" onclick="if(event.target===this)closeComment()">
+  <div class="modal">
+    <h2>Add Comment</h2>
+    <div class="form-field">
+      <label>Comment *</label>
+      <textarea id="comment-body" placeholder="Enter your comment"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-cancel" onclick="closeComment()">Cancel</button>
+      <button class="btn btn-submit" onclick="submitComment()">Post</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const WORKSPACE = "{{WORKSPACE}}";
+const API_TOKEN = "{{API_TOKEN}}";
+const BASE = "/w/" + WORKSPACE;
+const REFRESH_MS = 10000;
+let nextAt;
+let pendingCommentTaskId = null;
+
+function esc(s) {
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+function badge(cls, text) {
+  return '<span class="badge ' + cls + '">' + esc(text) + '</span>';
+}
+
+function statusBadge(s) {
+  const map = { open: "s-open", in_progress: "s-in_progress", completed: "s-completed", blocked: "s-blocked" };
+  return badge(map[s] || "s-open", s || "open");
+}
+
+function priorityBadge(p) {
+  const map = { high: "p-high", medium: "p-medium", low: "p-low" };
+  return badge(map[p] || "p-low", p || "");
+}
+
+function shortID(id) {
+  return id ? id.slice(0, 8) + "\u2026" : "\u2014";
+}
+
+function authHeaders() {
+  return { Authorization: "Bearer " + API_TOKEN, "Content-Type": "application/json" };
+}
+
+async function apiPost(path, body) {
+  const res = await fetch(path, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify(body || {}),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || "HTTP " + res.status);
+  return data;
+}
+
+function openCreate() {
+  document.getElementById("create-title").value = "";
+  document.getElementById("create-desc").value = "";
+  document.getElementById("create-priority").value = "medium";
+  document.getElementById("create-modal").classList.add("open");
+  document.getElementById("create-title").focus();
+}
+
+function closeCreate() {
+  document.getElementById("create-modal").classList.remove("open");
+}
+
+async function submitCreate() {
+  const title = document.getElementById("create-title").value.trim();
+  if (!title) { alert("Title is required"); return; }
+  try {
+    await apiPost(BASE + "/tasks", {
+      title,
+      description: document.getElementById("create-desc").value.trim(),
+      priority: document.getElementById("create-priority").value,
+    });
+    closeCreate();
+    refresh();
+  } catch (err) {
+    alert("Create failed: " + err.message);
+  }
+}
+
+async function assignTask(taskId) {
+  try {
+    await apiPost(BASE + "/tasks/" + taskId + "/assign", {});
+    refresh();
+  } catch (err) {
+    alert("Assign failed: " + err.message);
+  }
+}
+
+async function completeTask(taskId) {
+  if (!confirm("Mark task as complete?")) return;
+  try {
+    await apiPost(BASE + "/tasks/" + taskId + "/complete", { summary: "Completed via dashboard" });
+    refresh();
+  } catch (err) {
+    alert("Complete failed: " + err.message);
+  }
+}
+
+function openComment(taskId) {
+  pendingCommentTaskId = taskId;
+  document.getElementById("comment-body").value = "";
+  document.getElementById("comment-modal").classList.add("open");
+  document.getElementById("comment-body").focus();
+}
+
+function closeComment() {
+  document.getElementById("comment-modal").classList.remove("open");
+  pendingCommentTaskId = null;
+}
+
+async function submitComment() {
+  const body = document.getElementById("comment-body").value.trim();
+  if (!body) { alert("Comment is required"); return; }
+  try {
+    await apiPost(BASE + "/tasks/" + pendingCommentTaskId + "/comment", { body });
+    closeComment();
+    refresh();
+  } catch (err) {
+    alert("Comment failed: " + err.message);
+  }
+}
+
+async function refresh() {
+  try {
+    const res = await fetch(BASE + "/tasks", { headers: { Authorization: "Bearer " + API_TOKEN } });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    const tasks = data.tasks || [];
+    document.getElementById("error-box").style.display = "none";
+
+    const tbody = document.getElementById("task-body");
+    if (tasks.length === 0) {
+      document.getElementById("task-table").style.display = "none";
+      document.getElementById("empty-msg").style.display = "block";
+    } else {
+      document.getElementById("task-table").style.display = "table";
+      document.getElementById("empty-msg").style.display = "none";
+      tbody.innerHTML = tasks.map(t => {
+        const blockedCell = t.blocked
+          ? '<span class="blocked-yes">\u26a0 blocked</span>'
+          : '<span class="blocked-no">\u2014</span>';
+        const assigneeCell = t.assignee
+          ? '<span class="assignee" title="' + esc(t.assignee) + '">' + esc(shortID(t.assignee)) + '</span>'
+          : '<span class="blocked-no">\u2014</span>';
+        const isCompleted = t.status === "completed";
+        let actions = "";
+        if (!isCompleted) {
+          actions += '<button class="btn btn-assign" onclick="assignTask(\'' + esc(t.id) + '\')">' + (t.assignee ? 'Reassign' : 'Assign') + '</button>';
+          actions += '<button class="btn btn-complete" onclick="completeTask(\'' + esc(t.id) + '\')">Complete</button>';
+        }
+        actions += '<button class="btn btn-comment" onclick="openComment(\'' + esc(t.id) + '\')">Comment</button>';
+        return '<tr>'
+          + '<td><div class="title">' + esc(t.title) + '</div>'
+          + (t.description ? '<div class="desc">' + esc(t.description.slice(0, 80)) + (t.description.length > 80 ? "\u2026" : "") + '</div>' : '')
+          + '</td>'
+          + '<td>' + statusBadge(t.status) + '</td>'
+          + '<td>' + priorityBadge(t.priority) + '</td>'
+          + '<td>' + assigneeCell + '</td>'
+          + '<td>' + blockedCell + '</td>'
+          + '<td>' + actions + '</td>'
+          + '</tr>';
+      }).join("");
+    }
+
+    const now = new Date();
+    document.getElementById("status-line").textContent =
+      "Updated " + now.toLocaleTimeString() + " \u2014 " + tasks.length + " task" + (tasks.length === 1 ? "" : "s");
+    nextAt = Date.now() + REFRESH_MS;
+  } catch (err) {
+    const box = document.getElementById("error-box");
+    box.textContent = "Fetch failed: " + err.message;
+    box.style.display = "block";
+    document.getElementById("status-line").textContent = "Error \u2014 retrying in 10s";
+    nextAt = Date.now() + REFRESH_MS;
+  }
+}
+
+function tick() {
+  const secs = Math.max(0, Math.round((nextAt - Date.now()) / 1000));
+  document.getElementById("countdown").textContent = secs > 0 ? "(next refresh in " + secs + "s)" : "";
+}
+
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") { closeCreate(); closeComment(); }
+});
+
+refresh();
+setInterval(refresh, REFRESH_MS);
+setInterval(tick, 1000);
+</script>
+</body>
+</html>`
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
@@ -352,6 +665,7 @@ func run() error {
 	mux.HandleFunc("GET /tasks/{id}/comments", srv.auth(srv.listComments))
 
 	// Workspace-scoped routes — isolated namespace per team, auth via WORK_API_TOKEN.
+	mux.HandleFunc("GET /w/{workspace}", srv.workspaceDashboard)
 	mux.HandleFunc("POST /w/{workspace}/tasks", srv.tokenAuth(srv.createWorkspaceTask))
 	mux.HandleFunc("GET /w/{workspace}/tasks", srv.tokenAuth(srv.listWorkspaceTasks))
 	mux.HandleFunc("POST /w/{workspace}/tasks/{id}/assign", srv.tokenAuth(srv.assignTask))
@@ -385,6 +699,20 @@ type server struct {
 // fetch() calls can authenticate against GET /tasks.
 func (sv *server) dashboard(w http.ResponseWriter, r *http.Request) {
 	html := strings.ReplaceAll(dashboardHTML, "{{API_KEY}}", sv.apiKey)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprint(w, html)
+}
+
+// workspaceDashboard handles GET /w/{workspace} — serves the interactive workspace task dashboard.
+// No auth required on the GET; the API token is injected into the page for browser fetch() calls.
+func (sv *server) workspaceDashboard(w http.ResponseWriter, r *http.Request) {
+	workspace := r.PathValue("workspace")
+	if workspace == "" {
+		writeErr(w, http.StatusBadRequest, "workspace is required")
+		return
+	}
+	html := strings.ReplaceAll(workspaceDashboardHTML, "{{WORKSPACE}}", workspace)
+	html = strings.ReplaceAll(html, "{{API_TOKEN}}", sv.apiToken)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprint(w, html)
 }
