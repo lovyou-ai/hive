@@ -18,7 +18,7 @@ func allMindEventTypes() []types.EventType {
 // mindContent is a no-op marker embedded in all mind content types.
 type mindContent struct{}
 
-func (mindContent) Accept(_ interface{}) {}
+func (mindContent) Accept(event.EventContentVisitor) {}
 
 // ObservationCreatedContent holds a CTO decision recorded in the mind store.
 type ObservationCreatedContent struct {
