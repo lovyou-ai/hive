@@ -136,7 +136,7 @@ var errSelfImproveStop = fmt.Errorf("CTO says nothing worth fixing")
 // runSelfImproveIteration runs a single self-improve iteration with a timeout.
 // Returns the total cost incurred (CTO analysis + targeted pipeline) and an error.
 // Returns errSelfImproveStop if the CTO says nothing is worth fixing.
-func (p *Pipeline) runSelfImproveIteration(parentCtx context.Context, iteration int, input ProductInput) (float64, error) {
+func (p *Pipeline) runSelfImproveIteration(parentCtx context.Context, iteration int, input ProductInput) (cost float64, retErr error) {
 	ctx, cancel := context.WithTimeout(parentCtx, selfImproveIterationTimeout)
 	defer cancel()
 
@@ -308,6 +308,25 @@ Respond with ONLY a JSON object: {"description": "what to change, 1-2 sentences"
 
 	// Wire work task — best-effort, log warning and continue on any error.
 	var workTask *work.Task
+	// Deferred work task completion — runs on all exit paths so failed
+	// iterations resolve their tasks instead of stranding them.
+	defer func() {
+		if workTask == nil {
+			return
+		}
+		completer := p.humanID
+		if builder, ok := p.agents[roles.RoleBuilder]; ok {
+			completer = builder.Runtime.ID()
+		}
+		summary := rec.Description
+		if retErr != nil {
+			summary = fmt.Sprintf("failed: %v", retErr)
+		}
+		if completeErr := ts.Complete(completer, workTask.ID, summary, []types.EventID{workTask.ID}, p.convID); completeErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: work task complete failed: %v (continuing)\n", completeErr)
+			p.emitWarning(PhaseSelfImprove, "work task complete failed: %v", completeErr)
+		}
+	}()
 	if head, headErr := p.store.Head(); headErr == nil && head.IsSome() {
 		causes := []types.EventID{head.Unwrap().ID()}
 		task, createErr := ts.Create(p.humanID, rec.Description, rec.ExpectedImpact, causes, p.convID)
@@ -337,18 +356,6 @@ Respond with ONLY a JSON object: {"description": "what to change, 1-2 sentences"
 			iterCost += t.Snapshot().CostUSD
 		}
 		return iterCost, fmt.Errorf("targeted pipeline: %w", err)
-	}
-
-	// Mark work task complete on success — best-effort.
-	if workTask != nil {
-		completer := p.humanID
-		if builder, ok := p.agents[roles.RoleBuilder]; ok {
-			completer = builder.Runtime.ID()
-		}
-		if completeErr := ts.Complete(completer, workTask.ID, rec.Description, []types.EventID{workTask.ID}, p.convID); completeErr != nil {
-			fmt.Fprintf(os.Stderr, "Warning: work task complete failed: %v (continuing)\n", completeErr)
-			p.emitWarning(PhaseSelfImprove, "work task complete failed: %v", completeErr)
-		}
 	}
 
 	iterCost := ctoCost

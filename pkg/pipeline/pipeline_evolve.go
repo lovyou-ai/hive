@@ -204,7 +204,7 @@ func (p *Pipeline) RunEvolve(ctx context.Context, input ProductInput) error {
 var errEvolveStop = fmt.Errorf("CTO says nothing worth building")
 var errEvolveNoChanges = fmt.Errorf("builder made no changes")
 
-func (p *Pipeline) runEvolveIteration(parentCtx context.Context, iteration int, input ProductInput, state *EvolveState, pmPriorities string) (float64, *EvolveRecommendation, error) {
+func (p *Pipeline) runEvolveIteration(parentCtx context.Context, iteration int, input ProductInput, state *EvolveState, pmPriorities string) (cost float64, recOut *EvolveRecommendation, retErr error) {
 	ctx, cancel := context.WithTimeout(parentCtx, evolveIterationTimeout)
 	defer cancel()
 
@@ -338,6 +338,28 @@ func (p *Pipeline) runEvolveIteration(parentCtx context.Context, iteration int, 
 
 	// Wire work task — best-effort, log warning and continue on any error.
 	var workTask *work.Task
+	// Deferred work task completion — runs on all exit paths so failed and
+	// no-changes iterations resolve their tasks instead of stranding them.
+	defer func() {
+		if workTask == nil {
+			return
+		}
+		completer := p.humanID
+		if builder, ok := p.agents[roles.RoleBuilder]; ok {
+			completer = builder.Runtime.ID()
+		}
+		summary := ""
+		if recOut != nil {
+			summary = recOut.Description
+		}
+		if retErr != nil {
+			summary = fmt.Sprintf("failed: %v", retErr)
+		}
+		if completeErr := ts.Complete(completer, workTask.ID, summary, []types.EventID{workTask.ID}, p.convID); completeErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: work task complete failed: %v (continuing)\n", completeErr)
+			p.emitWarning(PhaseEvolve, "work task complete failed: %v", completeErr)
+		}
+	}()
 	if head, headErr := p.store.Head(); headErr == nil && head.IsSome() {
 		causes := []types.EventID{head.Unwrap().ID()}
 		task, createErr := ts.Create(p.humanID, rec.Description, rec.ExpectedImpact, causes, p.convID)
@@ -379,18 +401,6 @@ func (p *Pipeline) runEvolveIteration(parentCtx context.Context, iteration int, 
 			iterCost += t.Snapshot().CostUSD
 		}
 		return iterCost, &rec, errEvolveNoChanges
-	}
-
-	// Mark work task complete on success — best-effort.
-	if workTask != nil {
-		completer := p.humanID
-		if builder, ok := p.agents[roles.RoleBuilder]; ok {
-			completer = builder.Runtime.ID()
-		}
-		if completeErr := ts.Complete(completer, workTask.ID, rec.Description, []types.EventID{workTask.ID}, p.convID); completeErr != nil {
-			fmt.Fprintf(os.Stderr, "Warning: work task complete failed: %v (continuing)\n", completeErr)
-			p.emitWarning(PhaseEvolve, "work task complete failed: %v", completeErr)
-		}
 	}
 
 	iterCost := ctoCost
