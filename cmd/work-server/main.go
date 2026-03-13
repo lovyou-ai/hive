@@ -10,6 +10,7 @@
 //
 // Endpoints:
 //
+//	GET  /                         read-only dashboard (HTML, no auth required)
 //	POST /tasks                    create a task
 //	GET  /tasks                    list tasks (?open=true, ?priority=high, ?assignee=<actor_id>)
 //	GET  /tasks/{id}               get full task details (title, description, priority, status, assignee, blocked)
@@ -43,6 +44,152 @@ import (
 
 	"github.com/lovyou-ai/hive/pkg/work"
 )
+
+// dashboardHTML is the read-only monitoring dashboard served at GET /.
+// The placeholder {{API_KEY}} is replaced at serve time with the actual key so
+// the browser's fetch() calls can authenticate against GET /tasks.
+const dashboardHTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Work Graph — Live Dashboard</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: system-ui, -apple-system, sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; padding: 2rem; }
+h1 { font-size: 1.5rem; font-weight: 600; color: #f8fafc; margin-bottom: 0.25rem; }
+.subtitle { font-size: 0.875rem; color: #64748b; margin-bottom: 1.5rem; }
+.meta { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.25rem; font-size: 0.8125rem; color: #64748b; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; animation: pulse 2s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+.error { background: #3b1010; color: #fca5a5; padding: 0.75rem 1rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.875rem; }
+.empty { color: #475569; font-size: 0.875rem; padding: 2rem 0; text-align: center; }
+table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+th { text-align: left; padding: 0.5rem 0.75rem; color: #64748b; font-weight: 500; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid #1e293b; }
+td { padding: 0.625rem 0.75rem; border-bottom: 1px solid #1e293b; vertical-align: middle; }
+tr:hover td { background: #1e293b; }
+.title { font-weight: 500; color: #f1f5f9; max-width: 28rem; }
+.desc { font-size: 0.75rem; color: #64748b; margin-top: 0.125rem; }
+.badge { display: inline-block; padding: 0.2em 0.55em; border-radius: 4px; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
+.s-open       { background: #1e3a5f; color: #60a5fa; }
+.s-in_progress{ background: #3b2400; color: #fb923c; }
+.s-completed  { background: #052e16; color: #4ade80; }
+.s-blocked    { background: #3b0a0a; color: #f87171; }
+.p-high   { background: #3b0a0a; color: #f87171; }
+.p-medium { background: #3b2400; color: #fb923c; }
+.p-low    { background: #1e293b; color: #94a3b8; }
+.blocked-yes { color: #f87171; font-weight: 600; }
+.blocked-no  { color: #334155; }
+.assignee { font-family: monospace; font-size: 0.75rem; color: #7c3aed; max-width: 12rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>
+</head>
+<body>
+<h1>Work Graph</h1>
+<p class="subtitle">Live pipeline dashboard — read-only</p>
+<div class="meta">
+  <span class="dot"></span>
+  <span id="status-line">Connecting...</span>
+  <span id="countdown"></span>
+</div>
+<div id="error-box" class="error" style="display:none"></div>
+<table id="task-table" style="display:none">
+  <thead>
+    <tr>
+      <th>Task</th>
+      <th>Status</th>
+      <th>Priority</th>
+      <th>Assignee</th>
+      <th>Blocked</th>
+    </tr>
+  </thead>
+  <tbody id="task-body"></tbody>
+</table>
+<div id="empty-msg" class="empty" style="display:none">No tasks yet.</div>
+<script>
+const API_KEY = "{{API_KEY}}";
+const REFRESH_MS = 10000;
+let timer, countdown, nextAt;
+
+function esc(s) {
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+function badge(cls, text) {
+  return '<span class="badge ' + cls + '">' + esc(text) + '</span>';
+}
+
+function statusBadge(s) {
+  const map = { open: "s-open", in_progress: "s-in_progress", completed: "s-completed", blocked: "s-blocked" };
+  return badge(map[s] || "s-open", s || "open");
+}
+
+function priorityBadge(p) {
+  const map = { high: "p-high", medium: "p-medium", low: "p-low" };
+  return badge(map[p] || "p-low", p || "");
+}
+
+function shortID(id) {
+  return id ? id.slice(0, 8) + "\u2026" : "\u2014";
+}
+
+async function refresh() {
+  try {
+    const res = await fetch("/tasks", { headers: { Authorization: "Bearer " + API_KEY } });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    const tasks = data.tasks || [];
+    document.getElementById("error-box").style.display = "none";
+
+    const tbody = document.getElementById("task-body");
+    if (tasks.length === 0) {
+      document.getElementById("task-table").style.display = "none";
+      document.getElementById("empty-msg").style.display = "block";
+    } else {
+      document.getElementById("task-table").style.display = "table";
+      document.getElementById("empty-msg").style.display = "none";
+      tbody.innerHTML = tasks.map(t => {
+        const blockedCell = t.blocked
+          ? '<span class="blocked-yes">\u26a0 blocked</span>'
+          : '<span class="blocked-no">\u2014</span>';
+        const assigneeCell = t.assignee
+          ? '<span class="assignee" title="' + esc(t.assignee) + '">' + esc(shortID(t.assignee)) + '</span>'
+          : '<span class="blocked-no">\u2014</span>';
+        return '<tr>'
+          + '<td><div class="title">' + esc(t.title) + '</div>'
+          + (t.description ? '<div class="desc">' + esc(t.description.slice(0, 80)) + (t.description.length > 80 ? "\u2026" : "") + '</div>' : '')
+          + '</td>'
+          + '<td>' + statusBadge(t.status) + '</td>'
+          + '<td>' + priorityBadge(t.priority) + '</td>'
+          + '<td>' + assigneeCell + '</td>'
+          + '<td>' + blockedCell + '</td>'
+          + '</tr>';
+      }).join("");
+    }
+
+    const now = new Date();
+    document.getElementById("status-line").textContent =
+      "Updated " + now.toLocaleTimeString() + " \u2014 " + tasks.length + " task" + (tasks.length === 1 ? "" : "s");
+    nextAt = Date.now() + REFRESH_MS;
+  } catch (err) {
+    const box = document.getElementById("error-box");
+    box.textContent = "Fetch failed: " + err.message;
+    box.style.display = "block";
+    document.getElementById("status-line").textContent = "Error \u2014 retrying in 10s";
+    nextAt = Date.now() + REFRESH_MS;
+  }
+}
+
+function tick() {
+  const secs = Math.max(0, Math.round((nextAt - Date.now()) / 1000));
+  document.getElementById("countdown").textContent = secs > 0 ? "(next refresh in " + secs + "s)" : "";
+}
+
+refresh();
+setInterval(refresh, REFRESH_MS);
+setInterval(tick, 1000);
+</script>
+</body>
+</html>`
 
 func main() {
 	if err := run(); err != nil {
@@ -131,6 +278,7 @@ func run() error {
 	}
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /", srv.dashboard)
 	mux.HandleFunc("GET /health", srv.health)
 	mux.HandleFunc("POST /tasks", srv.auth(srv.createTask))
 	mux.HandleFunc("GET /tasks", srv.auth(srv.listTasks))
@@ -159,6 +307,15 @@ type server struct {
 	store   store.Store
 	humanID types.ActorID
 	apiKey  string
+}
+
+// dashboard handles GET / — serves the read-only HTML monitoring dashboard.
+// No auth required; the API key is injected into the page so the browser's
+// fetch() calls can authenticate against GET /tasks.
+func (sv *server) dashboard(w http.ResponseWriter, r *http.Request) {
+	html := strings.ReplaceAll(dashboardHTML, "{{API_KEY}}", sv.apiKey)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprint(w, html)
 }
 
 // health handles GET /health — used by Fly.io and load balancers to check liveness.
