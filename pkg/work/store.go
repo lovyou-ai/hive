@@ -8,6 +8,18 @@ import (
 	"github.com/lovyou-ai/eventgraph/go/pkg/types"
 )
 
+// TaskStatus represents the current lifecycle state of a task.
+type TaskStatus string
+
+const (
+	// StatusPending means the task has been created but not yet assigned.
+	StatusPending TaskStatus = "pending"
+	// StatusAssigned means the task has been assigned to an actor but not yet completed.
+	StatusAssigned TaskStatus = "assigned"
+	// StatusCompleted means the task has been marked complete.
+	StatusCompleted TaskStatus = "completed"
+)
+
 // Task represents a work item derived from a work.task.created event.
 type Task struct {
 	ID          types.EventID
@@ -131,6 +143,68 @@ func (ts *TaskStore) Complete(
 		return fmt.Errorf("append complete event: %w", err)
 	}
 	return nil
+}
+
+// GetStatus reconstructs the current status of a task by scanning
+// work.task.completed and work.task.assigned events for the given task ID.
+// Returns StatusCompleted if a completed event exists, StatusAssigned if an
+// assigned event exists, and StatusPending otherwise.
+func (ts *TaskStore) GetStatus(taskID types.EventID) (TaskStatus, error) {
+	// Check for completed event first.
+	completedPage, err := ts.store.ByType(EventTypeTaskCompleted, 1000, types.None[types.Cursor]())
+	if err != nil {
+		return StatusPending, fmt.Errorf("fetch completed events: %w", err)
+	}
+	for _, ev := range completedPage.Items() {
+		c, ok := ev.Content().(TaskCompletedContent)
+		if ok && c.TaskID == taskID {
+			return StatusCompleted, nil
+		}
+	}
+
+	// Check for assigned event.
+	assignedPage, err := ts.store.ByType(EventTypeTaskAssigned, 1000, types.None[types.Cursor]())
+	if err != nil {
+		return StatusPending, fmt.Errorf("fetch assigned events: %w", err)
+	}
+	for _, ev := range assignedPage.Items() {
+		c, ok := ev.Content().(TaskAssignedContent)
+		if ok && c.TaskID == taskID {
+			return StatusAssigned, nil
+		}
+	}
+
+	return StatusPending, nil
+}
+
+// ListOpen returns all tasks that do not have a matching work.task.completed event.
+// It fetches up to 1000 tasks and filters out any that are completed.
+func (ts *TaskStore) ListOpen() ([]Task, error) {
+	// Collect all completed task IDs.
+	completedPage, err := ts.store.ByType(EventTypeTaskCompleted, 1000, types.None[types.Cursor]())
+	if err != nil {
+		return nil, fmt.Errorf("fetch completed events: %w", err)
+	}
+	completedIDs := make(map[types.EventID]bool, len(completedPage.Items()))
+	for _, ev := range completedPage.Items() {
+		c, ok := ev.Content().(TaskCompletedContent)
+		if ok {
+			completedIDs[c.TaskID] = true
+		}
+	}
+
+	// List all tasks and filter out completed ones.
+	all, err := ts.List(1000)
+	if err != nil {
+		return nil, err
+	}
+	open := make([]Task, 0, len(all))
+	for _, t := range all {
+		if !completedIDs[t.ID] {
+			open = append(open, t)
+		}
+	}
+	return open, nil
 }
 
 // GetByAssignee returns tasks assigned to the given actor.
