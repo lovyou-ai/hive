@@ -173,7 +173,17 @@ func (p *Pipeline) runSelfImproveIteration(parentCtx context.Context, iteration 
 	// Step 3: Build telemetry summary for CTO
 	telemetrySummary := summarizeTelemetry(telemetryResults)
 
-	// Step 4: CTO analysis — fresh provider per iteration to avoid accumulating
+	// Step 4: List existing tasks so the CTO avoids re-proposing completed work.
+	ts := work.NewTaskStore(p.store, p.factory, p.signer)
+	existingTasksStr := ""
+	if existingTasks, listErr := ts.List(50); listErr != nil {
+		fmt.Fprintf(os.Stderr, "Warning: list tasks failed: %v (continuing)\n", listErr)
+		p.emitWarning(PhaseSelfImprove, "list tasks failed: %v", listErr)
+	} else {
+		existingTasksStr = formatTaskList(existingTasks)
+	}
+
+	// Step 5: CTO analysis — fresh provider per iteration to avoid accumulating
 	// prior conversation as input context (each prompt already contains full
 	// telemetry + codebase, so prior messages are pure waste).
 	fmt.Fprintln(os.Stderr, "CTO analyzing telemetry + codebase...")
@@ -188,6 +198,11 @@ func (p *Pipeline) runSelfImproveIteration(parentCtx context.Context, iteration 
 	fmt.Fprintf(os.Stderr, "  ↳ self-improve CTO analysis using %s\n", model)
 	p.emitProgress(PhaseSelfImprove, "self-improve CTO analysis using %s", model)
 
+	existingTasksSection := ""
+	if existingTasksStr != "" {
+		existingTasksSection = fmt.Sprintf("EXISTING TASKS (do NOT re-propose these — they have already been created):\n%s\n", existingTasksStr)
+	}
+
 	ctoPrompt := fmt.Sprintf(`You are the CTO of a self-improving AI agent system. Analyze this codebase and telemetry to identify the single highest-impact improvement.
 
 TELEMETRY DATA (from past pipeline runs):
@@ -200,7 +215,7 @@ PROJECT STRUCTURE:
 
 You have the FULL codebase above — not just the pipeline. Look across ALL packages for improvements.
 
-PRIORITY ORDER (most to least valuable):
+%sPRIORITY ORDER (most to least valuable):
 1. Bugs or correctness issues anywhere in the codebase
 2. Missing features that would make the system more capable (new commands, better error recovery, retry logic, richer telemetry, etc.)
 3. Robustness gaps (missing error handling, race conditions, edge cases)
@@ -213,7 +228,7 @@ IMPORTANT constraints:
 - Your recommendation MUST describe a concrete code change, not a diagnosis or investigation.
 - Look beyond pkg/pipeline/ — workspace, roles, resources, spawn, authority, loop, mcp, and cmd/ are all fair game.
 
-Respond with ONLY a JSON object: {"description": "what to change, 1-2 sentences", "files_to_change": ["path/to/file"], "expected_impact": "1 sentence", "priority": "high|medium|low", "skip_reason": "if nothing is worth fixing, explain why here; otherwise empty string"}. No preamble, no explanation, no code blocks, no markdown.`, telemetrySummary, fileListing, keyContext)
+Respond with ONLY a JSON object: {"description": "what to change, 1-2 sentences", "files_to_change": ["path/to/file"], "expected_impact": "1 sentence", "priority": "high|medium|low", "skip_reason": "if nothing is worth fixing, explain why here; otherwise empty string"}. No preamble, no explanation, no code blocks, no markdown.`, telemetrySummary, fileListing, keyContext, existingTasksSection)
 
 	ctoStart := time.Now()
 	ctoResp, err := ctoTracker.Reason(ctx, ctoPrompt, nil)
@@ -223,7 +238,7 @@ Respond with ONLY a JSON object: {"description": "what to change, 1-2 sentences"
 	}
 	ctoResponse := ctoResp.Content()
 
-	// Step 5: Parse recommendation
+	// Step 6: Parse recommendation
 	rec, err := parseSelfImproveRecommendation(ctoResponse)
 	if err != nil {
 		return ctoCost, fmt.Errorf("parse CTO recommendation: %w", err)
@@ -247,7 +262,7 @@ Respond with ONLY a JSON object: {"description": "what to change, 1-2 sentences"
 	fmt.Fprintf(os.Stderr, "Files to change: %v\n", rec.FilesToChange)
 	p.emitOutput("cto", "analysis", fmt.Sprintf("files to change: %v", rec.FilesToChange))
 
-	// Step 6: Run targeted pipeline with the recommendation.
+	// Step 7: Run targeted pipeline with the recommendation.
 	// Pre-populate p.telemetry with CTO analysis cost so RunTargeted includes it —
 	// the targeted pipeline resets p.trackers on entry, losing ctoTracker.
 	// Let RunTargeted read the full codebase (no ContextFiles override) so the
@@ -286,7 +301,6 @@ Respond with ONLY a JSON object: {"description": "what to change, 1-2 sentences"
 	defer func() { p.skipReviewer = prevSkipReviewer }()
 
 	// Wire work task — best-effort, log warning and continue on any error.
-	ts := work.NewTaskStore(p.store, p.factory, p.signer)
 	var workTask *work.Task
 	if head, headErr := p.store.Head(); headErr == nil && head.IsSome() {
 		causes := []types.EventID{head.Unwrap().ID()}

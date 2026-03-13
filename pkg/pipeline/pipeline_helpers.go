@@ -12,6 +12,7 @@ import (
 	"github.com/lovyou-ai/hive/pkg/loop"
 	"github.com/lovyou-ai/hive/pkg/resources"
 	"github.com/lovyou-ai/hive/pkg/roles"
+	"github.com/lovyou-ai/hive/pkg/work"
 )
 
 // ════════════════════════════════════════════════════════════════════════
@@ -343,6 +344,27 @@ func looksLikeFilePath(s string) bool {
 	// Extension must start with a letter (rejects version strings like "1.2.3")
 	c := ext[1]
 	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// Work task utilities
+// ════════════════════════════════════════════════════════════════════════
+
+// formatTaskList formats a slice of tasks as a bullet list for CTO context.
+// Returns an empty string if there are no tasks.
+func formatTaskList(tasks []work.Task) string {
+	if len(tasks) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for _, t := range tasks {
+		b.WriteString(fmt.Sprintf("  - %s", t.Title))
+		if t.Description != "" {
+			b.WriteString(fmt.Sprintf(": %s", t.Description))
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
 }
 
 // ════════════════════════════════════════════════════════════════════════

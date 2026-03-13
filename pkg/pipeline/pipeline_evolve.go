@@ -222,7 +222,17 @@ func (p *Pipeline) runEvolveIteration(parentCtx context.Context, iteration int, 
 	fmt.Fprintf(os.Stderr, "  ↳ evolve CTO analysis using %s\n", model)
 	p.emitProgress(PhaseEvolve, "evolve CTO analysis using %s", model)
 
-	ctoPrompt := buildEvolvePrompt(codeContext.String(), telemetrySummary, input.Description, state)
+	// List existing tasks so the CTO avoids re-proposing completed work.
+	ts := work.NewTaskStore(p.store, p.factory, p.signer)
+	existingTasksStr := ""
+	if existingTasks, listErr := ts.List(50); listErr != nil {
+		fmt.Fprintf(os.Stderr, "Warning: list tasks failed: %v (continuing)\n", listErr)
+		p.emitWarning(PhaseEvolve, "list tasks failed: %v", listErr)
+	} else {
+		existingTasksStr = formatTaskList(existingTasks)
+	}
+
+	ctoPrompt := buildEvolvePrompt(codeContext.String(), telemetrySummary, input.Description, state, existingTasksStr)
 
 	ctoStart := time.Now()
 	ctoResp, err := ctoTracker.Reason(ctx, ctoPrompt, nil)
@@ -291,7 +301,6 @@ func (p *Pipeline) runEvolveIteration(parentCtx context.Context, iteration int, 
 	defer func() { p.skipReviewer = prevSkipReviewer }()
 
 	// Wire work task — best-effort, log warning and continue on any error.
-	ts := work.NewTaskStore(p.store, p.factory, p.signer)
 	var workTask *work.Task
 	if head, headErr := p.store.Head(); headErr == nil && head.IsSome() {
 		causes := []types.EventID{head.Unwrap().ID()}
@@ -400,7 +409,7 @@ func filterEvolveFiles(files map[string]string) map[string]string {
 }
 
 // buildEvolvePrompt constructs the CTO prompt for evolution mode.
-func buildEvolvePrompt(codeContext, telemetrySummary, humanDirection string, state *EvolveState) string {
+func buildEvolvePrompt(codeContext, telemetrySummary, humanDirection string, state *EvolveState, existingTasks string) string {
 	direction := ""
 	if humanDirection != "" {
 		direction = fmt.Sprintf(`
@@ -420,6 +429,11 @@ HUMAN DIRECTION (prioritize this):
 			pw.WriteString(fmt.Sprintf("  ✗ FAILED: %s\n", f.Description))
 		}
 		priorWork = pw.String()
+	}
+
+	existingTasksSection := ""
+	if existingTasks != "" {
+		existingTasksSection = fmt.Sprintf("\nEXISTING TASKS (do NOT re-propose these — they have already been created):\n%s", existingTasks)
 	}
 
 	return fmt.Sprintf(`CRITICAL: You MUST respond with ONLY a JSON object. No prose, no explanation, no markdown, no code blocks. Just raw JSON starting with { and ending with }.
@@ -460,6 +474,7 @@ RECENT TELEMETRY:
 %s
 %s
 %s
+%s
 Analyze the FULL codebase above. Identify the single most valuable capability to build next.
 
 PRIORITY ORDER:
@@ -479,7 +494,7 @@ CONSTRAINTS:
 Respond with ONLY a JSON object:
 {"description": "what to build, 2-3 sentences with enough detail for a builder", "files_to_change": ["existing/files"], "new_files": ["new/files/to/create"], "expected_impact": "1-2 sentences", "priority": "high|medium|low", "category": "feature|architecture|capability|infrastructure", "skip_reason": "if nothing worth building, explain why; otherwise empty string"}
 
-No preamble, no explanation, no code blocks, no markdown. ONLY the JSON object.`, codeContext, telemetrySummary, direction, priorWork)
+No preamble, no explanation, no code blocks, no markdown. ONLY the JSON object.`, codeContext, telemetrySummary, direction, priorWork, existingTasksSection)
 }
 
 // parseEvolveRecommendation extracts an EvolveRecommendation from LLM output.
