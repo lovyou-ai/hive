@@ -10,6 +10,7 @@ import (
 	"github.com/lovyou-ai/eventgraph/go/pkg/types"
 
 	"github.com/lovyou-ai/hive/pkg/pipeline"
+	"github.com/lovyou-ai/hive/pkg/work"
 )
 
 // pipelineEventTypes are the event types to query, in display order.
@@ -146,6 +147,38 @@ func truncateConvID(conv string) string {
 		return conv[:20] + "..."
 	}
 	return conv
+}
+
+// queryWorkTasks reads all work tasks from the store and prints them with status.
+// Use: hive --query work
+func queryWorkTasks(s store.Store) error {
+	// Register work content unmarshalers so we can deserialize from Postgres.
+	work.RegisterEventTypes()
+
+	ts := work.NewTaskStore(s, nil, nil)
+	summaries, err := ts.ListSummaries(200)
+	if err != nil {
+		return fmt.Errorf("list work tasks: %w", err)
+	}
+
+	if len(summaries) == 0 {
+		fmt.Fprintln(os.Stderr, "No work tasks found.")
+		return nil
+	}
+
+	fmt.Printf("═══ Work Tasks (%d) ═══\n", len(summaries))
+	for _, s := range summaries {
+		status := string(s.Status)
+		line := fmt.Sprintf("[%-9s] %s", status, s.Title)
+		if s.Description != "" {
+			line += fmt.Sprintf(" — %s", truncateStr(s.Description, 60))
+		}
+		if s.Blocked {
+			line += " [BLOCKED]"
+		}
+		fmt.Println(line)
+	}
+	return nil
 }
 
 func sortEventsByTimestamp(events []event.Event) {

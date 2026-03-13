@@ -10,10 +10,12 @@ import (
 
 	"github.com/lovyou-ai/eventgraph/go/pkg/bus"
 	"github.com/lovyou-ai/eventgraph/go/pkg/decision"
+	"github.com/lovyou-ai/eventgraph/go/pkg/types"
 
 	"github.com/lovyou-ai/hive/pkg/loop"
 	"github.com/lovyou-ai/hive/pkg/resources"
 	"github.com/lovyou-ai/hive/pkg/roles"
+	"github.com/lovyou-ai/hive/pkg/work"
 )
 
 // Run executes the full product pipeline for a given input.
@@ -42,17 +44,23 @@ func (p *Pipeline) Run(ctx context.Context, input ProductInput) error {
 	}
 	var timings []phaseTiming
 
+	// TaskStore for Work Graph integration — each phase creates and completes a task.
+	ts := work.NewTaskStore(p.store, p.factory, p.signer)
+
 	// ── Phase 1: Research ──
 	fmt.Fprintln(os.Stderr, "═══ Phase 1: Research ═══")
 	p.emitPhaseStarted(PhaseResearch, 1)
 	phaseStart := time.Now()
+	researchTask := p.createPhaseTask(ts, PhaseResearch, "Research", input.Description)
 	spec, ctoEval, err := p.research(ctx, input)
 	if err != nil {
+		p.completePhaseTask(ts, researchTask, fmt.Sprintf("failed: %v", err))
 		return p.failPhase("Research", fmt.Errorf("research: %w", err))
 	}
 	researchDuration := time.Since(phaseStart)
 	timings = append(timings, phaseTiming{"Research", researchDuration})
 	p.telemetry.addPhaseTiming("Research", researchDuration)
+	p.completePhaseTask(ts, researchTask, "research complete")
 	p.emitPhaseCompleted(PhaseResearch, researchDuration, 1)
 	if halt := p.guardianCheck(ctx, "research"); halt {
 		return p.failPhase("Research", fmt.Errorf("guardian halted pipeline after research phase"))
@@ -77,11 +85,14 @@ func (p *Pipeline) Run(ctx context.Context, input ProductInput) error {
 	fmt.Fprintln(os.Stderr, "═══ Phase 2: Design ═══")
 	p.emitPhaseStarted(PhaseDesign, 1)
 	phaseStart = time.Now()
+	designTask := p.createPhaseTask(ts, PhaseDesign, "Design", name)
 	design, err := p.design(ctx, spec)
 	if err != nil {
+		p.completePhaseTask(ts, designTask, fmt.Sprintf("failed: %v", err))
 		return p.failPhase("Design", fmt.Errorf("design: %w", err))
 	}
 	if halt := p.guardianCheck(ctx, "design"); halt {
+		p.completePhaseTask(ts, designTask, "guardian halted")
 		return p.failPhase("Design", fmt.Errorf("guardian halted pipeline after design phase"))
 	}
 
@@ -89,10 +100,14 @@ func (p *Pipeline) Run(ctx context.Context, input ProductInput) error {
 	if !p.skipSimplify {
 		fmt.Fprintln(os.Stderr, "═══ Phase 2b: Simplify ═══")
 		p.emitProgress(PhaseDesign, "simplification pass started")
+		simplifyTask := p.createPhaseTask(ts, PhaseDesign, "Simplify", name)
 		design, err = p.simplify(ctx, design)
 		if err != nil {
+			p.completePhaseTask(ts, simplifyTask, fmt.Sprintf("failed: %v", err))
+			p.completePhaseTask(ts, designTask, fmt.Sprintf("simplify failed: %v", err))
 			return p.failPhase("Simplify", fmt.Errorf("simplify: %w", err))
 		}
+		p.completePhaseTask(ts, simplifyTask, "simplify complete")
 	} else {
 		fmt.Fprintln(os.Stderr, "═══ Phase 2b: Simplify — SKIPPED ═══")
 		p.emitProgress(PhaseDesign, "simplification skipped")
@@ -100,6 +115,7 @@ func (p *Pipeline) Run(ctx context.Context, input ProductInput) error {
 	designDuration := time.Since(phaseStart)
 	timings = append(timings, phaseTiming{"Design", designDuration})
 	p.telemetry.addPhaseTiming("Design", designDuration)
+	p.completePhaseTask(ts, designTask, "design complete")
 	p.emitPhaseCompleted(PhaseDesign, designDuration, 1)
 
 	// Save the final spec to the product repo
@@ -121,13 +137,16 @@ func (p *Pipeline) Run(ctx context.Context, input ProductInput) error {
 	fmt.Fprintln(os.Stderr, "═══ Phase 3: Build ═══")
 	p.emitPhaseStarted(PhaseBuild, 1)
 	phaseStart = time.Now()
+	buildTask := p.createPhaseTask(ts, PhaseBuild, "Build", name)
 	files, err := p.build(ctx, design, lang)
 	if err != nil {
+		p.completePhaseTask(ts, buildTask, fmt.Sprintf("failed: %v", err))
 		return p.failPhase("Build", fmt.Errorf("build: %w", err))
 	}
 	buildDuration := time.Since(phaseStart)
 	timings = append(timings, phaseTiming{"Build", buildDuration})
 	p.telemetry.addPhaseTiming("Build", buildDuration)
+	p.completePhaseTask(ts, buildTask, "build complete")
 	p.emitPhaseCompleted(PhaseBuild, buildDuration, 1)
 	if halt := p.guardianCheck(ctx, "build"); halt {
 		return p.failPhase("Build", fmt.Errorf("guardian halted pipeline after build phase"))
@@ -136,15 +155,18 @@ func (p *Pipeline) Run(ctx context.Context, input ProductInput) error {
 	// ── Phase 4: Review → Rebuild loop ──
 	phaseStart = time.Now()
 	const maxReviewRounds = 3
+	reviewTask := p.createPhaseTask(ts, PhaseReview, "Review", name)
 	for round := 1; round <= maxReviewRounds; round++ {
 		fmt.Fprintf(os.Stderr, "═══ Phase 4: Review (round %d) ═══\n", round)
 		p.emitPhaseStarted(PhaseReview, round)
 		feedback, approved, err := p.review(ctx, files, design, lang)
 		if err != nil {
+			p.completePhaseTask(ts, reviewTask, fmt.Sprintf("failed: review round %d: %v", round, err))
 			return p.failPhase("Review", fmt.Errorf("review round %d: %w", round, err))
 		}
 		p.telemetry.addReviewSignal(approved)
 		if halt := p.guardianCheck(ctx, "review"); halt {
+			p.completePhaseTask(ts, reviewTask, "guardian halted")
 			return p.failPhase("Review", fmt.Errorf("guardian halted pipeline after review phase"))
 		}
 
@@ -165,25 +187,30 @@ func (p *Pipeline) Run(ctx context.Context, input ProductInput) error {
 		p.emitProgress(PhaseReview, "rebuilding from feedback (round %d)", round)
 		files, err = p.rebuild(ctx, files, feedback, design, lang)
 		if err != nil {
+			p.completePhaseTask(ts, reviewTask, fmt.Sprintf("failed: rebuild round %d: %v", round, err))
 			return p.failPhase("Review", fmt.Errorf("rebuild round %d: %w", round, err))
 		}
 	}
 	reviewDuration := time.Since(phaseStart)
 	timings = append(timings, phaseTiming{"Review", reviewDuration})
 	p.telemetry.addPhaseTiming("Review", reviewDuration)
+	p.completePhaseTask(ts, reviewTask, "review complete")
 	p.emitPhaseCompleted(PhaseReview, reviewDuration, 1)
 
 	// ── Phase 5: Test ──
 	fmt.Fprintln(os.Stderr, "═══ Phase 5: Test ═══")
 	p.emitPhaseStarted(PhaseTest, 1)
 	phaseStart = time.Now()
+	testTask := p.createPhaseTask(ts, PhaseTest, "Test", name)
 	err = p.test(ctx, files, lang)
 	if err != nil {
+		p.completePhaseTask(ts, testTask, fmt.Sprintf("failed: %v", err))
 		return p.failPhase("Test", fmt.Errorf("test: %w", err))
 	}
 	testDuration := time.Since(phaseStart)
 	timings = append(timings, phaseTiming{"Test", testDuration})
 	p.telemetry.addPhaseTiming("Test", testDuration)
+	p.completePhaseTask(ts, testTask, "test complete")
 	p.emitPhaseCompleted(PhaseTest, testDuration, 1)
 	if halt := p.guardianCheck(ctx, "test"); halt {
 		return p.failPhase("Test", fmt.Errorf("guardian halted pipeline after test phase"))
@@ -193,13 +220,16 @@ func (p *Pipeline) Run(ctx context.Context, input ProductInput) error {
 	fmt.Fprintln(os.Stderr, "═══ Phase 6: Integrate ═══")
 	p.emitPhaseStarted(PhaseIntegrate, 1)
 	phaseStart = time.Now()
+	integrateTask := p.createPhaseTask(ts, PhaseIntegrate, "Integrate", name)
 	err = p.integrate(ctx)
 	if err != nil {
+		p.completePhaseTask(ts, integrateTask, fmt.Sprintf("failed: %v", err))
 		return p.failPhase("Integrate", fmt.Errorf("integrate: %w", err))
 	}
 	integrateDuration := time.Since(phaseStart)
 	timings = append(timings, phaseTiming{"Integrate", integrateDuration})
 	p.telemetry.addPhaseTiming("Integrate", integrateDuration)
+	p.completePhaseTask(ts, integrateTask, "integrate complete")
 	p.emitPhaseCompleted(PhaseIntegrate, integrateDuration, 1)
 	if halt := p.guardianCheck(ctx, "integrate"); halt {
 		return p.failPhase("Integrate", fmt.Errorf("guardian halted pipeline after integrate phase"))
@@ -1016,6 +1046,35 @@ func (p *Pipeline) installDeps(lang string) {
 			fmt.Fprintf(os.Stderr, "Dependencies installed.\n")
 			p.emitProgress(PhaseBuild, "dependencies installed")
 		}
+	}
+}
+
+// createPhaseTask records a work task for a pipeline phase on the event graph.
+// Best-effort: logs a warning to stderr and returns nil on any error so the
+// pipeline continues uninterrupted even if the Work Graph is unavailable.
+func (p *Pipeline) createPhaseTask(ts *work.TaskStore, phase Phase, title, description string) *work.Task {
+	head, err := p.store.Head()
+	if err != nil || head.IsNone() {
+		return nil
+	}
+	causes := []types.EventID{head.Unwrap().ID()}
+	task, err := ts.Create(p.humanID, title, description, causes, p.convID)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: work task create failed: %v (continuing)\n", err)
+		p.emitWarning(phase, "work task create failed: %v", err)
+		return nil
+	}
+	return &task
+}
+
+// completePhaseTask marks a phase work task complete on the event graph.
+// Best-effort: logs a warning to stderr on error. No-ops if task is nil.
+func (p *Pipeline) completePhaseTask(ts *work.TaskStore, task *work.Task, summary string) {
+	if task == nil {
+		return
+	}
+	if err := ts.Complete(p.humanID, task.ID, summary, []types.EventID{task.ID}, p.convID); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: work task complete failed: %v (continuing)\n", err)
 	}
 }
 
