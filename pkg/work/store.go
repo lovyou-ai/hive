@@ -28,6 +28,7 @@ type Task struct {
 	Description string
 	CreatedBy   types.ActorID
 	Priority    TaskPriority
+	Workspace   string
 }
 
 // TaskSummary extends Task with computed state fields for efficient list views.
@@ -125,9 +126,97 @@ func (ts *TaskStore) List(limit int) ([]Task, error) {
 			Description: c.Description,
 			CreatedBy:   c.CreatedBy,
 			Priority:    p,
+			Workspace:   c.Workspace,
 		})
 	}
 	return tasks, nil
+}
+
+// CreateInWorkspace records a work.task.created event with a workspace label.
+// The caller must supply at least one cause (typically the current chain head).
+// An optional priority may be passed as the last argument; defaults to PriorityMedium.
+func (ts *TaskStore) CreateInWorkspace(
+	source types.ActorID,
+	title, description, workspace string,
+	causes []types.EventID,
+	convID types.ConversationID,
+	priority ...TaskPriority,
+) (Task, error) {
+	if title == "" {
+		return Task{}, fmt.Errorf("title is required")
+	}
+	p := DefaultPriority
+	if len(priority) > 0 && priority[0] != "" {
+		p = priority[0]
+	}
+	content := TaskCreatedContent{
+		Title:       title,
+		Description: description,
+		CreatedBy:   source,
+		Priority:    p,
+		Workspace:   workspace,
+	}
+	ev, err := ts.factory.Create(EventTypeTaskCreated, source, content, causes, convID, ts.store, ts.signer)
+	if err != nil {
+		return Task{}, fmt.Errorf("create task event: %w", err)
+	}
+	stored, err := ts.store.Append(ev)
+	if err != nil {
+		return Task{}, fmt.Errorf("append task event: %w", err)
+	}
+	return Task{
+		ID:          stored.ID(),
+		Title:       title,
+		Description: description,
+		CreatedBy:   source,
+		Priority:    p,
+		Workspace:   workspace,
+	}, nil
+}
+
+// ListByWorkspace returns up to limit tasks whose Workspace field matches the given workspace.
+func (ts *TaskStore) ListByWorkspace(workspace string, limit int) ([]Task, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	// Fetch a broad page; filter in-process since ByType has no predicate support.
+	page, err := ts.store.ByType(EventTypeTaskCreated, 1000, types.None[types.Cursor]())
+	if err != nil {
+		return nil, fmt.Errorf("list tasks by workspace: %w", err)
+	}
+	tasks := make([]Task, 0)
+	for _, ev := range page.Items() {
+		c, ok := ev.Content().(TaskCreatedContent)
+		if !ok || c.Workspace != workspace {
+			continue
+		}
+		p := c.Priority
+		if p == "" {
+			p = DefaultPriority
+		}
+		tasks = append(tasks, Task{
+			ID:          ev.ID(),
+			Title:       c.Title,
+			Description: c.Description,
+			CreatedBy:   c.CreatedBy,
+			Priority:    p,
+			Workspace:   c.Workspace,
+		})
+		if len(tasks) >= limit {
+			break
+		}
+	}
+	return tasks, nil
+}
+
+// ListSummariesByWorkspace returns up to limit workspace-scoped tasks with Status,
+// Assignee, and Blocked populated via batch store scans.
+func (ts *TaskStore) ListSummariesByWorkspace(workspace string, limit int) ([]TaskSummary, error) {
+	tasks, err := ts.ListByWorkspace(workspace, limit)
+	if err != nil {
+		return nil, err
+	}
+	return ts.batchStatus(tasks)
 }
 
 // Assign records a work.task.assigned event on the graph.

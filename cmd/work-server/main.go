@@ -3,24 +3,33 @@
 //
 // Environment variables:
 //
-//	WORK_HUMAN   — display name of the human operator (required)
-//	WORK_API_KEY — API key for auth; callers pass Authorization: Bearer <key> (required)
-//	DATABASE_URL — Postgres DSN (optional; defaults to in-memory)
-//	PORT         — HTTP port to listen on (optional; defaults to 8080)
+//	WORK_HUMAN     — display name of the human operator (required)
+//	WORK_API_KEY   — API key for auth; callers pass Authorization: Bearer <key> (required)
+//	WORK_API_TOKEN — bearer token for workspace-scoped external API; falls back to WORK_API_KEY if unset
+//	DATABASE_URL   — Postgres DSN (optional; defaults to in-memory)
+//	PORT           — HTTP port to listen on (optional; defaults to 8080)
 //
 // Endpoints:
 //
-//	GET  /                         read-only dashboard (HTML, no auth required)
-//	POST /tasks                    create a task
-//	GET  /tasks                    list tasks (?open=true, ?priority=high, ?assignee=<actor_id>)
-//	GET  /tasks/{id}               get full task details (title, description, priority, status, assignee, blocked)
-//	GET  /tasks/{id}/status        get task status
-//	GET  /tasks/{id}/events        get audit trail (ordered work.task.* events for this task, including comments)
-//	POST /tasks/{id}/assign        assign task (body: {"assignee":"..."})
-//	POST /tasks/{id}/unblock       mark task blockers resolved (body: {})
-//	POST /tasks/{id}/complete      complete task (body: {"summary":"..."})
-//	POST /tasks/{id}/comment       add a comment (body: {"body":"..."})
-//	GET  /tasks/{id}/comments      list comments for a task
+//	GET  /                                      read-only dashboard (HTML, no auth required)
+//	POST /tasks                                 create a task
+//	GET  /tasks                                 list tasks (?open=true, ?priority=high, ?assignee=<actor_id>)
+//	GET  /tasks/{id}                            get full task details (title, description, priority, status, assignee, blocked)
+//	GET  /tasks/{id}/status                     get task status
+//	GET  /tasks/{id}/events                     get audit trail (ordered work.task.* events for this task, including comments)
+//	POST /tasks/{id}/assign                     assign task (body: {"assignee":"..."})
+//	POST /tasks/{id}/unblock                    mark task blockers resolved (body: {})
+//	POST /tasks/{id}/complete                   complete task (body: {"summary":"..."})
+//	POST /tasks/{id}/comment                    add a comment (body: {"body":"..."})
+//	GET  /tasks/{id}/comments                   list comments for a task
+//
+// Workspace-scoped routes (authenticated via WORK_API_TOKEN):
+//
+//	POST /w/{workspace}/tasks                   create a task in the workspace
+//	GET  /w/{workspace}/tasks                   list tasks in the workspace
+//	POST /w/{workspace}/tasks/{id}/assign       assign a workspace task
+//	POST /w/{workspace}/tasks/{id}/complete     complete a workspace task
+//	POST /w/{workspace}/tasks/{id}/comment      add a comment to a workspace task
 package main
 
 import (
@@ -253,6 +262,10 @@ func run() error {
 	if apiKey == "" {
 		return fmt.Errorf("WORK_API_KEY env var is required")
 	}
+	apiToken := os.Getenv("WORK_API_TOKEN")
+	if apiToken == "" {
+		apiToken = apiKey
+	}
 	dsn := os.Getenv("DATABASE_URL")
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -317,10 +330,11 @@ func run() error {
 	ts := work.NewTaskStore(s, factory, signer)
 
 	srv := &server{
-		ts:      ts,
-		store:   s,
-		humanID: humanID,
-		apiKey:  apiKey,
+		ts:       ts,
+		store:    s,
+		humanID:  humanID,
+		apiKey:   apiKey,
+		apiToken: apiToken,
 	}
 
 	mux := http.NewServeMux()
@@ -337,6 +351,13 @@ func run() error {
 	mux.HandleFunc("POST /tasks/{id}/comment", srv.auth(srv.addComment))
 	mux.HandleFunc("GET /tasks/{id}/comments", srv.auth(srv.listComments))
 
+	// Workspace-scoped routes — isolated namespace per team, auth via WORK_API_TOKEN.
+	mux.HandleFunc("POST /w/{workspace}/tasks", srv.tokenAuth(srv.createWorkspaceTask))
+	mux.HandleFunc("GET /w/{workspace}/tasks", srv.tokenAuth(srv.listWorkspaceTasks))
+	mux.HandleFunc("POST /w/{workspace}/tasks/{id}/assign", srv.tokenAuth(srv.assignTask))
+	mux.HandleFunc("POST /w/{workspace}/tasks/{id}/complete", srv.tokenAuth(srv.completeTask))
+	mux.HandleFunc("POST /w/{workspace}/tasks/{id}/comment", srv.tokenAuth(srv.addComment))
+
 	addr := ":" + port
 	fmt.Fprintf(os.Stderr, "work-server listening on %s\n", addr)
 	httpSrv := &http.Server{Addr: addr, Handler: corsMiddleware(mux)}
@@ -352,10 +373,11 @@ func run() error {
 
 // server holds shared dependencies for HTTP handlers.
 type server struct {
-	ts      *work.TaskStore
-	store   store.Store
-	humanID types.ActorID
-	apiKey  string
+	ts       *work.TaskStore
+	store    store.Store
+	humanID  types.ActorID
+	apiKey   string
+	apiToken string
 }
 
 // dashboard handles GET / — serves the read-only HTML monitoring dashboard.
@@ -393,6 +415,18 @@ func (sv *server) auth(next http.HandlerFunc) http.HandlerFunc {
 		token, found := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 		if !found || token != sv.apiKey {
 			writeErr(w, http.StatusUnauthorized, "invalid or missing API key")
+			return
+		}
+		next(w, r)
+	}
+}
+
+// tokenAuth is middleware for workspace routes that validates the WORK_API_TOKEN bearer token.
+func (sv *server) tokenAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token, found := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if !found || token != sv.apiToken {
+			writeErr(w, http.StatusUnauthorized, "invalid or missing API token")
 			return
 		}
 		next(w, r)
@@ -834,6 +868,83 @@ func taskIDFromContent(content any) types.EventID {
 		return c.TaskID
 	}
 	return types.EventID{}
+}
+
+// createWorkspaceTask handles POST /w/{workspace}/tasks
+// Creates a task scoped to the given workspace namespace.
+// Body: {"title":"...", "description":"...", "priority":"high"}
+func (sv *server) createWorkspaceTask(w http.ResponseWriter, r *http.Request) {
+	workspace := r.PathValue("workspace")
+	if workspace == "" {
+		writeErr(w, http.StatusBadRequest, "workspace is required")
+		return
+	}
+	var body struct {
+		Title       string `json:"title"`
+		Description string `json:"description"`
+		Priority    string `json:"priority"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		return
+	}
+	if body.Title == "" {
+		writeErr(w, http.StatusBadRequest, "title is required")
+		return
+	}
+	causes, err := sv.currentCauses()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "get causes: "+err.Error())
+		return
+	}
+	convID, err := newConversationID()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "conversation id: "+err.Error())
+		return
+	}
+	task, err := sv.ts.CreateInWorkspace(sv.humanID, body.Title, body.Description, workspace, causes, convID, work.TaskPriority(body.Priority))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "create task: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"id":          task.ID.Value(),
+		"title":       task.Title,
+		"description": task.Description,
+		"priority":    string(task.Priority),
+		"workspace":   task.Workspace,
+		"created_by":  task.CreatedBy.Value(),
+	})
+}
+
+// listWorkspaceTasks handles GET /w/{workspace}/tasks
+// Lists tasks scoped to the given workspace namespace.
+func (sv *server) listWorkspaceTasks(w http.ResponseWriter, r *http.Request) {
+	workspace := r.PathValue("workspace")
+	if workspace == "" {
+		writeErr(w, http.StatusBadRequest, "workspace is required")
+		return
+	}
+	summaries, err := sv.ts.ListSummariesByWorkspace(workspace, 100)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "list tasks: "+err.Error())
+		return
+	}
+	items := make([]map[string]any, 0, len(summaries))
+	for _, s := range summaries {
+		items = append(items, map[string]any{
+			"id":          s.Task.ID.Value(),
+			"title":       s.Task.Title,
+			"description": s.Task.Description,
+			"priority":    string(s.Task.Priority),
+			"workspace":   s.Task.Workspace,
+			"created_by":  s.Task.CreatedBy.Value(),
+			"status":      string(s.Status),
+			"assignee":    s.Assignee.Value(),
+			"blocked":     s.Blocked,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"workspace": workspace, "tasks": items})
 }
 
 // --- Helpers ---

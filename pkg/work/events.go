@@ -57,6 +57,7 @@ type TaskCreatedContent struct {
 	Description string        `json:"Description,omitempty"`
 	CreatedBy   types.ActorID `json:"CreatedBy"`
 	Priority    TaskPriority  `json:"Priority,omitempty"`
+	Workspace   string        `json:"Workspace,omitempty"`
 }
 
 func (c TaskCreatedContent) EventTypeName() string { return "work.task.created" }
