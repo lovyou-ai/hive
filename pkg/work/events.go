@@ -7,15 +7,17 @@ import (
 
 // Work Graph event types — Layer 1 of the thirteen-product roadmap.
 var (
-	EventTypeTaskCreated   = types.MustEventType("work.task.created")
-	EventTypeTaskAssigned  = types.MustEventType("work.task.assigned")
-	EventTypeTaskCompleted = types.MustEventType("work.task.completed")
+	EventTypeTaskCreated         = types.MustEventType("work.task.created")
+	EventTypeTaskAssigned        = types.MustEventType("work.task.assigned")
+	EventTypeTaskCompleted       = types.MustEventType("work.task.completed")
+	EventTypeTaskDependencyAdded = types.MustEventType("work.task.dependency.added")
 )
 
 // allWorkEventTypes returns all work event types for registration.
 func allWorkEventTypes() []types.EventType {
 	return []types.EventType{
 		EventTypeTaskCreated, EventTypeTaskAssigned, EventTypeTaskCompleted,
+		EventTypeTaskDependencyAdded,
 	}
 }
 
@@ -57,12 +59,24 @@ type TaskCompletedContent struct {
 
 func (c TaskCompletedContent) EventTypeName() string { return "work.task.completed" }
 
+// TaskDependencyContent is emitted when a dependency is declared between two tasks.
+// It records that TaskID depends on DependsOnID — TaskID cannot start until DependsOnID completes.
+type TaskDependencyContent struct {
+	workContent
+	TaskID      types.EventID `json:"TaskID"`
+	DependsOnID types.EventID `json:"DependsOnID"`
+	AddedBy     types.ActorID `json:"AddedBy"`
+}
+
+func (c TaskDependencyContent) EventTypeName() string { return "work.task.dependency.added" }
+
 // RegisterEventTypes registers work content unmarshalers for Postgres
 // deserialization. Call this before querying work events from the store.
 func RegisterEventTypes() {
 	event.RegisterContentUnmarshaler("work.task.created", event.Unmarshal[TaskCreatedContent])
 	event.RegisterContentUnmarshaler("work.task.assigned", event.Unmarshal[TaskAssignedContent])
 	event.RegisterContentUnmarshaler("work.task.completed", event.Unmarshal[TaskCompletedContent])
+	event.RegisterContentUnmarshaler("work.task.dependency.added", event.Unmarshal[TaskDependencyContent])
 }
 
 // RegisterWithRegistry registers all work event types with the given registry

@@ -563,6 +563,61 @@ func registerWorkTools(s *Server, deps Deps, audit *AuditLogger, authCheck *Auth
 		wrappedComplete,
 	)
 
+	// work_add_dependency — declare that one task depends on another (write, authority-checked)
+	addDepHandler := func(args map[string]any) (ToolCallResult, error) {
+		taskIDStr, ok := stringArg(args, "task_id")
+		if !ok || taskIDStr == "" {
+			return ErrorResult("task_id is required"), nil
+		}
+		taskID, err := types.NewEventID(taskIDStr)
+		if err != nil {
+			return ErrorResult(fmt.Sprintf("invalid task_id: %v", err)), nil
+		}
+
+		dependsOnStr, ok := stringArg(args, "depends_on_id")
+		if !ok || dependsOnStr == "" {
+			return ErrorResult("depends_on_id is required"), nil
+		}
+		dependsOnID, err := types.NewEventID(dependsOnStr)
+		if err != nil {
+			return ErrorResult(fmt.Sprintf("invalid depends_on_id: %v", err)), nil
+		}
+
+		head, err := deps.Store.Head()
+		if err != nil {
+			return ErrorResult(fmt.Sprintf("store error: %v", err)), nil
+		}
+		if !head.IsSome() {
+			return ErrorResult("graph has no events (not bootstrapped)"), nil
+		}
+		causes := []types.EventID{head.Unwrap().ID()}
+
+		if err := ts.AddDependency(deps.AgentID, taskID, dependsOnID, causes, deps.ConvID); err != nil {
+			return ErrorResult(fmt.Sprintf("add dependency: %v", err)), nil
+		}
+		result := map[string]any{
+			"task_id":      taskID.Value(),
+			"depends_on_id": dependsOnID.Value(),
+			"added_by":     deps.AgentID.Value(),
+		}
+		data, _ := json.MarshalIndent(result, "", "  ")
+		return TextResult(string(data)), nil
+	}
+
+	wrappedAddDep := WrapHandler(audit, "work_add_dependency", WrapWriteHandler(authCheck, "work_add_dependency", addDepHandler))
+	s.RegisterTool("work_add_dependency",
+		"Declare that a task depends on another task. The dependent task will be blocked in ListOpen until its dependency completes. Emits a signed work.task.dependency.added event.",
+		mustSchema(`{
+			"type": "object",
+			"properties": {
+				"task_id":      {"type": "string", "description": "Task event ID that has the dependency (the blocked task)"},
+				"depends_on_id": {"type": "string", "description": "Task event ID that must complete first (the blocking task)"}
+			},
+			"required": ["task_id", "depends_on_id"]
+		}`),
+		wrappedAddDep,
+	)
+
 	// work_query_tasks — query tasks, optionally filtered by assignee (read, audit-only)
 	regTool(s, audit, "work_query_tasks",
 		"Query work tasks. Without filters, lists all tasks. With assignee, returns tasks assigned to that actor.",

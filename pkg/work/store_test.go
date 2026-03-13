@@ -321,3 +321,205 @@ func TestTaskStore_ListOpen_FiltersCompleted(t *testing.T) {
 		t.Errorf("open task title = %q; want %q", open[0].Title, "Task C")
 	}
 }
+
+func TestTaskStore_AddDependency(t *testing.T) {
+	s, causes := setupStore(t)
+	ts := newTaskStore(t, s)
+
+	taskA, err := ts.Create(testActor, "Task A", "", causes, testConv)
+	if err != nil {
+		t.Fatalf("Create A: %v", err)
+	}
+	taskB, err := ts.Create(testActor, "Task B", "", causes, testConv)
+	if err != nil {
+		t.Fatalf("Create B: %v", err)
+	}
+
+	if err := ts.AddDependency(testActor, taskB.ID, taskA.ID, causes, testConv); err != nil {
+		t.Fatalf("AddDependency: %v", err)
+	}
+}
+
+func TestTaskStore_GetDependencies(t *testing.T) {
+	s, causes := setupStore(t)
+	ts := newTaskStore(t, s)
+
+	taskA, err := ts.Create(testActor, "Task A", "", causes, testConv)
+	if err != nil {
+		t.Fatalf("Create A: %v", err)
+	}
+	taskB, err := ts.Create(testActor, "Task B", "", causes, testConv)
+	if err != nil {
+		t.Fatalf("Create B: %v", err)
+	}
+
+	// B depends on A.
+	if err := ts.AddDependency(testActor, taskB.ID, taskA.ID, causes, testConv); err != nil {
+		t.Fatalf("AddDependency: %v", err)
+	}
+
+	deps, err := ts.GetDependencies(taskB.ID)
+	if err != nil {
+		t.Fatalf("GetDependencies: %v", err)
+	}
+	if len(deps) != 1 {
+		t.Fatalf("expected 1 dependency; got %d", len(deps))
+	}
+	if deps[0] != taskA.ID {
+		t.Errorf("dependency = %v; want %v", deps[0], taskA.ID)
+	}
+
+	// A has no dependencies.
+	depsA, err := ts.GetDependencies(taskA.ID)
+	if err != nil {
+		t.Fatalf("GetDependencies A: %v", err)
+	}
+	if len(depsA) != 0 {
+		t.Errorf("expected 0 dependencies for A; got %d", len(depsA))
+	}
+}
+
+func TestTaskStore_IsBlocked_NoDependencies(t *testing.T) {
+	s, causes := setupStore(t)
+	ts := newTaskStore(t, s)
+
+	task, err := ts.Create(testActor, "Standalone task", "", causes, testConv)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	blocked, err := ts.IsBlocked(task.ID)
+	if err != nil {
+		t.Fatalf("IsBlocked: %v", err)
+	}
+	if blocked {
+		t.Error("expected task with no dependencies to be unblocked")
+	}
+}
+
+func TestTaskStore_IsBlocked_BlockedByIncomplete(t *testing.T) {
+	s, causes := setupStore(t)
+	ts := newTaskStore(t, s)
+
+	taskA, err := ts.Create(testActor, "Task A", "", causes, testConv)
+	if err != nil {
+		t.Fatalf("Create A: %v", err)
+	}
+	taskB, err := ts.Create(testActor, "Task B", "", causes, testConv)
+	if err != nil {
+		t.Fatalf("Create B: %v", err)
+	}
+
+	// B depends on A (not yet complete).
+	if err := ts.AddDependency(testActor, taskB.ID, taskA.ID, causes, testConv); err != nil {
+		t.Fatalf("AddDependency: %v", err)
+	}
+
+	blocked, err := ts.IsBlocked(taskB.ID)
+	if err != nil {
+		t.Fatalf("IsBlocked: %v", err)
+	}
+	if !blocked {
+		t.Error("expected task B to be blocked by incomplete task A")
+	}
+}
+
+func TestTaskStore_IsBlocked_UnblockedWhenDepCompleted(t *testing.T) {
+	s, causes := setupStore(t)
+	ts := newTaskStore(t, s)
+
+	taskA, err := ts.Create(testActor, "Task A", "", causes, testConv)
+	if err != nil {
+		t.Fatalf("Create A: %v", err)
+	}
+	taskB, err := ts.Create(testActor, "Task B", "", causes, testConv)
+	if err != nil {
+		t.Fatalf("Create B: %v", err)
+	}
+
+	// B depends on A.
+	if err := ts.AddDependency(testActor, taskB.ID, taskA.ID, causes, testConv); err != nil {
+		t.Fatalf("AddDependency: %v", err)
+	}
+
+	// Complete A.
+	if err := ts.Complete(testActor, taskA.ID, "done", causes, testConv); err != nil {
+		t.Fatalf("Complete A: %v", err)
+	}
+
+	blocked, err := ts.IsBlocked(taskB.ID)
+	if err != nil {
+		t.Fatalf("IsBlocked: %v", err)
+	}
+	if blocked {
+		t.Error("expected task B to be unblocked after task A completed")
+	}
+}
+
+func TestTaskStore_ListOpen_ExcludesBlocked(t *testing.T) {
+	s, causes := setupStore(t)
+	ts := newTaskStore(t, s)
+
+	// Create two tasks: A and B (B depends on A).
+	taskA, err := ts.Create(testActor, "Task A", "", causes, testConv)
+	if err != nil {
+		t.Fatalf("Create A: %v", err)
+	}
+	taskB, err := ts.Create(testActor, "Task B", "", causes, testConv)
+	if err != nil {
+		t.Fatalf("Create B: %v", err)
+	}
+
+	// B depends on A — so B is blocked.
+	if err := ts.AddDependency(testActor, taskB.ID, taskA.ID, causes, testConv); err != nil {
+		t.Fatalf("AddDependency: %v", err)
+	}
+
+	// ListOpen should return only A (B is blocked).
+	open, err := ts.ListOpen()
+	if err != nil {
+		t.Fatalf("ListOpen: %v", err)
+	}
+	if len(open) != 1 {
+		t.Fatalf("expected 1 open task; got %d", len(open))
+	}
+	if open[0].ID != taskA.ID {
+		t.Errorf("open task = %v; want %v (Task A)", open[0].ID, taskA.ID)
+	}
+}
+
+func TestTaskStore_ListOpen_UnblocksAfterDepCompleted(t *testing.T) {
+	s, causes := setupStore(t)
+	ts := newTaskStore(t, s)
+
+	taskA, err := ts.Create(testActor, "Task A", "", causes, testConv)
+	if err != nil {
+		t.Fatalf("Create A: %v", err)
+	}
+	taskB, err := ts.Create(testActor, "Task B", "", causes, testConv)
+	if err != nil {
+		t.Fatalf("Create B: %v", err)
+	}
+
+	// B depends on A.
+	if err := ts.AddDependency(testActor, taskB.ID, taskA.ID, causes, testConv); err != nil {
+		t.Fatalf("AddDependency: %v", err)
+	}
+
+	// Complete A — B should now be unblocked.
+	if err := ts.Complete(testActor, taskA.ID, "done", causes, testConv); err != nil {
+		t.Fatalf("Complete A: %v", err)
+	}
+
+	// ListOpen should return only B (A is completed, B is now unblocked).
+	open, err := ts.ListOpen()
+	if err != nil {
+		t.Fatalf("ListOpen: %v", err)
+	}
+	if len(open) != 1 {
+		t.Fatalf("expected 1 open task; got %d", len(open))
+	}
+	if open[0].ID != taskB.ID {
+		t.Errorf("open task = %v; want %v (Task B)", open[0].ID, taskB.ID)
+	}
+}

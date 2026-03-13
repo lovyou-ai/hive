@@ -177,8 +177,79 @@ func (ts *TaskStore) GetStatus(taskID types.EventID) (TaskStatus, error) {
 	return StatusPending, nil
 }
 
-// ListOpen returns all tasks that do not have a matching work.task.completed event.
-// It fetches up to 1000 tasks and filters out any that are completed.
+// AddDependency records a work.task.dependency.added event, declaring that taskID
+// depends on dependsOnID — taskID is blocked until dependsOnID completes.
+func (ts *TaskStore) AddDependency(
+	source types.ActorID,
+	taskID, dependsOnID types.EventID,
+	causes []types.EventID,
+	convID types.ConversationID,
+) error {
+	content := TaskDependencyContent{
+		TaskID:      taskID,
+		DependsOnID: dependsOnID,
+		AddedBy:     source,
+	}
+	ev, err := ts.factory.Create(EventTypeTaskDependencyAdded, source, content, causes, convID, ts.store, ts.signer)
+	if err != nil {
+		return fmt.Errorf("create dependency event: %w", err)
+	}
+	if _, err := ts.store.Append(ev); err != nil {
+		return fmt.Errorf("append dependency event: %w", err)
+	}
+	return nil
+}
+
+// GetDependencies returns all task IDs that the given taskID depends on.
+func (ts *TaskStore) GetDependencies(taskID types.EventID) ([]types.EventID, error) {
+	page, err := ts.store.ByType(EventTypeTaskDependencyAdded, 1000, types.None[types.Cursor]())
+	if err != nil {
+		return nil, fmt.Errorf("fetch dependency events: %w", err)
+	}
+	var deps []types.EventID
+	for _, ev := range page.Items() {
+		c, ok := ev.Content().(TaskDependencyContent)
+		if ok && c.TaskID == taskID {
+			deps = append(deps, c.DependsOnID)
+		}
+	}
+	return deps, nil
+}
+
+// IsBlocked returns true if taskID has any declared dependency that is not yet completed.
+func (ts *TaskStore) IsBlocked(taskID types.EventID) (bool, error) {
+	deps, err := ts.GetDependencies(taskID)
+	if err != nil {
+		return false, err
+	}
+	if len(deps) == 0 {
+		return false, nil
+	}
+
+	// Collect all completed task IDs once.
+	completedPage, err := ts.store.ByType(EventTypeTaskCompleted, 1000, types.None[types.Cursor]())
+	if err != nil {
+		return false, fmt.Errorf("fetch completed events: %w", err)
+	}
+	completedIDs := make(map[types.EventID]bool, len(completedPage.Items()))
+	for _, ev := range completedPage.Items() {
+		c, ok := ev.Content().(TaskCompletedContent)
+		if ok {
+			completedIDs[c.TaskID] = true
+		}
+	}
+
+	for _, depID := range deps {
+		if !completedIDs[depID] {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// ListOpen returns all tasks that do not have a matching work.task.completed event
+// and are not blocked by an incomplete dependency.
+// It fetches up to 1000 tasks and filters out completed and blocked tasks.
 func (ts *TaskStore) ListOpen() ([]Task, error) {
 	// Collect all completed task IDs.
 	completedPage, err := ts.store.ByType(EventTypeTaskCompleted, 1000, types.None[types.Cursor]())
@@ -193,14 +264,31 @@ func (ts *TaskStore) ListOpen() ([]Task, error) {
 		}
 	}
 
-	// List all tasks and filter out completed ones.
+	// Collect all dependency edges: taskID → dependsOnID.
+	depPage, err := ts.store.ByType(EventTypeTaskDependencyAdded, 1000, types.None[types.Cursor]())
+	if err != nil {
+		return nil, fmt.Errorf("fetch dependency events: %w", err)
+	}
+	// blockedBy maps a taskID to the set of its uncompleted dependency IDs.
+	blockedBy := make(map[types.EventID][]types.EventID)
+	for _, ev := range depPage.Items() {
+		c, ok := ev.Content().(TaskDependencyContent)
+		if !ok {
+			continue
+		}
+		if !completedIDs[c.DependsOnID] {
+			blockedBy[c.TaskID] = append(blockedBy[c.TaskID], c.DependsOnID)
+		}
+	}
+
+	// List all tasks and filter out completed and blocked ones.
 	all, err := ts.List(1000)
 	if err != nil {
 		return nil, err
 	}
 	open := make([]Task, 0, len(all))
 	for _, t := range all {
-		if !completedIDs[t.ID] {
+		if !completedIDs[t.ID] && len(blockedBy[t.ID]) == 0 {
 			open = append(open, t)
 		}
 	}

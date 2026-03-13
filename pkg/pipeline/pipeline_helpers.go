@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/lovyou-ai/eventgraph/go/pkg/event"
+	"github.com/lovyou-ai/eventgraph/go/pkg/types"
 
 	"github.com/lovyou-ai/hive/pkg/loop"
 	"github.com/lovyou-ai/hive/pkg/resources"
@@ -352,13 +353,27 @@ func looksLikeFilePath(s string) bool {
 
 // formatTaskList formats a slice of tasks as a bullet list for CTO context.
 // Returns an empty string if there are no tasks.
-func formatTaskList(tasks []work.Task) string {
+//
+// An optional statuses map (types.EventID → work.TaskStatus) may be provided
+// as a second argument. When present, each task line is annotated with its
+// status in brackets (e.g. "[pending]", "[assigned]"), letting the CTO
+// distinguish actionable work from work already in progress.
+func formatTaskList(tasks []work.Task, statuses ...map[types.EventID]work.TaskStatus) string {
 	if len(tasks) == 0 {
 		return ""
+	}
+	var statusMap map[types.EventID]work.TaskStatus
+	if len(statuses) > 0 {
+		statusMap = statuses[0]
 	}
 	var b strings.Builder
 	for _, t := range tasks {
 		b.WriteString(fmt.Sprintf("  - %s", t.Title))
+		if statusMap != nil {
+			if status, ok := statusMap[t.ID]; ok {
+				b.WriteString(fmt.Sprintf(" [%s]", status))
+			}
+		}
 		if t.Description != "" {
 			b.WriteString(fmt.Sprintf(": %s", t.Description))
 		}
