@@ -5,19 +5,37 @@ import (
 	"github.com/lovyou-ai/eventgraph/go/pkg/types"
 )
 
+// TaskPriority represents the urgency level of a task.
+type TaskPriority string
+
+const (
+	// PriorityLow is for tasks that can wait.
+	PriorityLow TaskPriority = "low"
+	// PriorityMedium is the default priority when none is specified.
+	PriorityMedium TaskPriority = "medium"
+	// PriorityHigh is for tasks that should be addressed soon.
+	PriorityHigh TaskPriority = "high"
+	// PriorityCritical is for tasks that must be addressed immediately.
+	PriorityCritical TaskPriority = "critical"
+
+	// DefaultPriority is the priority assigned when none is specified at creation.
+	DefaultPriority = PriorityMedium
+)
+
 // Work Graph event types — Layer 1 of the thirteen-product roadmap.
 var (
 	EventTypeTaskCreated         = types.MustEventType("work.task.created")
 	EventTypeTaskAssigned        = types.MustEventType("work.task.assigned")
 	EventTypeTaskCompleted       = types.MustEventType("work.task.completed")
 	EventTypeTaskDependencyAdded = types.MustEventType("work.task.dependency.added")
+	EventTypeTaskPrioritySet     = types.MustEventType("work.task.priority.set")
 )
 
 // allWorkEventTypes returns all work event types for registration.
 func allWorkEventTypes() []types.EventType {
 	return []types.EventType{
 		EventTypeTaskCreated, EventTypeTaskAssigned, EventTypeTaskCompleted,
-		EventTypeTaskDependencyAdded,
+		EventTypeTaskDependencyAdded, EventTypeTaskPrioritySet,
 	}
 }
 
@@ -35,6 +53,7 @@ type TaskCreatedContent struct {
 	Title       string        `json:"Title"`
 	Description string        `json:"Description,omitempty"`
 	CreatedBy   types.ActorID `json:"CreatedBy"`
+	Priority    TaskPriority  `json:"Priority,omitempty"`
 }
 
 func (c TaskCreatedContent) EventTypeName() string { return "work.task.created" }
@@ -70,6 +89,16 @@ type TaskDependencyContent struct {
 
 func (c TaskDependencyContent) EventTypeName() string { return "work.task.dependency.added" }
 
+// TaskPrioritySetContent is emitted when a task's priority is updated post-creation.
+type TaskPrioritySetContent struct {
+	workContent
+	TaskID   types.EventID `json:"TaskID"`
+	Priority TaskPriority  `json:"Priority"`
+	SetBy    types.ActorID `json:"SetBy"`
+}
+
+func (c TaskPrioritySetContent) EventTypeName() string { return "work.task.priority.set" }
+
 // RegisterEventTypes registers work content unmarshalers for Postgres
 // deserialization. Call this before querying work events from the store.
 func RegisterEventTypes() {
@@ -77,6 +106,7 @@ func RegisterEventTypes() {
 	event.RegisterContentUnmarshaler("work.task.assigned", event.Unmarshal[TaskAssignedContent])
 	event.RegisterContentUnmarshaler("work.task.completed", event.Unmarshal[TaskCompletedContent])
 	event.RegisterContentUnmarshaler("work.task.dependency.added", event.Unmarshal[TaskDependencyContent])
+	event.RegisterContentUnmarshaler("work.task.priority.set", event.Unmarshal[TaskPrioritySetContent])
 }
 
 // RegisterWithRegistry registers all work event types with the given registry

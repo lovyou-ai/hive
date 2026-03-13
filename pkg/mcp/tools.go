@@ -387,6 +387,11 @@ func registerWorkTools(s *Server, deps Deps, audit *AuditLogger, authCheck *Auth
 		}
 		description, _ := stringArg(args, "description")
 
+		var priority work.TaskPriority
+		if p, ok := stringArg(args, "priority"); ok && p != "" {
+			priority = work.TaskPriority(p)
+		}
+
 		head, err := deps.Store.Head()
 		if err != nil {
 			return ErrorResult(fmt.Sprintf("store error: %v", err)), nil
@@ -396,7 +401,7 @@ func registerWorkTools(s *Server, deps Deps, audit *AuditLogger, authCheck *Auth
 		}
 		causes := []types.EventID{head.Unwrap().ID()}
 
-		task, err := ts.Create(deps.AgentID, title, description, causes, deps.ConvID)
+		task, err := ts.Create(deps.AgentID, title, description, causes, deps.ConvID, priority)
 		if err != nil {
 			return ErrorResult(fmt.Sprintf("create task: %v", err)), nil
 		}
@@ -405,6 +410,7 @@ func registerWorkTools(s *Server, deps Deps, audit *AuditLogger, authCheck *Auth
 			"title":       task.Title,
 			"description": task.Description,
 			"created_by":  task.CreatedBy.Value(),
+			"priority":    string(task.Priority),
 		}
 		data, _ := json.MarshalIndent(result, "", "  ")
 		return TextResult(string(data)), nil
@@ -417,7 +423,8 @@ func registerWorkTools(s *Server, deps Deps, audit *AuditLogger, authCheck *Auth
 			"type": "object",
 			"properties": {
 				"title":       {"type": "string", "description": "Task title (required)"},
-				"description": {"type": "string", "description": "Optional task description"}
+				"description": {"type": "string", "description": "Optional task description"},
+				"priority":    {"type": "string", "description": "Optional priority: low, medium (default), high, critical"}
 			},
 			"required": ["title"]
 		}`),
@@ -618,25 +625,103 @@ func registerWorkTools(s *Server, deps Deps, audit *AuditLogger, authCheck *Auth
 		wrappedAddDep,
 	)
 
-	// work_query_tasks — query tasks, optionally filtered by assignee or open status (read, audit-only)
+	// work_set_priority — update a task's priority post-creation (write, authority-checked)
+	setPriorityHandler := func(args map[string]any) (ToolCallResult, error) {
+		taskIDStr, ok := stringArg(args, "task_id")
+		if !ok || taskIDStr == "" {
+			return ErrorResult("task_id is required"), nil
+		}
+		taskID, err := types.NewEventID(taskIDStr)
+		if err != nil {
+			return ErrorResult(fmt.Sprintf("invalid task_id: %v", err)), nil
+		}
+
+		priorityStr, ok := stringArg(args, "priority")
+		if !ok || priorityStr == "" {
+			return ErrorResult("priority is required"), nil
+		}
+
+		head, err := deps.Store.Head()
+		if err != nil {
+			return ErrorResult(fmt.Sprintf("store error: %v", err)), nil
+		}
+		if !head.IsSome() {
+			return ErrorResult("graph has no events (not bootstrapped)"), nil
+		}
+		causes := []types.EventID{head.Unwrap().ID()}
+
+		if err := ts.SetPriority(deps.AgentID, taskID, work.TaskPriority(priorityStr), causes, deps.ConvID); err != nil {
+			return ErrorResult(fmt.Sprintf("set priority: %v", err)), nil
+		}
+		result := map[string]any{
+			"task_id":  taskID.Value(),
+			"priority": priorityStr,
+			"set_by":   deps.AgentID.Value(),
+		}
+		data, _ := json.MarshalIndent(result, "", "  ")
+		return TextResult(string(data)), nil
+	}
+
+	wrappedSetPriority := WrapHandler(audit, "work_set_priority", WrapWriteHandler(authCheck, "work_set_priority", setPriorityHandler))
+	s.RegisterTool("work_set_priority",
+		"Update the priority of an existing task. Emits a signed work.task.priority.set event.",
+		mustSchema(`{
+			"type": "object",
+			"properties": {
+				"task_id":  {"type": "string", "description": "Task event ID to update"},
+				"priority": {"type": "string", "description": "New priority: low, medium, high, critical"}
+			},
+			"required": ["task_id", "priority"]
+		}`),
+		wrappedSetPriority,
+	)
+
+	// work_query_tasks — query tasks, optionally filtered by assignee, open status, or priority (read, audit-only)
 	regTool(s, audit, "work_query_tasks",
-		"Query work tasks. With open=true, returns only actionable (unblocked, incomplete) tasks. With assignee, returns tasks assigned to that actor. Without filters, lists all tasks.",
+		"Query work tasks. With open=true, returns only actionable (unblocked, incomplete) tasks. With assignee, returns tasks assigned to that actor. With priority, filters by effective priority level. Without filters, lists all tasks.",
 		mustSchema(`{
 			"type": "object",
 			"properties": {
 				"assignee": {"type": "string", "description": "Filter by assignee actor ID (omit to list all tasks)"},
 				"open":     {"type": "boolean", "description": "If true, return only open (unblocked, incomplete) tasks via ListOpen"},
-				"limit":    {"type": "integer", "description": "Max tasks to return when listing all (default 20, max 100)"}
+				"limit":    {"type": "integer", "description": "Max tasks to return when listing all (default 20, max 100)"},
+				"priority": {"type": "string", "description": "Filter by priority: low, medium, high, critical"}
 			}
 		}`),
 		func(args map[string]any) (ToolCallResult, error) {
+			priorityFilter, hasPriorityFilter := stringArg(args, "priority")
+
 			taskToMap := func(t work.Task) map[string]any {
+				// Use GetPriority for effective priority (includes post-creation updates).
+				p, _ := ts.GetPriority(t.ID)
+				if p == "" {
+					p = work.DefaultPriority
+				}
 				return map[string]any{
 					"id":          t.ID.Value(),
 					"title":       t.Title,
 					"description": t.Description,
 					"created_by":  t.CreatedBy.Value(),
+					"priority":    string(p),
 				}
+			}
+
+			filterByPriority := func(tasks []work.Task) []work.Task {
+				if !hasPriorityFilter || priorityFilter == "" {
+					return tasks
+				}
+				want := work.TaskPriority(priorityFilter)
+				filtered := make([]work.Task, 0, len(tasks))
+				for _, t := range tasks {
+					p, _ := ts.GetPriority(t.ID)
+					if p == "" {
+						p = work.DefaultPriority
+					}
+					if p == want {
+						filtered = append(filtered, t)
+					}
+				}
+				return filtered
 			}
 
 			if assigneeStr, ok := stringArg(args, "assignee"); ok && assigneeStr != "" {
@@ -648,6 +733,7 @@ func registerWorkTools(s *Server, deps Deps, audit *AuditLogger, authCheck *Auth
 				if err != nil {
 					return ErrorResult(fmt.Sprintf("query tasks: %v", err)), nil
 				}
+				tasks = filterByPriority(tasks)
 				items := make([]map[string]any, 0, len(tasks))
 				for _, t := range tasks {
 					items = append(items, taskToMap(t))
@@ -661,6 +747,7 @@ func registerWorkTools(s *Server, deps Deps, audit *AuditLogger, authCheck *Auth
 				if err != nil {
 					return ErrorResult(fmt.Sprintf("list open tasks: %v", err)), nil
 				}
+				tasks = filterByPriority(tasks)
 				items := make([]map[string]any, 0, len(tasks))
 				for _, t := range tasks {
 					items = append(items, taskToMap(t))
@@ -680,6 +767,7 @@ func registerWorkTools(s *Server, deps Deps, audit *AuditLogger, authCheck *Auth
 			if err != nil {
 				return ErrorResult(fmt.Sprintf("list tasks: %v", err)), nil
 			}
+			tasks = filterByPriority(tasks)
 			items := make([]map[string]any, 0, len(tasks))
 			for _, t := range tasks {
 				items = append(items, taskToMap(t))

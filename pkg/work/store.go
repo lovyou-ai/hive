@@ -26,6 +26,7 @@ type Task struct {
 	Title       string
 	Description string
 	CreatedBy   types.ActorID
+	Priority    TaskPriority
 }
 
 // TaskStore creates and queries tasks as auditable events on the shared graph.
@@ -42,19 +43,26 @@ func NewTaskStore(s store.Store, factory *event.EventFactory, signer event.Signe
 
 // Create records a work.task.created event on the graph and returns the task.
 // The caller must supply at least one cause (typically the current chain head).
+// An optional priority may be passed as the last argument; defaults to PriorityMedium.
 func (ts *TaskStore) Create(
 	source types.ActorID,
 	title, description string,
 	causes []types.EventID,
 	convID types.ConversationID,
+	priority ...TaskPriority,
 ) (Task, error) {
 	if title == "" {
 		return Task{}, fmt.Errorf("title is required")
+	}
+	p := DefaultPriority
+	if len(priority) > 0 && priority[0] != "" {
+		p = priority[0]
 	}
 	content := TaskCreatedContent{
 		Title:       title,
 		Description: description,
 		CreatedBy:   source,
+		Priority:    p,
 	}
 	ev, err := ts.factory.Create(EventTypeTaskCreated, source, content, causes, convID, ts.store, ts.signer)
 	if err != nil {
@@ -69,6 +77,7 @@ func (ts *TaskStore) Create(
 		Title:       title,
 		Description: description,
 		CreatedBy:   source,
+		Priority:    p,
 	}, nil
 }
 
@@ -87,11 +96,16 @@ func (ts *TaskStore) List(limit int) ([]Task, error) {
 		if !ok {
 			continue
 		}
+		p := c.Priority
+		if p == "" {
+			p = DefaultPriority
+		}
 		tasks = append(tasks, Task{
 			ID:          ev.ID(),
 			Title:       c.Title,
 			Description: c.Description,
 			CreatedBy:   c.CreatedBy,
+			Priority:    p,
 		})
 	}
 	return tasks, nil
@@ -317,12 +331,72 @@ func (ts *TaskStore) GetByAssignee(assignee types.ActorID) ([]Task, error) {
 		if !ok {
 			continue
 		}
+		cp := cc.Priority
+		if cp == "" {
+			cp = DefaultPriority
+		}
 		tasks = append(tasks, Task{
 			ID:          created.ID(),
 			Title:       cc.Title,
 			Description: cc.Description,
 			CreatedBy:   cc.CreatedBy,
+			Priority:    cp,
 		})
 	}
 	return tasks, nil
+}
+
+// SetPriority records a work.task.priority.set event, updating the priority of taskID.
+func (ts *TaskStore) SetPriority(
+	source types.ActorID,
+	taskID types.EventID,
+	priority TaskPriority,
+	causes []types.EventID,
+	convID types.ConversationID,
+) error {
+	content := TaskPrioritySetContent{
+		TaskID:   taskID,
+		Priority: priority,
+		SetBy:    source,
+	}
+	ev, err := ts.factory.Create(EventTypeTaskPrioritySet, source, content, causes, convID, ts.store, ts.signer)
+	if err != nil {
+		return fmt.Errorf("create priority event: %w", err)
+	}
+	if _, err := ts.store.Append(ev); err != nil {
+		return fmt.Errorf("append priority event: %w", err)
+	}
+	return nil
+}
+
+// GetPriority returns the effective priority of a task by scanning
+// work.task.priority.set events for the most recent override, falling back
+// to the priority recorded in the work.task.created event.
+func (ts *TaskStore) GetPriority(taskID types.EventID) (TaskPriority, error) {
+	// Scan all priority-set events for this task; events are returned newest-first,
+	// so the first match is the most recent override.
+	page, err := ts.store.ByType(EventTypeTaskPrioritySet, 1000, types.None[types.Cursor]())
+	if err != nil {
+		return DefaultPriority, fmt.Errorf("fetch priority events: %w", err)
+	}
+	for _, ev := range page.Items() {
+		c, ok := ev.Content().(TaskPrioritySetContent)
+		if ok && c.TaskID == taskID {
+			return c.Priority, nil
+		}
+	}
+
+	// Fall back to the creation event's priority.
+	ev, err := ts.store.Get(taskID)
+	if err != nil {
+		return DefaultPriority, fmt.Errorf("get task event: %w", err)
+	}
+	c, ok := ev.Content().(TaskCreatedContent)
+	if !ok {
+		return DefaultPriority, nil
+	}
+	if c.Priority == "" {
+		return DefaultPriority, nil
+	}
+	return c.Priority, nil
 }

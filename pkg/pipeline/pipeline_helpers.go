@@ -371,8 +371,11 @@ func formatTaskList(tasks []work.Task, statuses ...map[types.EventID]work.TaskSt
 		b.WriteString(fmt.Sprintf("  - %s", t.Title))
 		if statusMap != nil {
 			if status, ok := statusMap[t.ID]; ok {
-				b.WriteString(fmt.Sprintf(" [%s]", status))
+				b.WriteString(fmt.Sprintf("[%s]", status))
 			}
+		}
+		if t.Priority != "" {
+			b.WriteString(fmt.Sprintf("[%s]", t.Priority))
 		}
 		if t.Description != "" {
 			b.WriteString(fmt.Sprintf(": %s", t.Description))
