@@ -316,7 +316,7 @@ Project structure:
 					p.emitWarning(PhaseMerge, "PR merge failed (may need manual merge): %v", err)
 				} else {
 					p.telemetry.Merged = true
-					if _, err := integrator.Runtime().Act(ctx, ActionMergePR, prURL); err != nil {
+					if err := integrator.Act(ctx, ActionMergePR, prURL); err != nil {
 						fmt.Fprintf(os.Stderr, "warning: merge_pr action event failed: %v\n", err)
 						p.emitWarning(PhaseMerge, "merge_pr action event failed: %v", err)
 					}
@@ -402,7 +402,7 @@ Do NOT add unnecessary changes beyond what's requested.`, lang, changeReq, ctoAn
 			p.emitOutput("builder", "modification", truncate(result.Summary, 200))
 
 			// Record the action event
-			if _, err := builder.Runtime().Act(ctx, writeCodeAction(lang), "agentic modification"); err != nil {
+			if err := builder.Act(ctx, writeCodeAction(lang), "agentic modification"); err != nil {
 				fmt.Fprintf(os.Stderr, "warning: write_code action event failed: %v\n", err)
 				p.emitWarning(Phase("modify"), "write_code action event failed: %v", err)
 			}
@@ -483,12 +483,12 @@ CRITICAL OUTPUT FORMAT RULES:
 - Every line of your response must be inside a file block
 - Preserve existing code style and conventions`, lang, changeReq, ctoAnalysis, existingCode)
 
-	_, code, err := builder.Runtime().Evaluate(ctx, "code_modification", prompt)
+	code, err := builder.Evaluate(ctx, "code_modification", prompt)
 	if err != nil {
 		return nil, fmt.Errorf("builder modify: %w", err)
 	}
 
-	if _, err := builder.Runtime().Act(ctx, writeCodeAction(lang), "targeted modification"); err != nil {
+	if err := builder.Act(ctx, writeCodeAction(lang), "targeted modification"); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: write_code action event failed: %v\n", err)
 		p.emitWarning(Phase("modify"), "write_code action event failed: %v", err)
 	}
@@ -645,7 +645,7 @@ Read the current code, apply the fixes, and run tests to verify they pass.`, lan
 			p.emitOutput("builder", "modification", truncate(result.Summary, 200))
 
 			// Record the action event
-			if _, actErr := builder.Runtime().Act(ctx, writeCodeAction(lang), "agentic revision"); actErr != nil {
+			if actErr := builder.Act(ctx, writeCodeAction(lang), "agentic revision"); actErr != nil {
 				fmt.Fprintf(os.Stderr, "warning: write_code action event failed: %v\n", actErr)
 				p.emitWarning(PhaseReview, "write_code action event failed: %v", actErr)
 			}
@@ -689,12 +689,12 @@ Output ONLY the files that need further changes using --- FILE: path --- markers
 	// Override to 10 minutes for this step only.
 	reviseCtx, reviseCancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer reviseCancel()
-	_, code, err := builder.Runtime().Evaluate(reviseCtx, "code_revision", prompt)
+	code, err := builder.Evaluate(reviseCtx, "code_revision", prompt)
 	if err != nil {
 		return nil, fmt.Errorf("revise: %w", err)
 	}
 
-	if _, err := builder.Runtime().Act(ctx, writeCodeAction(lang), "text revision"); err != nil {
+	if err := builder.Act(ctx, writeCodeAction(lang), "text revision"); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: write_code action event failed: %v\n", err)
 		p.emitWarning(PhaseReview, "write_code action event failed: %v", err)
 	}

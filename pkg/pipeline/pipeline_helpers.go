@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/lovyou-ai/eventgraph/go/pkg/event"
 	"github.com/lovyou-ai/eventgraph/go/pkg/types"
 
 	"github.com/lovyou-ai/hive/pkg/loop"
@@ -67,14 +66,8 @@ Events:
 	if loop.ContainsSignal(eval, "HALT") {
 		fmt.Fprintf(os.Stderr, "Guardian HALT (after %s):\n%s\n", phase, eval)
 		p.emitWarning(Phase(phase), "Guardian HALT: %s", eval)
-		// NOTE: Emit is context-unaware (eventgraph Runtime.Emit doesn't take ctx).
-		// This is acceptable — the HALT event is best-effort observability, not
-		// control flow. The pipeline stops regardless of whether the event persists.
-		if _, err := p.guardian.Runtime().Emit(event.AgentEscalatedContent{
-			AgentID:   p.guardian.ID(),
-			Authority: p.humanID,
-			Reason:    fmt.Sprintf("[HALT after %s] %s", phase, eval),
-		}); err != nil {
+		if err := p.guardian.Escalate(ctx, p.humanID,
+			fmt.Sprintf("[HALT after %s] %s", phase, eval)); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: HALT escalation event failed: %v\n", err)
 		}
 		return true
@@ -86,11 +79,8 @@ Events:
 		if p.telemetry != nil {
 			p.telemetry.addGuardianAlert(fmt.Sprintf("[%s phase] %s", phase, eval))
 		}
-		if _, err := p.guardian.Runtime().Emit(event.AgentEscalatedContent{
-			AgentID:   p.guardian.ID(),
-			Authority: p.humanID,
-			Reason:    fmt.Sprintf("[%s phase] %s", phase, eval),
-		}); err != nil {
+		if err := p.guardian.Escalate(ctx, p.humanID,
+			fmt.Sprintf("[%s phase] %s", phase, eval)); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: alert escalation event failed: %v\n", err)
 		}
 	}

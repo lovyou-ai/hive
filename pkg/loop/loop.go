@@ -350,7 +350,7 @@ func (l *Loop) checkResponse(ctx context.Context, response string, iteration int
 		r := l.result(StopHalt, iteration, sig.Reason)
 		return &r
 	case SignalEscalate:
-		if err := l.agent.Escalate(ctx,
+		if err := l.agent.Escalate(ctx, l.humanID,
 			fmt.Sprintf("loop iteration %d: %s", iteration, sig.Reason)); err != nil {
 			fmt.Printf("warning: escalation event failed: %v\n", err)
 		}
@@ -379,7 +379,7 @@ func (l *Loop) checkResponseText(ctx context.Context, response string, iteration
 		return &r
 	}
 	if ContainsSignal(response, "ESCALATE") {
-		if err := l.agent.Escalate(ctx,
+		if err := l.agent.Escalate(ctx, l.humanID,
 			fmt.Sprintf("loop iteration %d: %s", iteration, response)); err != nil {
 			fmt.Printf("warning: escalation event failed: %v\n", err)
 		}

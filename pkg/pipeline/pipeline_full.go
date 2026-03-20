@@ -367,7 +367,7 @@ Product idea:
 	evaluation := ctoResp.Content()
 
 	// Record the CTO's direction as an action event.
-	_, err = p.cto.Runtime().Act(ctx, ActionSeedBuild, spec)
+	err = p.cto.Act(ctx, ActionSeedBuild, spec)
 	if err != nil {
 		return "", fmt.Errorf("CTO seed action: %w", err)
 	}
@@ -505,7 +505,7 @@ func (p *Pipeline) research(ctx context.Context, input ProductInput) (spec strin
 		if err != nil {
 			return "", "", err
 		}
-		_, evaluation, err := researcher.Runtime().Research(ctx, input.URL,
+		evaluation, err := researcher.Research(ctx, input.URL,
 			"extract the product idea, key entities, features, and requirements. Output in Code Graph vocabulary where possible.")
 		if err != nil {
 			return "", "", fmt.Errorf("research URL: %w", err)
@@ -697,7 +697,7 @@ Specification:
 	code := buildResp.Content()
 
 	// Record the build action
-	if _, err := builder.Runtime().Act(ctx, writeCodeAction(lang), "multi-file generation from spec"); err != nil {
+	if err := builder.Act(ctx, writeCodeAction(lang), "multi-file generation from spec"); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: write_code action event failed: %v\n", err)
 		p.emitWarning(PhaseBuild, "write_code action event failed: %v", err)
 	}
@@ -937,7 +937,7 @@ Preserve existing code style and conventions.`, lang, testResult)
 				fmt.Fprintf(os.Stderr, "Builder (agentic fix): %s\n", truncate(result.Summary, 200))
 				p.emitOutput("builder", "analysis", truncate(result.Summary, 200))
 
-				if _, actErr := builder.Runtime().Act(ctx, writeCodeAction(lang), "agentic test fix"); actErr != nil {
+				if actErr := builder.Act(ctx, writeCodeAction(lang), "agentic test fix"); actErr != nil {
 					fmt.Fprintf(os.Stderr, "warning: write_code action event failed: %v\n", actErr)
 					p.emitWarning(PhaseTest, "write_code action event failed: %v", actErr)
 				}
@@ -1088,7 +1088,7 @@ func (p *Pipeline) integrate(ctx context.Context) error {
 		return err
 	}
 
-	_, err = integrator.Runtime().Act(ctx, ActionIntegrate, "staging")
+	err = integrator.Act(ctx, ActionIntegrate, "staging")
 	if err != nil {
 		return fmt.Errorf("integration: %w", err)
 	}
@@ -1104,7 +1104,7 @@ func (p *Pipeline) integrate(ctx context.Context) error {
 
 	// Escalate to human for production approval
 	humanID := p.humanID
-	_, err = integrator.Runtime().Escalate(ctx, humanID, "Product ready for human review before production deploy")
+	err = integrator.Escalate(ctx, humanID, "Product ready for human review before production deploy")
 	if err != nil {
 		return fmt.Errorf("escalate: %w", err)
 	}
