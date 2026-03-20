@@ -43,6 +43,7 @@ type Agent struct {
 	role    roles.Role
 	name    string
 	graph   *graph.Graph
+	convID  types.ConversationID
 	state   agent.OperationalState
 	signer  event.Signer
 
@@ -62,6 +63,11 @@ type Config struct {
 	Name     string
 	Graph    *graph.Graph
 	Provider intelligence.Provider
+
+	// ConversationID overrides the default agent-scoped conversation ID.
+	// When set, the agent's events join this conversation thread.
+	// Used by the pipeline to unify all agents under one conversation.
+	ConversationID types.ConversationID
 }
 
 // New creates and boots a new Agent.
@@ -100,7 +106,11 @@ func New(ctx context.Context, cfg Config) (*Agent, error) {
 	}
 
 	// Create the AgentRuntime.
-	convID := types.MustConversationID(fmt.Sprintf("agent_%s", registered.ID().Value()))
+	// Use configured conversation ID if provided; otherwise derive from agent ID.
+	convID := cfg.ConversationID
+	if convID.Value() == "" {
+		convID = types.MustConversationID(fmt.Sprintf("agent_%s", registered.ID().Value()))
+	}
 	rt, err := intelligence.NewRuntime(ctx, intelligence.RuntimeConfig{
 		AgentID:        registered.ID(),
 		Provider:       cfg.Provider,
@@ -116,6 +126,7 @@ func New(ctx context.Context, cfg Config) (*Agent, error) {
 		role:    cfg.Role,
 		name:    cfg.Name,
 		graph:   cfg.Graph,
+		convID:  convID,
 		state:   agent.StateIdle,
 		signer:  signer,
 	}
@@ -171,8 +182,7 @@ func (a *Agent) record(eventTypeName string, content event.EventContent) (event.
 		}
 	}
 
-	convID := types.MustConversationID(fmt.Sprintf("agent_%s", a.runtime.ID().Value()))
-	return a.graph.Record(eventType, a.runtime.ID(), content, causes, convID, a.signer)
+	return a.graph.Record(eventType, a.runtime.ID(), content, causes, a.convID, a.signer)
 }
 
 // --- Accessors ---
@@ -202,6 +212,9 @@ func (a *Agent) Provider() intelligence.Provider { return a.runtime.Provider() }
 
 // Graph returns the shared graph.
 func (a *Agent) Graph() *graph.Graph { return a.graph }
+
+// ConversationID returns the agent's conversation thread ID.
+func (a *Agent) ConversationID() types.ConversationID { return a.convID }
 
 // LastEvent returns the ID of the most recent event this agent emitted.
 func (a *Agent) LastEvent() types.EventID {

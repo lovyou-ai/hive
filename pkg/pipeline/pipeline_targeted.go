@@ -241,6 +241,7 @@ Project structure:
 			if approved {
 				fmt.Fprintln(os.Stderr, "Changes approved by reviewer.")
 				p.emitProgress(PhaseReview, "changes approved by reviewer")
+				p.recordTrust(ctx, p.agents[roles.RoleReviewer], "review")
 				break
 			}
 
@@ -271,6 +272,8 @@ Project structure:
 	if err != nil {
 		return p.failPhase("Test", fmt.Errorf("test: %w", err))
 	}
+	p.recordTrust(ctx, p.agents[roles.RoleTester], "test")
+	p.recordTrust(ctx, p.agents[roles.RoleBuilder], "test")
 
 	testDuration := time.Since(phaseStart)
 	timings = append(timings, phaseTiming{"Test", testDuration})

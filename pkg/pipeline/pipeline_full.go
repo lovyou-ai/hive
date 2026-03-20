@@ -173,6 +173,7 @@ func (p *Pipeline) Run(ctx context.Context, input ProductInput) error {
 		if approved {
 			fmt.Fprintln(os.Stderr, "Code approved by reviewer.")
 			p.emitProgress(PhaseReview, "code approved by reviewer")
+			p.recordTrust(ctx, p.agents[roles.RoleReviewer], "review")
 			break
 		}
 
@@ -207,6 +208,8 @@ func (p *Pipeline) Run(ctx context.Context, input ProductInput) error {
 		p.completePhaseTask(ts, testTask, fmt.Sprintf("failed: %v", err))
 		return p.failPhase("Test", fmt.Errorf("test: %w", err))
 	}
+	p.recordTrust(ctx, p.agents[roles.RoleTester], "test")
+	p.recordTrust(ctx, p.agents[roles.RoleBuilder], "test")
 	testDuration := time.Since(phaseStart)
 	timings = append(timings, phaseTiming{"Test", testDuration})
 	p.telemetry.addPhaseTiming("Test", testDuration)

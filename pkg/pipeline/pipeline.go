@@ -82,6 +82,7 @@ type Pipeline struct {
 	product   *workspace.Product // current product being built
 	spawner   *spawn.Spawner     // nil = direct creation (no approval)
 
+	trustModel    trust.ITrustModel // for RecordVerifiedWork after successful phases
 	cto           *hiveagent.Agent
 	guardian      *hiveagent.Agent
 	agents        map[roles.Role]*hiveagent.Agent
@@ -189,6 +190,7 @@ func New(ctx context.Context, cfg Config) (*Pipeline, error) {
 		store:         cfg.Store,
 		actors:        cfg.Actors,
 		graph:         g,
+		trustModel:    cfg.Trust,
 		humanID:       cfg.HumanID,
 		humanName:     human.DisplayName(),
 		ws:            ws,
@@ -347,11 +349,13 @@ func (p *Pipeline) ensureAgent(ctx context.Context, role roles.Role, name string
 
 	// Create the unified hiveagent.Agent — handles actor registration, boot
 	// events, state machine, and causality tracking internally.
+	// All agents share the pipeline's conversation ID for unified threading.
 	a, err := hiveagent.New(ctx, hiveagent.Config{
-		Role:     role,
-		Name:     name,
-		Graph:    p.graph,
-		Provider: tracker,
+		Role:           role,
+		Name:           name,
+		Graph:          p.graph,
+		Provider:       tracker,
+		ConversationID: p.convID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create agent %s: %w", name, err)
@@ -466,6 +470,26 @@ func (p *Pipeline) ctoCause() types.EventID {
 		return types.EventID{}
 	}
 	return head.Unwrap().ID()
+}
+
+// recordTrust records verified work for an agent after a successful phase.
+// Best-effort — logs a warning on failure, never blocks the pipeline.
+func (p *Pipeline) recordTrust(ctx context.Context, a *hiveagent.Agent, phase string) {
+	if p.trustModel == nil || a == nil {
+		return
+	}
+	// Use the agent's most recent event as evidence of the work.
+	lastID := a.LastEvent()
+	if lastID.IsZero() {
+		return
+	}
+	page, err := p.store.ByType(types.MustEventType("agent.evaluated"), 1, types.None[types.Cursor]())
+	if err != nil || len(page.Items()) == 0 {
+		return
+	}
+	if err := a.RecordVerifiedWork(ctx, p.trustModel, page.Items()[0]); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: trust update for %s after %s failed: %v\n", a.Role(), phase, err)
+	}
 }
 
 // Store returns the shared event graph.
