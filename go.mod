@@ -6,11 +6,13 @@ require (
 	github.com/jackc/pgx/v5 v5.8.0
 	github.com/lovyou-ai/agent v0.0.0
 	github.com/lovyou-ai/eventgraph/go v0.0.0-20260309152918-5602caa542f2
+	github.com/lovyou-ai/work v0.0.0
 )
 
 replace (
 	github.com/lovyou-ai/agent => ../agent
 	github.com/lovyou-ai/eventgraph/go => ../eventgraph/go
+	github.com/lovyou-ai/work => ../work
 )
 
 require (

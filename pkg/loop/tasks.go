@@ -7,7 +7,7 @@ import (
 
 	"github.com/lovyou-ai/eventgraph/go/pkg/types"
 
-	"github.com/lovyou-ai/hive/pkg/work"
+	"github.com/lovyou-ai/work"
 )
 
 // TaskCommand represents a parsed /task command from an agent's response.

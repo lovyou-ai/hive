@@ -25,7 +25,7 @@ import (
 	hiveagent "github.com/lovyou-ai/agent"
 	"github.com/lovyou-ai/hive/pkg/loop"
 	"github.com/lovyou-ai/hive/pkg/resources"
-	"github.com/lovyou-ai/hive/pkg/work"
+	"github.com/lovyou-ai/work"
 )
 
 // Runtime is the hive runtime. It manages agents, the shared graph,
