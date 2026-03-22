@@ -1,38 +1,31 @@
-# Scout Report — Iteration 3
+# Scout Report — Iteration 6
 
 ## Map (from code)
 
-Read state.md first. Then read actual site code.
+Read state.md. Orient and Ship phases complete. Must build new code.
 
-**state.md says:** "unified graph product skeleton"
-**Code says:** Fully implemented. 595 lines store.go (3 tables, full CRUD, 7 query methods), 754 lines handlers.go (10 grammar operations: intend, decompose, express, discuss, respond, complete, assign, claim, prioritize, plus state/update/delete), 1012 lines views.templ (5 lenses: Board, Feed, Threads, People, Activity + NodeDetail + SpaceIndex + onboarding). HTMX support throughout.
+**Home page assessment:**
+- Headline: "Trust earned, not assumed." — tagline, not product description
+- Subtext: "One graph. Fifteen operations. Every view you need." — meaningless to a new visitor
+- Three feature cards: Board, Feed, Threads — described in jargon ("grammar operations", "Express what matters")
+- No explanation of what the product IS or what a visitor can DO
+- No mention of EventGraph, GitHub, reference docs
+- Only shows 3 of 5 lenses (missing People, Activity)
 
-**state.md is wrong.** The graph product is complete, not a skeleton. The system is more built than the loop's own knowledge file reflects.
-
-Additional findings:
-- `site/work/` still exists (4 files) but is dead code — main.go doesn't import it. graph/ fully replaced it.
-- Site deploys to Fly.io but deploy is currently stuck (Docker issue, not code).
-- Cognitive grammar reference page is committed and pushed but not live (blocked by deploy).
+A new visitor learns: this is something about graphs and grammar. They don't learn: this is a place to manage projects, post updates, and have discussions with a full audit trail.
 
 ## Gap Type
 
-Missing quality — dead code (work/ package) and inaccurate loop state.
-
-But more importantly: **the code gaps are mostly closed.** The site has blog, reference, auth, and a complete product. The hive has working agents. The real gaps are now:
-1. Operational: deploy is broken (Docker)
-2. Growth: no users, no way for people to discover lovyou.ai
-3. Dead code: work/ package cluttering the repo
+Missing quality — the home page doesn't communicate product value.
 
 ## The Gap
 
-The site/work/ package (4 files) is dead code that graph/ fully replaced — it should be deleted, and loop/state.md should be corrected to reflect that the graph product is complete, not a skeleton.
+The landing page reads as a technical manifesto. A first-time visitor can't tell what lovyou.ai does, who it's for, or why they should try it. All five lenses should be shown, the three-step flow should be explained, and the bigger picture (EventGraph, thirteen domains) should be mentioned but not dominate.
 
 ## Why This Gap
 
-It's small but load-bearing for the loop itself. State.md's inaccuracy means future Scout iterations will waste time investigating a "skeleton" that's actually complete — the same class of error as iteration 1 (docs misleading the Scout). Fix it now to prevent future wasted iterations.
-
-The real observation from this iteration is bigger: **the code is ahead of the loop's understanding.** The loop needs to catch up with reality before it can usefully identify what's next.
+The home page is the highest-traffic entry point. Every visitor sees it. If it doesn't communicate, nothing else matters — blog, reference, app all become invisible. This is the highest-leverage code change available.
 
 ## Filled Looks Like
 
-work/ deleted, state.md accurate, and the Scout can identify actual gaps (deploy, growth, autonomy) instead of phantom code gaps.
+A visitor landing on lovyou.ai understands within 10 seconds: (1) this is a coordination tool, (2) you can manage tasks, post updates, and discuss things, (3) it's all on one graph with full traceability, (4) there's a bigger vision behind it.

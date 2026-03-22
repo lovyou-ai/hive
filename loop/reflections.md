@@ -41,3 +41,47 @@
 **FORMALIZE:** Pattern detected: the loop's first N iterations are always Orient (catching up with reality). This is natural and correct. The Scout prompt should recognize this pattern — if state.md is freshly updated and accurate, skip extended orientation and go straight to gap identification.
 
 **Next iteration:** The Orient phase is complete. The map is accurate. The next Scout should identify a gap that requires BUILDING, not cleaning. Candidates: fix the deploy, build something for growth, or make the loop self-running. The Scout should pick one and the Builder should produce code.
+
+## Iteration 4 — 2026-03-22
+
+**Built:** Committed and pushed both repos to GitHub. Site: dead code deletion. Hive: core loop spec, doc rewrites, loop state directory.
+
+**COVER:** This iteration covered the operational gap — code sitting locally has zero value. The Scout correctly identified that three iterations of work needed to be shipped. ✓
+
+**BLIND:** Deploy is still broken. Docker Desktop hanging on `fly deploy --local-only`. This has been a known issue for all four iterations and hasn't been addressed. It's an environment problem, not a code problem, but it means changes are on GitHub but not live on lovyou.ai.
+
+**ZOOM:** Right scale. Commit + push is the correct granularity after three iterations of local-only changes. But the loop is still operating at the meta level (managing itself) rather than building product.
+
+**FORMALIZE:** Four iterations of Orient is the upper bound. The loop has: (1) accurate knowledge of the codebase, (2) a knowledge accumulation system, (3) all changes in version control. There is nothing left to calibrate. **The next iteration MUST produce new code or the loop is stuck in a reflection trap.**
+
+**Next iteration:** Build something. The deploy fix is environmental (Docker restart), not a code task. The highest-value code task is either: (a) making lovyou.ai discoverable/useful to new users, or (b) making the hive loop self-running. The Scout should pick one and scope it tightly.
+
+## Iteration 5 — 2026-03-22
+
+**Built:** Deployed lovyou.ai using `fly deploy --remote-only`. All accumulated changes now live.
+
+**COVER:** The Scout correctly identified the deploy as the highest-leverage action. The Builder found that `--remote-only` bypasses Docker Desktop entirely. The blocker was the `--local-only` flag, not Docker itself. ✓
+
+**BLIND:** The deploy was stuck for FOUR iterations because the loop assumed it was an environment problem (Docker Desktop restart needed). It wasn't — `--remote-only` works fine. The loop's framing of the problem ("Docker issue, not code") was correct in category but wrong in solution. The loop should have tried alternative deploy methods earlier.
+
+**ZOOM:** Right scale. One command, maximum external impact. First iteration to produce a result visible to the outside world.
+
+**FORMALIZE:** Two lessons:
+1. **When blocked, try alternatives before declaring it an environment problem.** The loop repeated "needs Docker Desktop restart" for four iterations without trying the obvious alternative (`--remote-only`).
+2. **Use `--remote-only` for all future deploys.** It's faster than local builds and eliminates the Docker Desktop dependency.
+
+**Next iteration:** The site is live and accurate. The Orient and Ship phases are complete. The next iteration should build NEW CODE — not clean, not ship, not reflect. Build. The home page is the highest-value target: it's what new visitors see first, and it currently communicates abstractly rather than clearly.
+
+## Iteration 6 — 2026-03-22
+
+**Built:** Rewrote the landing page. All five lenses shown, three-step how-it-works flow, EventGraph/GitHub links, concrete product description. Committed, pushed, deployed in one cycle.
+
+**COVER:** First iteration to build new code AND deploy. The Scout correctly identified the landing page as highest-leverage. The Builder read blog posts to match Matt's voice. ✓
+
+**BLIND:** The landing page is better but still untested with real visitors. No analytics, no way to know if the new copy actually converts better. The loop is optimizing without measurement. This is acceptable at this stage (pre-users) but will become a blind spot as traffic grows.
+
+**ZOOM:** Right scale. Single-file change with maximum visitor impact. The loop is now operating at product-feature level, which is the correct zoom for the Build phase.
+
+**FORMALIZE:** The loop has found its rhythm: Scout identifies gap → Builder produces code → commit, push, deploy in same iteration. This is the steady-state cadence. **Every Build iteration should end with the change live on lovyou.ai.**
+
+**Next iteration:** The loop should continue building. The site now communicates what it is but has no SEO (no meta tags, no Open Graph), no onboarding narrative for the app itself, and the hive loop still runs manually. The Scout should pick the next highest-value target.

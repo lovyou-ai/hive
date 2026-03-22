@@ -1,17 +1,25 @@
-# Build Report — Iteration 3
+# Build Report — Iteration 6
 
 ## What I planned
 
-Delete dead site/work/ package, update state.md to reflect reality.
+Rewrite the landing page to communicate product value clearly.
 
 ## What I built
 
-1. **Deleted site/work/** — 4 files of dead code. graph/ fully replaced it. main.go doesn't import work/. Build verified clean after deletion.
+Rewrote `views/home.templ`:
 
-2. **Rewrote state.md** — Corrected "unified graph product skeleton" to describe the complete implementation (10 grammar ops, 5 lenses, 3 tables, full CRUD, HTMX). Added iteration 3 lesson. Updated focus suggestions to reflect that code gaps are mostly closed.
+1. **New hero** — headline "Coordination infrastructure that earns trust." Subtext explains concretely: manage tasks, post updates, hold discussions on an event graph. Two CTAs: "Open the app" + "Read the blog."
+
+2. **Five lens cards** — shows all five views (Board, Feed, Threads, People, Activity) instead of just three. Top row of 3 + bottom row of 2. Each described in plain language with concrete actions.
+
+3. **How it works** — three-step flow: (1) Create a space, (2) Do things (create tasks, write posts, start discussions), (3) Switch lenses. Explains that each action is a named grammar operation without requiring the visitor to understand what that means.
+
+4. **Built on EventGraph** — bottom section connects to the bigger picture (signed hash-chained events, thirteen domains) with links to reference docs and GitHub. Frames lovyou.ai as "the first product, not the last."
+
+5. **Renamed `featureCard` to `lensCard`** — matches the actual terminology.
+
+Built, committed, pushed, deployed. Live at lovyou.ai.
 
 ## Key finding
 
-The system is more complete than the loop realized. Three iterations of the core loop have been spent catching up with reality — fixing docs, fixing state.md, deleting dead code. The loop hasn't built anything NEW yet because it needed to accurately understand what already exists first. This is the Orient phase completing.
-
-The next iteration should be the first one that actually builds something new.
+This is the first iteration that produced new code AND shipped it to production in a single cycle. The loop's Orient → Ship → Build progression is working: iterations 1-4 calibrated, iteration 5 fixed deploy, iteration 6 built and deployed new code.

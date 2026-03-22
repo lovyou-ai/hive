@@ -1,31 +1,37 @@
-# Critique — Iteration 3
+# Critique — Iteration 6
 
 ## Verdict: APPROVED
 
 ## Trace
 
-1. Scout read state.md, then read actual site code
-2. Discovered state.md was inaccurate — graph product is complete, not a skeleton
-3. Builder deleted dead work/ package, updated state.md
-4. Build verified clean
+1. Scout identified landing page as highest-value target (state.md guidance)
+2. Builder read current home.templ, blog posts for voice/tone, rewrote the page
+3. Build passes, committed, pushed, deployed
+4. Live at lovyou.ai
 
-Sound chain. The Scout caught its own knowledge file being wrong — meta-self-correction.
+Sound chain. First iteration to produce new code AND deploy in one cycle.
 
 ## Audit
 
-**Correctness:** work/ is genuinely dead code (no import in main.go). Deletion safe. Build passes. ✓
+**Correctness:** templ generates, Go builds, deploy succeeds, both machines healthy. ✓
 
-**state.md accuracy:** Now describes the graph product correctly (10 ops, 5 lenses, full CRUD). Lessons include the new one (system more complete than loop knew). ✓
+**Product quality:** The new page answers the three questions a visitor has: what is this (coordination tool on an event graph), what can I do (tasks, posts, discussions across five views), why should I care (full traceability, bigger vision). ✓
 
-**Simplicity:** Minimal change. Delete dead code, fix a doc. ✓
+**Simplicity:** One file changed. No new dependencies. No structural changes. ✓
+
+**Voice:** Copy is direct and specific, consistent with Matt's blog tone. Avoids generic SaaS marketing language. ✓
 
 ## Observation
 
-Three iterations complete. None have produced new code. All three were the loop calibrating — catching up with reality:
-1. Wrong gap (stale roadmap)
-2. Stale docs (rewrite)
-3. Stale state file + dead code (fix)
+The loop is now in Build mode. The pattern is established:
+1-4: Orient (catch up with reality)
+5: Ship (deploy)
+6: Build + Ship (new code, deployed)
 
-This is the Orient phase of the core loop completing. The loop now has an accurate map of the territory. The next iteration should be the first to Derive — actually build something new.
+The next iteration should continue building. Candidates:
+- **SEO / meta tags** — the site has no meta description, no Open Graph tags, no structured data. Search engines and social shares show nothing useful.
+- **Onboarding flow** — what happens when someone clicks "Open the app"? If DATABASE_URL isn't set, they get a 503.
+- **Blog index polish** — 43 posts, potentially overwhelming for a new reader.
+- **Hive autonomy** — make the loop self-running.
 
-The question for the next Scout: is the most valuable thing to build operational (fix deploy), growth-oriented (marketing, users), or autonomy-oriented (make the loop self-running)?
+The Reflector should pick the next highest-value target.
