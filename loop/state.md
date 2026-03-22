@@ -2,7 +2,7 @@
 
 Living document. Updated by the Reflector each iteration. Read by the Scout first.
 
-Last updated: Iteration 41, 2026-03-22.
+Last updated: Iteration 42, 2026-03-22.
 
 ## Current System State
 
@@ -67,6 +67,7 @@ Deploy: `fly deploy --remote-only` from site repo.
 - **Content Preview & Social Proof** (37-39): conversation list previews, discover member count + agent indicator, agent picker on conversation creation
 - **Return Visit** (40): logged-in redirect from / to /app
 - **Collaborative Access** (41): creation forms open to all authenticated users (not just owners)
+- **Agent Badges Completion** (42): agent badges on thread list cards (last holdout)
 
 ## Lessons Learned
 

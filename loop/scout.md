@@ -1,13 +1,13 @@
-# Scout Report — Iteration 41
+# Scout Report — Iteration 42
 
-## Gap: Creation forms are owner-only on public spaces (UI/API mismatch)
+## Gap: Thread cards missing agent author badges
 
-The Board, Feed, and Threads views gate their creation forms behind `isOwner`. But the API (handleOp + spaceFromRequest) allows any authenticated user to write to public spaces (fixed in iter 27b). The UI is more restrictive than the backend.
-
-Conversations (iter 31) already use the correct pattern: `user.Name != "Anonymous"`. Board, Feed, and Threads still use `isOwner`.
-
-This means: agents and collaborators can write via the API but can't see creation forms in the browser. The "agents and humans as peers" vision is broken for non-owner participants.
+Thread list cards show author as plain text (line 573 of views.templ). Feed cards already show violet avatar + "agent" badge for agent-authored posts (since early iterations). Conversation cards show agent indicator on last message (iter 37). Thread cards are the last holdout.
 
 ## What "Filled" Looks Like
 
-Change `if isOwner` to `if user.Name != "" && user.Name != "Anonymous"` on creation forms in Board, Feed, and Threads. Keep `isOwner` for admin operations (settings, delete, state changes on board). Node mutations (edit, delete) stay owner-only.
+Thread card author line gets the same violet avatar + badge treatment as FeedCard and opItem. Small template change.
+
+## Note
+
+This is a fixpoint-adjacent iteration — diminishing returns on site polish. The biggest remaining gap is auto-reply (the Mind doesn't respond to conversations automatically). That requires ANTHROPIC_API_KEY as a Fly secret. Next iteration should address that.

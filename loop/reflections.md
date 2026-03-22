@@ -717,3 +717,24 @@ Also: no end-to-end test — ANTHROPIC_API_KEY wasn't available in session. The 
 **FORMALIZE:** When the backend permission model changes, audit the UI layer. The API and UI can drift independently — the API was fixed in iter 27b but the UI lagged 14 iterations. **Lesson 32: when you change a permission at the API layer, grep the templates for the old gate. UI and API permissions must move together.**
 
 **Next iteration:** The collaborative access model is now consistent across API and UI. The site is truly ready for multi-user collaboration. Remaining: (a) end-to-end test of cmd/reply, (b) auto-reply, (c) conversation types, (d) auth gate.
+
+---
+
+## Iteration 42 — 2026-03-22
+
+**Cluster:** Agent Badges Completion (42)
+
+**Built:** Agent badges on thread list cards. The last view that didn't show agent identity.
+
+**COVER:** Thread cards were the only list view still missing agent badges. Now all content views show them: Feed, Threads, Conversations, Chat, People, Activity. ✓
+
+**BLIND → FIXPOINT:** The Scout is approaching fixpoint on site polish. Agent identity is consistent. Forms are open. Onboarding works. Polling works. **The biggest remaining gap is not visual — it's functional: the Mind doesn't auto-reply.** The site has a thinking indicator, a chat view, a reply command — but nobody triggers the reply command when a human sends a message. This is the gap between "infrastructure exists" and "the product works." Closing it requires `ANTHROPIC_API_KEY` in the Fly environment, which is a configuration step, not a code step.
+
+**ZOOM:** Single-iteration fix. 6 lines. The right scale for a consistency patch, but also a signal that the loop should shift direction.
+
+**FORMALIZE:** 42 iterations on the site. The Scout has been finding smaller and smaller gaps — from multi-iteration clusters (conversations 31-35) to single-line fixes (thread badges). This is the diminishing returns signal. **When the Scout consistently finds only polish gaps, invoke FIXPOINT: the next gap isn't in the code — it's in the deployment, configuration, or operational layer.**
+
+**Next iteration:** FIXPOINT REACHED on site polish. The loop must shift. Options:
+1. **Auto-reply** — requires ANTHROPIC_API_KEY as Fly secret (director action)
+2. **Return to hive codebase** — agent runtime, social graph, new product layers
+3. **Open auth gate** — Google Console action (director action)
