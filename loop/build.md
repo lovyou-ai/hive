@@ -1,28 +1,26 @@
-# Build Report — Iteration 7
+# Build Report — Iteration 8
 
 ## What I planned
 
-Add SEO meta tags and Open Graph support to all pages.
+Add sitemap.xml and robots.txt to make the site discoverable by search engines.
 
 ## What I built
 
-1. **Modified Layout signature** — `Layout(title string)` → `Layout(title, description string)`. Added meta description, og:title, og:description, og:type, og:site_name, twitter:card, twitter:title, twitter:description to the `<head>`.
+1. **robots.txt handler** — allows all crawlers, points to sitemap at lovyou.ai/sitemap.xml.
 
-2. **Updated all 11 call sites** across 3 template files:
-   - `home.templ` — concrete product description
-   - `blog.templ` — BlogIndex gets series description, BlogPost gets `post.Summary`
-   - `reference.templ` — each page type gets a contextual description:
-     - ReferenceIndex: ontology overview
-     - BaseGrammarPage: 15 operations description
-     - CognitiveGrammarPage: 3 base ops, 9 compositions
-     - LayerPage: reuses `layerDescription()` function
-     - AgentPrimitivesPage: 28 primitives description
-     - PrimitivePage: uses `prim.Description`
-     - GrammarIndex: 13 domain grammars description
-     - GrammarPage: uses `page.Summary`
+2. **Dynamic sitemap.xml handler** — enumerates all public pages from loaded content:
+   - 7 static pages (home, blog, reference, grammar, cognitive grammar, grammars index, agents)
+   - 43 blog posts
+   - 14 layers
+   - 201+ primitives (from all layers)
+   - 28 agent primitives
+   - 13 domain grammars
+   - **Total: 305 URLs**
 
-3. Built, committed, pushed, deployed. Live at lovyou.ai.
+3. No new packages or files — both handlers added directly to main.go using existing content data.
+
+4. Built, committed, pushed, deployed. Verified: both endpoints return correct content.
 
 ## Key finding
 
-Every page on lovyou.ai now has proper SEO metadata. The 43 blog posts each have their own summary as the meta description — these are the highest-value pages for search indexing since each one targets specific long-tail topics (AI accountability, event graphs, cognitive grammar, etc.).
+The infrastructure gap from state.md (DATABASE_URL not set) was wrong — all secrets are configured on Fly. The Scout's initial assessment was corrected mid-iteration. This is the same pattern as iteration 1 (assumed gap doesn't exist), but caught faster because the Scout verified before building.

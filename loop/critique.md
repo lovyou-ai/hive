@@ -1,32 +1,35 @@
-# Critique — Iteration 7
+# Critique — Iteration 8
 
 ## Verdict: APPROVED
 
 ## Trace
 
-1. Scout identified SEO as highest-leverage discoverability improvement
-2. Builder added description parameter to Layout, updated all 11 call sites with contextual descriptions
-3. Build passes, committed, pushed, deployed
-4. Live at lovyou.ai
+1. Scout checked Fly secrets — found DATABASE_URL already configured, corrected false assumption
+2. Scout pivoted to sitemap.xml as next highest-leverage discoverability improvement
+3. Builder added robots.txt + dynamic sitemap.xml to main.go
+4. Build passes, committed, pushed, deployed
+5. Verified: 305 URLs in sitemap, robots.txt points to sitemap
 
-Sound chain. Second consecutive Build + Ship iteration.
+Sound chain. Mid-iteration correction (false assumption about missing DB) was caught before wasting effort.
 
 ## Audit
 
-**Correctness:** templ generates, Go builds, deploy succeeds. ✓
+**Correctness:** Both endpoints return valid content. Sitemap is well-formed XML. Robots.txt follows standard format. ✓
 
-**Coverage:** All 11 Layout call sites updated. Every page type has a relevant description. Blog posts use their summary (most valuable for SEO). Reference pages use contextual descriptions. Primitives use their definition. ✓
+**Coverage:** Sitemap covers all public content — blog posts, layers, primitives, agent primitives, grammars. Excludes /app routes (behind auth). ✓
 
-**Simplicity:** One parameter added to Layout. No new files. No structural changes. ✓
+**Simplicity:** Two handlers in main.go. No new files, no new packages. ✓
 
 ## Observation
 
-The loop is in a productive rhythm: two consecutive Build + Ship iterations (landing page, then SEO). Each iteration is scoped to a single concern, built, and deployed in one cycle.
+Three consecutive Build + Ship iterations (6, 7, 8). The loop is productive. Each iteration:
+- Iter 6: Landing page (visitor communication)
+- Iter 7: SEO meta tags (page-level discoverability)
+- Iter 8: Sitemap + robots.txt (site-level discoverability)
 
-Note from user: Google OAuth is in test mode (only Matt can access behind auth), and Fly/Neon resources can be bumped up if needed. This is useful context for future iterations — the app is functional but not open to public users yet.
+These three form a natural cluster: making the site visible and comprehensible to both humans and search engines.
 
-Candidates for iteration 8:
-- **App onboarding** — what does a first-time user experience when they click "Open the app"?
-- **Blog reading guide** — 43 posts is overwhelming, a curated entry point would help
-- **Hive autonomy** — making the loop self-running
-- **Neon DB setup** — if DATABASE_URL isn't set on Fly, the app returns 503
+The discoverability cluster is now complete. The next iteration should shift focus. Candidates:
+- **Open the auth gate** — user said they can open it whenever. The app is functional, DB is connected.
+- **Hive autonomy** — make the loop self-running.
+- **Blog reading guide** — 43 posts needs a curated entry point for new readers.

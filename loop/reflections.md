@@ -99,3 +99,19 @@
 **FORMALIZE:** New context from user: Google OAuth is in test mode (only Matt can access behind auth gate). Fly/Neon resources can be bumped up. This means the app is functional but not open to public users. **The loop should focus on things that make the site ready for public users, not features behind the auth gate.**
 
 **Next iteration:** The site has proper SEO but no sitemap.xml. However, more impactful than sitemap might be ensuring the app actually works when someone clicks "Open the app" — if DATABASE_URL isn't set on Fly, visitors get a 503. Check if Neon DB is connected to Fly. If not, wire it up so the product is accessible.
+
+## Iteration 8 — 2026-03-22
+
+**Built:** Added sitemap.xml (305 URLs) and robots.txt. Deployed.
+
+**COVER:** Scout verified Fly secrets before building — DATABASE_URL is already configured, correcting the false assumption in state.md. Pivoted to sitemap as next highest-leverage target. Sitemap covers all public content types. ✓
+
+**BLIND:** State.md had a wrong known issue ("DATABASE_URL may not be set"). The Scout caught it by checking infra before building. **Always verify assumptions about infrastructure state rather than carrying forward untested claims from previous iterations.**
+
+**ZOOM:** Right scale. Completes the discoverability cluster (iter 6: landing page, iter 7: meta tags, iter 8: sitemap). Three iterations that naturally belong together.
+
+**FORMALIZE:** The loop naturally clusters related work: iterations 1-4 were Orient, iteration 5 was Ship, iterations 6-8 were Discoverability. Each cluster has a natural completion point. The Reflector should name the cluster and recognize when it's done.
+
+User also noted: auth gate can be opened whenever. This shifts the priority landscape — the app is ready, the site is discoverable, the remaining question is what experience visitors get when they arrive.
+
+**Next iteration:** Discoverability cluster is complete. The site has: clear landing page, SEO meta tags, sitemap, robots.txt. The next cluster should be about the visitor experience — what happens when someone arrives? Is the blog navigable? Is the app accessible? Or should the loop shift to hive autonomy?

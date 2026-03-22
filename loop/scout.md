@@ -1,23 +1,23 @@
-# Scout Report — Iteration 7
+# Scout Report — Iteration 8
 
-## Map (from code)
+## Map (from code + infra)
 
-Read state.md. Loop is in Build mode. Assessed layout.templ head section.
+Read state.md. Checked Fly secrets — DATABASE_URL, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, AUTH_REDIRECT_URL all set. App is running, health checks passing. The "visitors get 503" worry was wrong — infrastructure is wired up.
 
-**Finding:** Zero SEO. No meta description, no Open Graph tags, no twitter:card, no og:title. The site is invisible to search engines and renders as a blank card on social shares. 43 blog posts, 201+ reference pages — all without meta descriptions.
+Reassessed: since the infra gap doesn't exist, the next highest-leverage discoverability improvement is sitemap.xml + robots.txt. The site has 250+ pages but search engines have no way to discover them.
 
 ## Gap Type
 
-Missing quality — every page lacks basic SEO and social sharing metadata.
+Missing infrastructure — no sitemap.xml, no robots.txt.
 
 ## The Gap
 
-Layout template has only charset and viewport meta tags. No description, no OG tags, no Twitter card tags. This affects every page on the site.
+Search engines can't efficiently discover 305 pages (43 blog posts, 14 layers, 201+ primitives, 28 agent primitives, 13 grammars, static pages) without a sitemap. No robots.txt means no pointer to the sitemap.
 
 ## Why This Gap
 
-Highest leverage for discoverability. 43 blog posts and 200+ reference pages with proper meta descriptions = 250+ pages indexed with relevant snippets instead of blank entries. Social shares (Twitter, Slack, Discord) will show title + description instead of nothing.
+SEO meta tags (iteration 7) give each page good metadata, but search engines still need to find the pages. A sitemap is the standard mechanism. 305 indexed pages with proper meta descriptions = significant organic search potential for long-tail queries.
 
 ## Filled Looks Like
 
-Every page has meta description, og:title, og:description, og:type, og:site_name, twitter:card, twitter:title, twitter:description. Blog posts use their summary. Reference pages use contextual descriptions. Primitives use their definition.
+GET /sitemap.xml returns valid XML with all public URLs. GET /robots.txt allows all crawlers and points to the sitemap.
