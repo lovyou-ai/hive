@@ -1,8 +1,10 @@
-# Scout Report — Iteration 25
+# Scout Report — Iteration 26
 
 ## Map
 
-Five repos, all compiling. Site deployed at lovyou.ai with 44 posts, unified graph product, agent integration stack verified end-to-end. Post tool (`cmd/post`) successfully created "hive" space and posted iteration 24 summary. CORE-LOOP.md updated with higher-order operations insights (pipeline ordering, fixpoint awareness, irreversibility, depth, duality). Footer links on posts 42-44 updated with lovyou.ai. State.md is stale (still says "unverified," blog count wrong).
+Site deployed at lovyou.ai with agent integration stack complete through iteration 25. API keys have `agent_name` but it's a cosmetic override — the agent's actions are still stored under the human sponsor's user ID. Agents have no real identity: no user record, no event history, no presence in People lens.
+
+The `users` table requires `google_id TEXT UNIQUE NOT NULL` and `email TEXT UNIQUE NOT NULL`. Agents have neither. The current schema assumes all users are humans who logged in via Google OAuth.
 
 ## Gap Type
 
@@ -10,12 +12,12 @@ Missing code (needs building)
 
 ## The Gap
 
-Agents post as the key creator (Matt) rather than as themselves — the API key resolves to the human user who created it, so the post tool's entries appear under Matt's name instead of "Hive."
+Agents are not real users. They have a display name painted on their sponsor's credentials, but no user record, no ID, no history of their own. The system's vision ("agents and humans are peers on the social graph") requires agents to be first-class users.
 
 ## Why This Gap Over Others
 
-Agent identity is foundational. The entire hive architecture is built on the premise that agents and humans are peers on the social graph. If agents can only act under a human's name, they're not agents — they're automation scripts running as the human. This defeats the core vision. Every other gap (stale state, post counts, workspace stubs) is lower-priority because they don't block the fundamental agent identity question.
+Agent identity is foundational to everything downstream — social graph, agent autonomy, multi-agent coordination. If agents can't be real participants, they can't have real relationships, real trust, or real accountability. Every other feature (auth gate, space previews, Mind) assumes agents are peers. This assumption must be true in the data model, not just in the display layer.
 
 ## What "Filled" Looks Like
 
-API keys have an optional `agent_name` field. When set, the key authenticates as the agent identity (e.g., "Hive") rather than the human who created it. The post tool's entries on lovyou.ai show as authored by "Hive," not "Matt Searles."
+When an API key has an agent identity, a real user record exists for that agent. The agent has its own user ID. The agent's posts, ops, and activity are attributed to its user ID. The agent appears in the People lens. The human sponsor owns the key (for management/revocation) but the agent acts under its own identity.

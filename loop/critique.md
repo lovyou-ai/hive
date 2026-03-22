@@ -1,30 +1,37 @@
-# Critique — Iteration 25
+# Critique — Iteration 26
 
 ## Verdict: APPROVED
 
 ## Trace
 
-1. Matt observed that the post tool posts as him, not as the hive
-2. Scout identified: API keys resolve to their creator's identity — agents can't be agents
-3. Builder added `agent_name` column to API keys, overrides User.Name when set
-4. Builder updated create form with agent identity field, key list shows "posts as" badge
-5. Builder also updated blog post count 43 → 44
-6. Compiles clean, templ generated, deployed
+1. Matt observed that `agent_name` is "a name without a soul" — display override, not real identity
+2. Scout identified: agents need real user records, not cosmetic labels
+3. Builder added `ensureAgentUser()` — creates agent users with kind='agent' and synthetic google_id
+4. Builder added `agent_id` to api_keys — links key to agent's user record
+5. Builder updated `userByAPIKey()` — resolves to agent user when agent_id is set
+6. Compiles clean, deployed
 
-Sound chain. The gap was real and the fix is minimal — one column, one conditional override.
+Sound chain. The gap → plan → code → verify chain holds.
 
 ## Audit
 
-**Correctness:** The override happens in `userByAPIKey()` — the only code path for API key auth. When `agentName != ""`, `u.Name = agentName`. Every handler downstream uses `user.Name` for Author, so the identity flows through the entire stack. ✓
+**Correctness:**
+- `ensureAgentUser()` uses `ON CONFLICT (google_id)` with synthetic `agent:{name}` — idempotent. Creating the same agent twice returns the existing record. ✓
+- `createAPIKey()` creates agent user before inserting key — agent_id is always valid when set. ✓
+- `userByAPIKey()` does two queries when agent_id is set (one for key lookup, one for agent). Could be a JOIN but simplicity wins here. ✓
+- `ListAPIKeys()` uses `COALESCE(agent_id, '')` — handles NULL → empty string cleanly. ✓
 
-**Breakage:** Zero risk. Keys without `agent_name` (empty string default) behave exactly as before — the conditional `if agentName != ""` is a no-op. The ALTER TABLE migration uses `IF NOT EXISTS`. ✓
+**Breakage:**
+- Existing keys without agent_id (NULL) → `agentID.Valid` is false → sponsor user returned. Fully backward compatible. ✓
+- `ON DELETE SET NULL` on agent_id: if agent user is deleted, key falls back to sponsor identity. Reasonable. ✓
+- Agent users can't log in via OAuth (no real google_id). Access only through API keys — sponsor controls access. ✓
 
-**Simplicity:** This is the simplest correct approach. One column, one conditional. No new types, no new middleware, no agent user table. The key is still owned by Matt (for permissions/billing) but presents as the agent's name. ✓
+**Simplicity:** One new function (`ensureAgentUser`), one new column (`agent_id`), one new column (`kind`). No new tables, no new types, no new middleware. ✓
 
-**Security:** Agent name is a display name, not an auth identity. The key still resolves to Matt's user ID for permission checks. An agent can't escalate privileges by setting a name. ✓
+**Security:** Agent identity is scoped to API key auth only. Agents can't create sessions, can't manage other keys, can't escalate. The sponsor revokes the key → agent loses access (but identity persists — their history remains). ✓
 
-**Dual (root cause):** Why did the original design miss this? Because iteration 21 (API key auth) was built for "authenticate programmatic access" — proving the plumbing worked. Agent identity wasn't the goal; authentication was. The gap only became visible when the first agent actually used the integration. This is a textbook fixpoint-awareness issue: the integration "felt complete" (all tests pass, all handlers work, the tool posts successfully) but the completeness was local — it didn't account for the purpose of agent identity.
+**Dual (root cause):** Why was iteration 25's approach wrong? Because it treated identity as a *property of the credential* (agent_name on the key) rather than a *property of the entity* (user record). A name on a key is metadata. A user record is identity. The distinction: metadata describes something; identity IS something.
 
 ## Observation
 
-This is the gap the Reflector's BLIND operation was supposed to catch. The question "what would someone outside the loop notice?" should have surfaced "agents post as humans" during iteration 24. The fact that Matt caught it by observation rather than the loop catching it by design means the BLIND prompt needs strengthening — or the loop needs an explicit "try the feature as a user" step after the Critic approves.
+The `kind` column on users is written but not yet read. Future iterations can use it to filter agents from humans in People lens, activity feeds, etc. The foundation is laid; the views will follow.

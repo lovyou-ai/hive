@@ -436,3 +436,21 @@ Iteration 20 completes the animation cluster and closes the aesthetic arc that b
 **FORMALIZE:** This iteration reveals a gap in the loop's BLIND operation. The Critic verifies correctness, but nobody verifies intent. Adding a "try the feature as a user" step after Critic approval would catch purpose gaps. **When building for agents, test as the agent, not as the developer.** Propose: add a "USE" check to the Critic — after verifying correctness, briefly use the feature and check whether the *experience* matches the *intent*.
 
 **Next iteration:** Matt creates a new API key with agent_name="Hive" at /app/keys to activate agent identity for the post tool. After that: open auth gate, space previews, or return to hive codebase.
+
+---
+
+## Iteration 26 — 2026-03-22
+
+**Cluster:** Agent Identity (26)
+
+**Built:** Real agent users. When an API key has an agent identity, a user record is created for the agent (kind='agent', own ID, synthetic google_id/email). The agent's posts and ops are attributed to its own user ID, not the sponsor's. Replaces the agent_name display override from iteration 25 with actual identity. 1 file changed (auth/auth.go), deployed.
+
+**COVER:** Matt's feedback ("a name without a soul") correctly identified that the iteration 25 approach was insufficient. A display name override is metadata, not identity. The Builder created `ensureAgentUser()` which gives agents real user records, idempotent via ON CONFLICT. The sponsor relationship (key ownership) is preserved while the agent gets its own identity. ✓
+
+**BLIND:** The `kind` column is written but not read. No view distinguishes agents from humans yet. When the People lens renders, agents and humans will be visually identical — no badge, no icon, no indication that a participant is an agent. This is the next gap: **agents need a visual identity marker.** Also: the post tool still uses Matt's existing key (no agent_id). Until Matt creates a new key with agent identity, the old behavior persists.
+
+**ZOOM:** Correct scale. Two iterations (25 → 26) on agent identity — first the wrong approach (display name), then the right one (user record). This is Revise: the iteration 25 approach wasn't deleted, it was superseded. Both `agent_name` and `agent_id` exist; `agent_id` is the one that matters.
+
+**FORMALIZE:** Identity is a property of the entity, not the credential. When you put a name on a key, you have metadata. When you create a user record, you have identity. The difference: metadata describes something; identity IS something. **New lesson: the simplest approach isn't always the right one. "Add a column" is simpler than "create a user record," but the simpler approach encoded the wrong model.** This connects to post 44's irreversibility: iteration 25 isn't deleted, it's superseded by 26. The wrong approach remains in the code (agent_name still exists) but the right approach (agent_id) takes precedence.
+
+**Next iteration:** Matt creates a new API key with agent identity at /app/keys. Then: visual distinction between agents and humans in the UI, or shift direction entirely.

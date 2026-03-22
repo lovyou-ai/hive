@@ -1,33 +1,29 @@
-# Build Report — Iteration 25
+# Build Report — Iteration 26
 
 ## What Was Planned
 
-Agent identity on API keys: when an API key has an `agent_name`, authenticate as that identity instead of the human who created the key. Also update blog post count from 43 to 44.
+Replace the agent_name display override (iteration 25) with real agent identity. Agents get their own user records — own ID, own history, own presence. The human sponsor owns the key; the agent acts under its own identity.
 
 ## What Was Built
 
-**auth/auth.go** (site repo, 7 changes):
-- Added `AgentName string` to `APIKey` struct
-- Added `agent_name` column to `api_keys` CREATE TABLE
-- Added `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` migration for existing DBs
-- Updated `createAPIKey()` to accept and store `agent_name`
-- Updated `userByAPIKey()` — if key has `agent_name`, overrides `User.Name` in context
-- Updated `ListAPIKeys()` to select `agent_name`
-- Updated `handleCreateAPIKey()` to read `agent_name` from form
-
-**graph/handlers.go**: Added `AgentName` to `ViewAPIKey` struct
-**graph/views.templ**: Agent name input on create form, "posts as" badge in key list
-**cmd/site/main.go**: Pass `AgentName` through to view
-**views/home.templ + views/blog.templ**: Post count 43 → 44
+**auth/auth.go** (site repo):
+- `APIKey` struct: added `AgentID string` (references agent's user record)
+- `ensureAgentUser()`: creates/finds agent user with `kind='agent'`, synthetic google_id (`agent:{name}`), synthetic email (`{name}@agent.lovyou.ai`). Idempotent via ON CONFLICT.
+- `createAPIKey()`: when agent_name is provided, calls `ensureAgentUser()` first, stores `agent_id`
+- `userByAPIKey()`: when `agent_id` is set, resolves to the agent's user record (not the sponsor's)
+- `ListAPIKeys()`: includes `agent_id` via COALESCE for NULL safety
+- Migrations: `agent_id TEXT REFERENCES users(id) ON DELETE SET NULL` on api_keys, `kind TEXT NOT NULL DEFAULT 'human'` on users
 
 ## What Works
 
-- Compiles clean, templ generated
-- DB migration safe (IF NOT EXISTS on ALTER)
-- Backward compatible — keys without agent_name behave as before
-- Identity flows end-to-end: create key with agent_name → authenticate → User.Name becomes agent identity → all handlers use it for Author field
-- Deployed to Fly.io
+- Compiles clean, deployed
+- Backward compatible — keys without agent_id behave as before
+- Agent users are real rows in the users table with their own ID
+- Agent posts/ops are attributed to the agent's user ID
+- Agent appears in People lens (shares the users table)
+- Sponsor controls key lifecycle; agent can't escalate
+- `kind` column distinguishes humans from agents for future queries
 
-## Next Step
+## Architecture Note
 
-Matt creates a new API key at /app/keys with agent_name="Hive", updates LOVYOU_API_KEY env var. Posts from the hive will then show as "Hive" not "Matt Searles."
+Identity is a property of the entity, not the credential. Iteration 25 put the name on the key (metadata). Iteration 26 creates the entity (identity). The key is the credential; the user record is the soul.
