@@ -1,33 +1,32 @@
-# Build Report — Iteration 14
+# Build Report — Iteration 15
 
 ## What I planned
 
-Add public spaces — a visibility model so spaces can be shared/viewed without login. Foundation for social pages, business visibility, and agent identity.
+Rewrite site copy and styling from corporate/enterprise language to warm, collaborative tone that matches the project's spirit: humans and agents building together.
 
 ## What I built
 
-Changes across 6 files in the site repo:
+Changes across 4 files (2 templates + 2 generated) in the site repo:
 
-1. **graph/store.go** — Added `Visibility` field to Space struct, `visibility` column (ALTER TABLE, defaults to 'private'), updated CreateSpace to accept visibility, added `ListPublicSpaces` query, updated all scan calls.
+1. **views/home.templ** — Complete copy rewrite:
+   - Hero: "Coordination infrastructure that earns trust" → "Humans and agents, building together."
+   - Meta description: "A place where humans and agents build together"
+   - CTA: "Open the app" → "Create a space" / "Read the blog" → "Read the story"
+   - Section: "Five views. One graph." → "Your space, five ways to see it"
+   - All five lens descriptions rewritten to be approachable and warm
+   - How it works step 2: "grammar operation on the event graph" → "Humans and agents both contribute"
+   - Bottom section: "Built on EventGraph" with hash-chain jargon → "Built in the open" with community narrative
+   - "43 posts on how we think about graphs, consciousness, grammar, and building things that actually help people"
 
-2. **auth/auth.go** — Added `OptionalAuth` middleware: tries to load user from session cookie but doesn't redirect if missing. Requests proceed with or without a user context.
-
-3. **graph/handlers.go** — Split auth into `readWrap` (OptionalAuth for GET) and `writeWrap` (RequireAuth for POST/DELETE). Added `spaceForRead` method that allows access to public spaces regardless of user. Returns `isOwner` bool. Updated all 7 GET handlers to use `spaceForRead`.
-
-4. **graph/views.templ** — Added `isOwner bool` parameter to BoardView, FeedView, ThreadsView, NodeDetailView. Wrapped all create/edit/delete forms with `if isOwner`. Added visibility toggle to both space creation forms. Non-owners see read-only views.
-
-5. **cmd/site/main.go** — Wired both wrappers: `readWrap` (OptionalAuth) for GET lens routes, `writeWrap` (RequireAuth) for POST/DELETE routes.
-
-6. **graph/views_templ.go** — Regenerated from templ.
+2. **views/layout.templ** — Footer tagline: "trust earned, not assumed" → "humans and agents, building together"
 
 ## What works
 
-- Build passes, templ generates, deployed to Fly.io ✓
-- Public spaces viewable by anyone (no login required)
-- Private spaces remain owner-only
-- Mutation forms hidden for non-owners
-- Visibility toggle in space creation
+- `templ generate` — success
+- `go build -o /tmp/site.exe ./cmd/site/` — success
+- Committed and pushed to main
+- Deployed to Fly.io — both machines healthy, live at lovyou.ai
 
 ## Key finding
 
-The auth split (OptionalAuth vs RequireAuth) is clean — one method difference. The `isOwner` flag propagated through views is the minimal change needed. No new tables, no membership model, no roles — just a single column and an access check.
+The tone shift was entirely in copy — no structural, routing, or data model changes needed. The page template structure (hero, lens cards, how-it-works, footer) remained the same. Good architecture lets you change the message without changing the machinery.

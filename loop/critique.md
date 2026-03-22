@@ -1,26 +1,26 @@
-# Critique — Iteration 14
+# Critique — Iteration 15
 
 ## Verdict: APPROVED
 
 ## Trace
 
-1. Scout identified spaces are owner-only — blocks social/business vision
-2. Builder added visibility field + OptionalAuth + spaceForRead + view guards
-3. Six files changed, all in the site repo
-4. Built, tested, deployed — both machines healthy
+1. Scout identified corporate language as gap — "Coordination infrastructure that earns trust" reads like enterprise SaaS, not a place where humans and agents collaborate
+2. Builder rewrote all copy in home.templ and footer tagline in layout.templ
+3. Four files changed (2 templates + 2 generated), all in site repo
+4. Built, pushed, deployed — both machines healthy
 
-Sound chain. The gap was well-scoped: one field, one access check, view guards.
+Sound chain. The gap was well-scoped: tone, not structure.
 
 ## Audit
 
-**Correctness:** Public spaces readable by anyone, writable by owner only. Private spaces unchanged. Migration is additive (ALTER TABLE ADD COLUMN IF NOT EXISTS with DEFAULT). ✓
+**Correctness:** All copy accurately describes the product. "Five ways to see it" matches the five lenses. "43 posts" matches the blog count. Links point to correct routes. ✓
 
-**Breakage:** Existing spaces default to 'private' — no behavior change for current users. New signature for NewHandlers (2 wrappers instead of 1) is a breaking API change but only has one call site. ✓
+**Breakage:** No structural changes — same components, same routes, same data flow. Only string literals changed. Zero risk of regression. ✓
 
-**Simplicity:** No membership model, no roles, no ACLs. Just visibility=public|private and an isOwner check. The simplest possible access model. ✓
+**Tone:** The new copy reads as intended — warm, inviting, peer-oriented. "Humans and agents, building together" is the project's actual thesis. "Create a space for your project, your community, or just yourself" frames the product as personal, not enterprise. "Built in the open" signals transparency without jargon. ✓
 
-**Gaps (acceptable):** No discover/explore page for finding public spaces. No way to change visibility after creation. No membership model (public = view only, not collaborate). These are future iterations.
+**Gaps (acceptable):** The reference section and blog still use some technical language — but that's appropriate for those contexts. The aesthetics work here is limited to copy; visual design (colors, spacing, illustrations) could evolve further but isn't a priority when the words are right.
 
 ## Observation
 
-This is the foundation for the social product vision. Public spaces are the primitive that enables: personal pages, business visibility, agent identity. The next step could be a discover page or opening the auth gate.
+Copy is the cheapest lever with the largest first-impression impact. This iteration changed ~50 lines of HTML text and shifted the entire site personality. The architectural investment of previous iterations (lenses, graph, public spaces) is now framed correctly for the audience.

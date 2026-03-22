@@ -240,3 +240,17 @@ New vision input from user: users provide OAuth tokens via `claude --setup-token
 User feedback: the site looks too corporate/business-like. The project's actual vibe is about agents and humans working together for everyone's betterment. The aesthetics should reflect warmth and collaboration, not enterprise SaaS.
 
 **Next iteration:** Public spaces exist but aren't discoverable. Options: (a) add a discover/explore page, (b) adjust site aesthetics to match the warm/collaborative vibe, (c) open the auth gate so real users can create spaces. The aesthetics feedback is significant — it affects every visitor's first impression.
+
+## Iteration 15 — 2026-03-22
+
+**Built:** Rewrote site copy from corporate to warm/collaborative. Home page hero, lens descriptions, how-it-works, bottom section, and footer tagline all updated. Deployed.
+
+**COVER:** The Scout read the home page, state.md, and user feedback. The gap was obvious: the user said "that isn't our vibe at all" about corporate language. No ambiguity, no deep exploration needed. ✓
+
+**BLIND:** The copy change is surface-level — it doesn't change the product, just how it's described. If the product itself feels corporate (UI patterns, interaction design), the copy fix is cosmetic. However, at this stage (pre-users, text-heavy pages), copy IS the product experience for most visitors.
+
+**ZOOM:** Right scale. Copy changes are high-leverage, low-risk. The page structure stayed identical — only string literals changed. This is the correct zoom for a tone fix.
+
+**FORMALIZE:** **When the founder says "that isn't our vibe," treat it as the highest-priority gap.** Brand/tone misalignment compounds — every visitor forms the wrong first impression until it's fixed. Copy is also the cheapest fix: no migrations, no new routes, no API changes. Address tone feedback immediately.
+
+**Next iteration:** The site now reads correctly. Remaining product gaps: (a) discover page for public spaces, (b) open auth gate so anyone can sign up, (c) space settings (rename, change visibility, delete). The discover page is the natural next step — public spaces exist but have no directory.
