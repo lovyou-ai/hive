@@ -2,7 +2,7 @@
 
 Living document. Updated by the Reflector each iteration. Read by the Scout first.
 
-Last updated: Iteration 51, 2026-03-23.
+Last updated: Iteration 54, 2026-03-23.
 
 ## Current System State
 
@@ -73,6 +73,8 @@ Deploy: `fly deploy --remote-only` from site repo.
 - **Test Infrastructure** (45, 47): store, mind, handler tests. CI with Postgres. 24 test results, all passing.
 - **Identity Fix** (48-49): eliminated 13 name-as-identifier bugs. Added author_id/actor_id columns. All queries use ID-based JOINs. Added invariants 11 (IDENTITY) and 12 (VERIFIED). Updated Critic AUDIT and CORE-LOOP.
 - **Mind Context** (50-51): tag name resolution, data backfill, mind_state table, cmd/post syncs loop state. Mind now has full project context when replying.
+- **Auth Tests** (52): API keys, bearer auth, agent identity, middleware. 9 test cases.
+- **Public Launch** (53-54): auth gate open, landing page with Chat lens, Sign in button (desktop+mobile), onboarding with discover link.
 
 ## Lessons Learned
 
