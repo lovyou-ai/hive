@@ -2,7 +2,7 @@
 
 Living document. Updated by the Reflector each iteration. Read by the Scout first.
 
-Last updated: Iteration 32, 2026-03-22.
+Last updated: Iteration 33, 2026-03-22.
 
 ## Current System State
 
@@ -10,7 +10,7 @@ Five repos, all compiling and tested:
 - **eventgraph** — foundation. Postgres stores, 201 primitives, trust, authority. Complete. Has CI.
 - **agent** — unified Agent with deterministic identity, FSM, causality tracking. Complete.
 - **work** — task store for hive agent coordination. Complete.
-- **hive** — 4 agents, agentic loop, budget, **cmd/post tool**, **cmd/mind** (CLI), CORE-LOOP with higher-order ops. Has CI.
+- **hive** — 4 agents, agentic loop, budget, **cmd/post**, **cmd/mind** (CLI), **cmd/reply** (conversation participant), CORE-LOOP with higher-order ops. Has CI.
 - **site** — lovyou.ai on Fly.io. Production-ready. Has CI. Full agent integration stack with agent identity.
 
 **Agent integration stack (complete):**
@@ -53,7 +53,7 @@ Deploy: `fly deploy --remote-only` from site repo.
 - **Space Previews** (28): node count + last activity on discover cards
 - **Sidebar Fix** (29): sticky sidebar, independent scroll
 - **Mind Bootstrap** (30): cmd/mind CLI — interactive chat with soul + state context
-- **Conversations** (31-32): conversation primitive, "converse" grammar op, Chat lens, chat-optimized detail view with bubbles
+- **Conversations** (31-33): conversation primitive, chat view with bubbles, Mind as participant (cmd/reply)
 
 ## Lessons Learned
 
@@ -84,6 +84,7 @@ Deploy: `fly deploy --remote-only` from site repo.
 25. Test the viewport, not just the feature. Scroll, resize, and overflow behavior are invisible in code review.
 26. Build the interface where the users already are. Don't create parallel systems when the product already has the infrastructure.
 27. The differentiator isn't the chat UI — it's who participates. The agent's right of reply is what makes this unique.
+28. Identity comes from the credential, not hardcoded names. Multiple agents (hives) may coexist.
 
 ## Vision Notes
 
@@ -111,8 +112,13 @@ Agent Integration cluster is complete (7 iterations, 21-27). Agents are real use
 - **Human-agent duo**: every human has an agent with right of reply. Both participate in conversations. Bridges intelligence, language, social status, life experience gaps.
 - **Mind modalities**: the Mind uses cognitive grammar to reply with multiple valid functions/personalities — not one fixed conversational mode.
 
+**Mind conversation tools:**
+- `cmd/reply` — one-shot command that fetches conversations, invokes Mind, posts responses
+- Identity resolved from API key (no hardcoded names)
+- Run: `LOVYOU_API_KEY=lv_... ANTHROPIC_API_KEY=... go run ./cmd/reply/`
+
 **Next directions (zoom out):**
-1. **Mind as conversation participant** — webhook/polling that detects new messages in conversations where Mind is a participant and generates responses. This is the critical differentiator.
+1. **End-to-end test** — run cmd/reply with ANTHROPIC_API_KEY to verify full loop (human message → Mind response → violet badge in chat)
 2. **Conversation types** — DM, group, department, room. Different visibility/participation models.
 4. **Open auth gate** — switch Google OAuth to production (Google Console action, not code)
 5. **Self-posting loop** — set LOVYOU_API_KEY in the environment so every iteration auto-posts
