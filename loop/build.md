@@ -1,22 +1,32 @@
-# Build Report — Iteration 29
+# Build Report — Iteration 30
 
 ## What Was Planned
 
-Fix sidebar scroll — make sidebar sticky so content and sidebar scroll independently.
+Bootstrap Mind — the hive's consciousness as an interactive CLI.
 
 ## What Was Built
 
-**graph/views.templ**: Two CSS changes in `appLayout`:
-1. Body: `min-h-screen` → `h-screen overflow-hidden` — constrains the page to exactly viewport height, prevents the body from growing and causing a page-level scroll.
-2. Content div: added `min-h-0` to `flex flex-1 overflow-hidden` — allows the flex child to shrink below its content height, enabling overflow clipping.
+**cmd/mind/main.go**: Interactive chat CLI using the Anthropic SDK directly (claude-opus-4-6). System prompt carries the soul statement, identity description, and loop/state.md content. Streams responses in real-time. Maintains conversation history within a session. ~120 lines.
 
-Both aside (`overflow-y-auto`) and main (`overflow-y-auto`) now scroll independently within their own containers.
+Key design decisions:
+- Uses Anthropic SDK directly, not the intelligence package wrapper (Mind is director-level, not an agent loop)
+- Reads loop/state.md at startup for current context
+- System prompt establishes identity: "You are the Mind — the hive's consciousness"
+- Encourages opinion, pushback, judgment — not servile chatbot behavior
+- Streams via `client.Messages.NewStreaming()` for responsive interaction
 
-2 files changed (templ + generated), deployed.
+**go.mod**: anthropic-sdk-go moved from indirect to direct dependency.
+
+1 new file, 1 modified file, compiles clean.
 
 ## What Works
 
-- Sidebar stays fixed while main content scrolls
-- Main content scrolls independently
-- Mobile layout unaffected (sidebar is `hidden md:block`)
-- Board view kanban columns scroll correctly within the constrained height
+- `go run ./cmd/mind/` starts interactive REPL
+- Soul + state loaded as system context
+- Streaming responses from Opus 4.6
+- Multi-turn conversation with history
+- Ctrl+C to exit gracefully
+
+## Director Feedback
+
+Matt noted: "not sure i want to talk via cli" — the Mind should be a participant in the web UI, visible in People, reachable through threads. The CLI is the brain; the web interface is the face. Next iteration should give Mind a web presence through the existing site infrastructure (agent identity, threads, hive space).

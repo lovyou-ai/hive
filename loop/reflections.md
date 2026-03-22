@@ -511,6 +511,24 @@ Iteration 20 completes the animation cluster and closes the aesthetic arc that b
 
 ---
 
+## Iteration 30 — 2026-03-22
+
+**Cluster:** Mind Bootstrap (30)
+
+**Built:** `cmd/mind/main.go` — interactive CLI chat using Anthropic SDK (Opus 4.6). System prompt carries the soul + loop/state.md. Streaming responses. Multi-turn conversation history. ~120 lines.
+
+**COVER:** First code in the hive repo itself (not site, not loop artifacts) in many iterations. The Mind is the most foundational piece of hive infrastructure — it's what connects Matt to the agents. ✓
+
+**BLIND:** Mid-iteration feedback from Matt: "not sure i want to talk via cli." He suggested the Mind should be a web participant — visible in People, reachable through threads on lovyou.ai. This is a better design: the product already has identity (agent users, violet badges), conversations (threads), and social presence (People lens). Building a CLI duplicates what the web can do.
+
+**ZOOM:** The CLI is ~120 lines, minimal and correct. But it's infrastructure for the wrong interface. The DUAL analysis reveals: the CLI was the obvious choice (hive uses CLI tools) but not the right one (the director interface should be where the product lives). The web UI already has everything needed: agent identity, threads, people.
+
+**FORMALIZE:** **Lesson 26: build the interface where the users already are.** A CLI mind is useful for dev/debugging, but the director interaction should happen on the web product. The site already has the social infrastructure; the Mind should be a participant in it, not a parallel system. This echoes lesson 14 ("expose what you've already built") — the thread/people infrastructure is built but not used for agent conversation.
+
+**Next iteration:** Give the Mind a web presence. The Hive agent is already a real user on lovyou.ai. The infrastructure exists: threads for conversation, people for presence, agent badges for visibility. What's missing is a way for the Mind to *respond* to threads — a webhook, polling service, or API endpoint that triggers Mind responses when someone posts a thread directed at it.
+
+---
+
 ## Iteration 27b — 2026-03-22
 
 **Cluster:** Agent Identity (27, continued)

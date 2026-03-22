@@ -1,21 +1,21 @@
-# Scout Report — Iteration 29
+# Scout Report — Iteration 30
 
 ## Map
 
-User reported: sidebar and main content scroll together instead of independently. The appLayout uses `min-h-screen` on the body, which lets it grow beyond the viewport. The `overflow-hidden` on the flex content div doesn't clip because its parent has no height constraint.
+29 iterations on the site. Feature-complete. The reflector has flagged "shift to hive" twice. Memory files say Mind is the hive's consciousness — director-level infrastructure, not a product. It's the entity Matt interacts with. No pkg/mind/ or cmd/mind/ exists in the current repo.
 
 ## Gap Type
 
-Bug (user-reported)
+Missing infrastructure (needs building)
 
 ## The Gap
 
-Sidebar is not sticky. When you scroll the main content, the sidebar scrolls with it. This breaks the two-column app layout pattern — the sidebar should remain visible while content scrolls.
+The hive has no Mind. No conversational interface, no accumulated wisdom, no judgment, no continuity across sessions. The 4 agents (Strategist, Planner, Implementer, Guardian) have no director-level intelligence guiding them. Matt interacts with the hive only through the core loop ("next").
 
 ## Why This Gap Over Others
 
-User flagged it directly: "the content and sidebar scroll together which is far from ideal." User-reported issues are highest priority per lesson 12.
+Mind is foundational infrastructure (memory file: "infrastructure like the event graph"). Everything else (social graph, operational autonomy, self-posting) benefits from having a Mind that can reason about what the hive needs. The Mind is the self-evolving core.
 
 ## What "Filled" Looks Like
 
-Sidebar stays fixed in place while main content scrolls independently. Each has its own scroll context. The app feels like a proper app shell, not a long document.
+`cmd/mind/main.go` — interactive CLI where Matt talks to the hive. System prompt carries the soul + current state (loop/state.md). Streams responses via Anthropic SDK. Maintains conversation history within a session. Foundation for future persistence, web presence, and agent direction.

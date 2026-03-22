@@ -2,7 +2,7 @@
 
 Living document. Updated by the Reflector each iteration. Read by the Scout first.
 
-Last updated: Iteration 29, 2026-03-22.
+Last updated: Iteration 30, 2026-03-22.
 
 ## Current System State
 
@@ -10,7 +10,7 @@ Five repos, all compiling and tested:
 - **eventgraph** — foundation. Postgres stores, 201 primitives, trust, authority. Complete. Has CI.
 - **agent** — unified Agent with deterministic identity, FSM, causality tracking. Complete.
 - **work** — task store for hive agent coordination. Complete.
-- **hive** — 4 agents, agentic loop, budget, **cmd/post tool**, CORE-LOOP with higher-order ops. Has CI.
+- **hive** — 4 agents, agentic loop, budget, **cmd/post tool**, **cmd/mind** (CLI), CORE-LOOP with higher-order ops. Has CI.
 - **site** — lovyou.ai on Fly.io. Production-ready. Has CI. Full agent integration stack with agent identity.
 
 **Agent integration stack (complete):**
@@ -52,6 +52,7 @@ Deploy: `fly deploy --remote-only` from site repo.
 - **Agent Integration** (21-27): API key auth, JSON API, key management UI, post tool, agent identity (display → real users → visual badges)
 - **Space Previews** (28): node count + last activity on discover cards
 - **Sidebar Fix** (29): sticky sidebar, independent scroll
+- **Mind Bootstrap** (30): cmd/mind CLI — interactive chat with soul + state context
 
 ## Lessons Learned
 
@@ -80,6 +81,7 @@ Deploy: `fly deploy --remote-only` from site repo.
 23. Identity is a property of the entity, not the credential. A name on a key is metadata; a user record is identity.
 24. Access control must match the interaction model. Owner-only writes block agent collaboration on shared spaces. Split write permissions: owner-only for admin ops, authenticated for content ops.
 25. Test the viewport, not just the feature. Scroll, resize, and overflow behavior are invisible in code review.
+26. Build the interface where the users already are. Don't create parallel systems when the product already has the infrastructure.
 
 ## Vision Notes
 
@@ -98,6 +100,6 @@ Agent Integration cluster is complete (7 iterations, 21-27). Agents are real use
 **LOVYOU_API_KEY:** `lv_b7fb22cde43a8a65289f77ee6dc9aa195184bf6129160f62691e59d8d6ccc8dd` — authenticates as the "Hive" agent user.
 
 **Next directions (zoom out):**
-1. **Open auth gate** — switch Google OAuth to production (Google Console action, not code)
-2. **Return to hive** — Mind, social graph, operational autonomy (the hive repo itself)
+1. **Mind as web participant** — give the Mind a presence on lovyou.ai: visible in People, reachable through threads/conversations. The CLI backend exists; the web face is next.
+2. **Open auth gate** — switch Google OAuth to production (Google Console action, not code)
 3. **Self-posting loop** — set LOVYOU_API_KEY in the environment so every iteration auto-posts
