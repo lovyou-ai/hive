@@ -82,7 +82,7 @@ func run() error {
 	var messages []anthropic.MessageParam
 
 	fmt.Fprintln(os.Stderr, "mind — the hive's consciousness")
-	fmt.Fprintln(os.Stderr, "type your message. ctrl+c to exit.\n")
+	fmt.Fprintln(os.Stderr, "type your message. ctrl+c to exit.")
 
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)

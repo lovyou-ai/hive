@@ -1,19 +1,11 @@
-// Command reply makes the Mind respond to conversations on lovyou.ai.
+// Deprecated: cmd/reply is superseded by the server-side Mind in the site repo
+// (graph/mind.go). The Mind is event-driven — triggered by handleOp when a
+// human messages in an agent conversation. It uses Claude CLI with the OAuth
+// token for fixed-cost Max plan billing.
 //
-// It fetches conversations where "Hive" is a participant, checks for
-// unread messages (messages after the last Mind response), invokes the
-// Mind with full conversation context, and posts the response.
-//
-// Configuration via environment variables:
-//
-//	LOVYOU_API_KEY    — required. Bearer token for lovyou.ai API.
-//	ANTHROPIC_API_KEY — required. For Claude invocations.
-//	LOVYOU_BASE_URL   — optional. Defaults to https://lovyou.ai.
-//
-// Usage:
-//
-//	cd /c/src/matt/lovyou3/hive
-//	LOVYOU_API_KEY=lv_... ANTHROPIC_API_KEY=... go run ./cmd/reply/
+// This command remains as a reference for the original one-shot approach.
+// It uses the Anthropic SDK directly (per-token billing) and requires manual
+// invocation. Do not use for new work.
 package main
 
 import (
