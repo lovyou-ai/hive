@@ -1,27 +1,28 @@
-# Scout Report — Iteration 12
+# Scout Report — Iteration 13
 
 ## Map (from code + infra)
 
-Read state.md. Hive Autonomy cluster started (iteration 11 created prompt files + run.sh). Explored all repos:
+Read state.md. Hive Autonomy cluster complete (iterations 11-12). Explored the site repo:
 
-- eventgraph has CI (.github/workflows/ci.yml + 4 publish workflows)
-- hive has NO CI — no .github/workflows/ directory at all
-- site has NO CI
-- Hive has tests (authority_test, loop_test, budget_test, tracking_test, workspace_test) that only run if someone manually invokes `go test`
-- The loop can now be triggered with `./loop/run.sh` but only from a local terminal
+- Site deploys to production (lovyou.ai on Fly.io) but has NO CI
+- No replace directives — clean go.mod, simpler than hive's CI
+- Uses templ for templates — `_templ.go` files committed to git but could drift from `.templ` source
+- Has a Makefile: `templ generate && go build -o site ./cmd/site/`
+- No tests (no `*_test.go` files)
+- Go 1.25, standard deps (templ, pq, oauth2, goldmark)
 
 ## Gap Type
 
-Missing infrastructure — no automated build/test verification.
+Missing infrastructure — production-deployed code has no automated build verification.
 
 ## The Gap
 
-The hive repo has no CI. Code is pushed to main without any automated verification that it compiles or passes tests. The loop creates code changes and pushes them — but nothing checks that those changes are valid.
+The site repo deploys to production but has no CI. Code can be pushed that doesn't compile. Templ-generated files can drift from source templates without anyone noticing.
 
 ## Why This Gap
 
-CI is the foundation for autonomy. You can't trust an autonomous loop to push code if nothing verifies the code works. Every other autonomy step (scheduled loop runs, workflow_dispatch triggers, self-healing) requires CI as a prerequisite. Also: the hive HAS tests — they just never run automatically. The infrastructure exists but isn't wired.
+The site is the public face — it's what visitors see. If a push breaks the build, the next `fly deploy` fails and the site is stuck on old code. CI catches this before deploy. Also: templ source/generated drift is a subtle bug that only CI would catch (regenerate and verify).
 
 ## Filled Looks Like
 
-`git push` to main triggers `go build` + `go test`. Green check on every commit. `workflow_dispatch` available for future loop automation.
+Push to site/main triggers: install templ → `templ generate` → `go build`. Green check on every commit.

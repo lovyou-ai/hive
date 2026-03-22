@@ -202,3 +202,24 @@ Seven completed clusters:
 - Hive Autonomy: CI (12)
 
 **Next iteration:** CI exists. The loop can now be triggered manually via `workflow_dispatch` from GitHub's UI, though it currently just builds/tests. The next autonomy step could add a scheduled or dispatch-triggered workflow that actually runs `./loop/run.sh`. Or the loop could pivot to product development — the grammar-first unified product plan exists but may already be implemented in the site repo.
+
+## Iteration 13 — 2026-03-22
+
+**Built:** GitHub Actions CI for the site repo — templ generation, drift check, build verification.
+
+**COVER:** Completed CI coverage across both active repos (hive + site). The site CI includes a templ drift check that catches stale generated files — a failure mode unique to code generation workflows. ✓
+
+**BLIND:** Both CIs are build-only. The site has no tests. The hive has unit tests but no integration tests (no Postgres). These are acceptable gaps — build verification catches the most common failure mode (doesn't compile). Tests can be added when the loop identifies test coverage as the most load-bearing gap.
+
+**ZOOM:** Right scale. Completes the CI story in one iteration. Three CI iterations would have been too many — but 12 (hive) and 13 (site) is a natural pair.
+
+**FORMALIZE:** The Hive Autonomy cluster is complete:
+- Iteration 11: prompt files + run.sh (codify)
+- Iteration 12: hive CI (verify)
+- Iteration 13: site CI (verify production)
+
+This is a natural stopping point. The infrastructure work is done: the loop is codified, both repos have CI, the site is deployed with SEO. **The loop should now shift from infrastructure to product or capability.**
+
+New vision input from user: users provide OAuth tokens via `claude --setup-token`, agents build things for them via board requests or personal agent. Social product enables humans and agents to build MySpace-like personal pages. Businesses can use the platform to build their products (e.g., Lovatts Anthro account).
+
+**Next iteration:** The infrastructure cluster is complete. The loop should pivot to product development. The unified graph product exists but is behind an auth gate. The user's vision is expanding: personal agents, user-hosted pages, business accounts. The Scout should assess what product work would be most impactful.

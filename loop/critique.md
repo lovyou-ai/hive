@@ -1,28 +1,26 @@
-# Critique — Iteration 12
+# Critique — Iteration 13
 
 ## Verdict: APPROVED
 
 ## Trace
 
-1. Scout identified no CI as the foundational gap for hive autonomy
-2. Builder created `.github/workflows/ci.yml` with multi-repo checkout
-3. Directory structure matches go.mod replace directives (`../agent`, `../eventgraph/go`, `../work`)
-4. Build and tests verified locally before committing
+1. Scout identified site has no CI despite being production-deployed
+2. Builder created CI workflow with templ generation + drift check + build
+3. CI triggered on push, all steps green in 38s
+4. Drift check verified: committed _templ.go files match generated output
 
-Sound chain. The gap is real, the fix is minimal, the structure is correct.
+Sound chain. Completes CI coverage across both active repos.
 
 ## Audit
 
-**Correctness:** The checkout paths produce the exact sibling directory structure that the replace directives expect. `hive/` at `$GITHUB_WORKSPACE/hive`, siblings at `$GITHUB_WORKSPACE/{agent,eventgraph,work}`. Relative paths resolve correctly. ✓
+**Correctness:** Templ version pinned to match go.mod (v0.3.1001). Build command matches Makefile and Dockerfile. ✓
 
-**Breakage:** No existing files modified. New workflow only. ✓
+**Breakage:** New file in site repo only. No existing code modified. ✓
 
-**Simplicity:** 42 lines. Single job, six steps. No matrix, no caching tricks, no conditional logic. ✓
+**Simplicity:** 32 lines. Simpler than hive's CI (no multi-repo checkout needed). ✓
 
-**Risk:** Cross-repo checkout requires `GITHUB_TOKEN` to have access to all four repos. If repos are public, this works by default. If any are private, a PAT with cross-repo access would be needed. The repos appear to be public (eventgraph already has CI). Will be verified on first push.
-
-**workflow_dispatch:** Included as a trigger but not yet used for loop automation. Good forward-thinking without over-building.
+**Note:** No tests to run — site has no _test.go files. The CI is build-only. If tests are added later, a `go test ./...` step should be added.
 
 ## Observation
 
-CI is the verification layer the loop needs. Now the loop's output (code changes) gets automatically checked. The next autonomy step could be: a scheduled workflow that runs `./loop/run.sh`, or a workflow_dispatch that accepts a phase parameter.
+Both active repos now have CI. The infrastructure story is complete: prompt files, run.sh, CI on hive, CI on site. The loop should shift focus from infrastructure to product or capability.
