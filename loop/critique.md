@@ -1,31 +1,34 @@
-# Critique — Iteration 16
+# Critique — Iteration 17
 
 ## Verdict: APPROVED
 
 ## Trace
 
-1. Scout identified visual identity gap — copy says warm, pixels say generic SaaS
-2. Research phase: color theory, dark/light analysis, typography, design movements
-3. Builder implemented complete dark theme across 5 templates + generated files
-4. 10 files changed, all in site repo
-5. Built, pushed, deployed — both machines healthy
+1. Scout identified that `ListPublicSpaces()` exists but has no route, handler, or view
+2. Builder created `views/discover.templ` with DiscoverSpace struct and templates
+3. Builder added `GET /discover` handler in main.go, mapping graph.Space → views.DiscoverSpace
+4. Builder fixed graphStore scope (hoisted variable, `:=` → `=`)
+5. Builder added nav links in all three header locations (layout, simpleHeader, appLayout)
+6. Builder added /discover to sitemap
+7. Built, pushed, deployed — both machines healthy
 
-Sound chain. Research informed design decisions rather than guessing.
+Sound chain. Cross-package design avoided circular imports by keeping the struct in views/.
 
 ## Audit
 
-**Correctness:** All templates use consistent custom color classes (bg-void, text-warm, etc.). Prose styles hardcoded to match theme. Badge functions updated for dark context. No color class mismatches found. ✓
+**Correctness:** Handler maps all relevant fields (Slug, Name, Description, Kind, CreatedAt). Graceful nil check for graphStore when no DB. Error path renders empty page rather than 500. ✓
 
-**Breakage:** No structural or routing changes. Same components, same data flow. Only visual changes. Zero risk of functional regression. ✓
+**Breakage:** graphStore hoisting changes `:=` to `=` inside the DB block. This is safe — the only other reference (`graphHandlers`) is also inside that block. No existing behavior changed. ✓
 
-**Consistency:** All 5 HTML documents (layout, appLayout, SpaceIndex, SpaceOnboarding) share the same theme via themeBlock(). Prose styles in layout.templ use matching hex values. Badge helper functions all use the same semi-transparent pattern. ✓
+**Consistency:** Discover page uses `Layout()` like blog and reference pages — same header, footer, theme. Card styling matches dark theme (bg-surface, border-edge, hover:border-brand). Kind badge uses same semi-transparent pattern as graph/views.templ. ✓
+
+**Nav coherence:** "Discover" added between "App" and "Blog" in all three nav locations (layout.templ, simpleHeader, appLayout). Consistent ordering everywhere. ✓
 
 **Gaps (acceptable):**
-- No light theme toggle — dark-only for now. Correct decision: build one theme well before two.
-- No custom font loaded — using system fonts. Saves a network request and avoids FOUT.
-- No animations yet (breathing pulse, scroll reveals). These are future iterations.
-- Select/option elements may look odd on some browsers with dark backgrounds (browser chrome defaults). Minor.
+- No search or filtering on discover page — just a flat grid. Fine for now with few public spaces.
+- No pagination. Will matter when there are many public spaces.
+- Space cards link to `/app/{slug}` which requires the space to be public for non-owners. The `spaceForRead()` handler already supports this.
 
 ## Observation
 
-This is the biggest single-iteration change (10 files, ~2760 lines touched) but also one of the lowest-risk — purely visual, no data or routing changes. The research phase was essential: without it, the dark theme would have been "dark mode" instead of "Ember Minimalism." The palette choices (warm near-black, rose accent, warm off-white) give the site a distinctive identity that matches both the project's values and the lovyou2 inspiration.
+Small, focused iteration. The key insight was that the struct needed to live in `views/` (not `graph/`) to avoid circular imports, and the handler in `main.go` does the mapping. The graphStore scope fix was a real bug that would have caused `/discover` to always show empty.

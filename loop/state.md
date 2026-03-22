@@ -2,7 +2,7 @@
 
 Living document. Updated by the Reflector each iteration. Read by the Scout first.
 
-Last updated: Iteration 16, 2026-03-22.
+Last updated: Iteration 17, 2026-03-22.
 
 ## Current System State
 
@@ -11,7 +11,7 @@ Five repos, all compiling and tested:
 - **agent** — unified Agent with deterministic identity, FSM, causality tracking. Complete.
 - **work** — task store for hive agent coordination. Complete.
 - **hive** — 4 agents (Strategist, Planner, Implementer, Guardian), agentic loop, budget. Complete. Has CI.
-- **site** — lovyou.ai on Fly.io. Production-ready. Has CI. **Dark theme + warm copy.**
+- **site** — lovyou.ai on Fly.io. Production-ready. Has CI. **Dark theme + warm copy + discover page.**
 
 **Product features:**
 - Blog (43 posts, 6 arcs with section nav)
@@ -19,7 +19,8 @@ Five repos, all compiling and tested:
 - Auth (Google OAuth — test mode, can be opened whenever)
 - Unified graph product (3 tables, 10 grammar ops, 5 lenses, HTMX, full CRUD)
 - Public spaces (private/public visibility, OptionalAuth for reads)
-- Landing page, SEO meta tags, sitemap (305 URLs), canonical redirect
+- **Discover page** (`/discover`) — public space directory, grid of cards, kind badges, no auth required
+- Landing page, SEO meta tags, sitemap (306 URLs), canonical redirect
 - **Visual identity**: dark theme (near-black #09090b), rose accent (#e8a0b8), warm off-white text (#f0ede8), light heading weights, "Ember Minimalism"
 
 Deploy: `fly deploy --remote-only` from site repo.
@@ -34,6 +35,7 @@ Deploy: `fly deploy --remote-only` from site repo.
 - **Hive Autonomy** (11-13): prompt files, run.sh, CI on hive + site
 - **Product Development** (14): public spaces
 - **Aesthetics** (15-16): warm copy rewrite, dark theme with rose accent
+- **Discovery** (17): `/discover` page for browsing public spaces
 
 ## Lessons Learned
 
@@ -50,6 +52,7 @@ Deploy: `fly deploy --remote-only` from site repo.
 11. Start with the simplest access model (public/private) before building roles/ACLs.
 12. When the founder says "that isn't our vibe," treat it as highest-priority.
 13. Define the vocabulary before writing the prose — custom color tokens make future styling consistent.
+14. Expose what you've already built before building more — wiring existing code to a route is faster than new infrastructure.
 
 ## Vision Notes
 
@@ -63,11 +66,11 @@ Deploy: `fly deploy --remote-only` from site repo.
 
 ## What the Scout Should Focus On Next
 
-Aesthetics cluster is complete. The site has a cohesive identity (warm copy + dark theme). Options:
+Discovery cluster complete. The site now has a browsable public space directory. Options:
 
-1. **Discover page** — list public spaces so visitors can browse without knowing URLs. This is the biggest functional gap: public spaces exist but have no directory.
-2. **Open auth gate** — switch Google OAuth from test mode to production so anyone can sign up.
-3. **Space settings** — allow changing visibility after creation, rename, delete spaces.
-4. **Subtle animations** — breathing pulse on brand elements, scroll reveals, gentle transitions. Would add life to the dark theme.
+1. **Open auth gate** — switch Google OAuth from test mode to production so anyone can sign up. This is the biggest unlock: discover + auth = real users.
+2. **Space settings** — allow changing visibility after creation, rename, delete spaces.
+3. **Subtle animations** — breathing pulse on brand elements, scroll reveals, gentle transitions. Would add life to the dark theme.
+4. **Space previews** — show a preview of what's inside a space on the discover card (node count, recent activity).
 
-The discover page has the most product value — it connects the public spaces feature (iter 14) with the new visual identity (iters 15-16) into a browsable experience.
+Opening the auth gate has the most product value — it makes the entire product publicly usable, not just viewable.

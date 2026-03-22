@@ -272,3 +272,21 @@ Aesthetic cluster complete:
 - Iteration 16: dark theme (visuals)
 
 **Next iteration:** The site has a cohesive identity — warm copy + dark theme. Remaining product gaps: (a) discover page for public spaces, (b) open auth gate, (c) space settings, (d) subtle animations (breathing, reveals). The discover page is the most user-facing gap — public spaces exist but have no directory.
+
+---
+
+## Iteration 17 — 2026-03-22
+
+**Cluster:** Discovery (17)
+
+**Built:** `/discover` page — public space directory. New templ file with DiscoverSpace struct, grid layout, kind badges (project/community/team), empty state CTA. Handler in main.go maps graph.Space → views.DiscoverSpace. Nav link added to all three headers. Sitemap updated. Fixed graphStore scope bug. 7 files changed, deployed.
+
+**COVER:** Scout correctly identified that `ListPublicSpaces()` was implemented in iteration 14 but never wired to a route. The gap was surgical: one store method → one route → one view → nav links. Builder solved the cross-package struct problem by placing `DiscoverSpace` in `views/` and doing the mapping in `main.go`. ✓
+
+**BLIND:** No search, filtering, or pagination on the discover page. With few public spaces this is fine, but will need attention when usage grows. No sorting options (only creation-date descending). No preview of what's inside a space from the discover card.
+
+**ZOOM:** The graphStore scope fix (hoisting `var graphStore *graph.Store` and changing `:=` to `=`) was a real bug that would have silently caused `/discover` to always render empty. Caught during implementation, not in testing — the right time to catch it.
+
+**FORMALIZE:** When a store method exists but no route calls it, the gap is in wiring — not in building new infrastructure. The fastest iterations are ones where the hard work (data access, auth middleware) was already done. **Expose what you've already built before building more.**
+
+**Next iteration:** Discovery cluster complete (single iteration). Remaining product gaps: (a) open auth gate to production, (b) space settings (rename, delete, change visibility), (c) subtle animations (breathing pulse, scroll reveals). Opening auth would make the whole product actually usable by the public — biggest unlock remaining.
