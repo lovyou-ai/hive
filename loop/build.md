@@ -1,26 +1,23 @@
-# Build Report — Iteration 8
+# Build Report — Iteration 9
 
 ## What I planned
 
-Add sitemap.xml and robots.txt to make the site discoverable by search engines.
+Add section headings and arc navigation to the blog index.
 
 ## What I built
 
-1. **robots.txt handler** — allows all crawlers, points to sitemap at lovyou.ai/sitemap.xml.
+1. **Jump navigation** — pill-shaped links at the top: Foundation, Thirteen Graphs, Consciousness, Application, Grammar, Building. Each anchors to its section.
 
-2. **Dynamic sitemap.xml handler** — enumerates all public pages from loaded content:
-   - 7 static pages (home, blog, reference, grammar, cognitive grammar, grammars index, agents)
-   - 43 blog posts
-   - 14 layers
-   - 201+ primitives (from all layers)
-   - 28 agent primitives
-   - 13 domain grammars
-   - **Total: 305 URLs**
+2. **Section headings** — inserted based on `post.Order` thresholds:
+   - Foundation (posts 1-13): "The primitives, the layers, the architecture. What exists and why."
+   - Thirteen Graphs (14-24): "One graph per domain — work, market, social, justice, research, knowledge, governance, culture, existence."
+   - Consciousness (26-29): "What it means to be inside the system. Weight, transition, friction."
+   - Application (31-34): "From theory to practice. What you could build and why it matters."
+   - Grammar (35-38): "The operational heart. Fifteen operations, thirteen languages, one grammar."
+   - Building (39-43): "Shipping code. The SDK, the agents, the hive, the cognitive grammar."
 
-3. No new packages or files — both handlers added directly to main.go using existing content data.
+3. Updated intro text: "43 posts in six arcs. Best read in order, but each arc stands alone."
 
-4. Built, committed, pushed, deployed. Verified: both endpoints return correct content.
+4. No data model changes. Uses existing `post.Order` field for section boundaries.
 
-## Key finding
-
-The infrastructure gap from state.md (DATABASE_URL not set) was wrong — all secrets are configured on Fly. The Scout's initial assessment was corrected mid-iteration. This is the same pattern as iteration 1 (assumed gap doesn't exist), but caught faster because the Scout verified before building.
+5. Built, committed, pushed, deployed.

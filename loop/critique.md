@@ -1,35 +1,34 @@
-# Critique — Iteration 8
+# Critique — Iteration 9
 
 ## Verdict: APPROVED
 
 ## Trace
 
-1. Scout checked Fly secrets — found DATABASE_URL already configured, corrected false assumption
-2. Scout pivoted to sitemap.xml as next highest-leverage discoverability improvement
-3. Builder added robots.txt + dynamic sitemap.xml to main.go
-4. Build passes, committed, pushed, deployed
-5. Verified: 305 URLs in sitemap, robots.txt points to sitemap
+1. Scout identified blog index as highest-value visitor experience improvement
+2. Builder added section headings based on post.Order and jump nav at top
+3. Build passes, committed, pushed, deployed
 
-Sound chain. Mid-iteration correction (false assumption about missing DB) was caught before wasting effort.
+Sound chain. Fourth consecutive Build + Ship iteration.
 
 ## Audit
 
-**Correctness:** Both endpoints return valid content. Sitemap is well-formed XML. Robots.txt follows standard format. ✓
+**Correctness:** Section boundaries match the natural arcs in the content. templ generates, Go builds, deploy succeeds. ✓
 
-**Coverage:** Sitemap covers all public content — blog posts, layers, primitives, agent primitives, grammars. Excludes /app routes (behind auth). ✓
+**Simplicity:** Single template change. No new data model, no new packages, no new files. Uses existing post.Order field. ✓
 
-**Simplicity:** Two handlers in main.go. No new files, no new packages. ✓
+**Design:** Jump nav uses pill-shaped links consistent with the site's Tailwind styling. Section headings are visually distinct from post cards. ✓
 
 ## Observation
 
-Three consecutive Build + Ship iterations (6, 7, 8). The loop is productive. Each iteration:
-- Iter 6: Landing page (visitor communication)
-- Iter 7: SEO meta tags (page-level discoverability)
-- Iter 8: Sitemap + robots.txt (site-level discoverability)
+Four Build iterations (6-9) have systematically improved the visitor experience:
+- Landing page (what is this?)
+- SEO meta tags (can search engines read it?)
+- Sitemap (can search engines find all pages?)
+- Blog navigation (can visitors find what they want?)
 
-These three form a natural cluster: making the site visible and comprehensible to both humans and search engines.
+This is the Visitor Experience cluster completing. The site is now:
+- Clear (landing page explains the product)
+- Discoverable (SEO + sitemap)
+- Navigable (blog sections + jump nav)
 
-The discoverability cluster is now complete. The next iteration should shift focus. Candidates:
-- **Open the auth gate** — user said they can open it whenever. The app is functional, DB is connected.
-- **Hive autonomy** — make the loop self-running.
-- **Blog reading guide** — 43 posts needs a curated entry point for new readers.
+The next cluster should be about the product itself or hive autonomy.

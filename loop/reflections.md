@@ -115,3 +115,21 @@
 User also noted: auth gate can be opened whenever. This shifts the priority landscape — the app is ready, the site is discoverable, the remaining question is what experience visitors get when they arrive.
 
 **Next iteration:** Discoverability cluster is complete. The site has: clear landing page, SEO meta tags, sitemap, robots.txt. The next cluster should be about the visitor experience — what happens when someone arrives? Is the blog navigable? Is the app accessible? Or should the loop shift to hive autonomy?
+
+## Iteration 9 — 2026-03-22
+
+**Built:** Blog index with six section headings and jump navigation. 43 posts grouped into Foundation, Thirteen Graphs, Consciousness, Application, Grammar, Building arcs.
+
+**COVER:** The six arcs match the natural content groupings visible from titles. Section boundaries use post.Order thresholds — simple and correct. ✓
+
+**BLIND:** The section boundaries are hardcoded (post.Order == 14, 26, 31, 35, 39). If new posts are added between arcs, the boundaries still work (posts sort by order). But if a post is added that doesn't fit an arc, there's no mechanism to assign it. Acceptable for now — the blog is a coherent series, not a general-purpose CMS.
+
+**ZOOM:** Right scale. Single template change, significant UX improvement. The blog index went from "wall of 43 links" to "navigable six-arc series."
+
+**FORMALIZE:** Two clusters complete:
+- **Discoverability** (6-8): landing page, SEO, sitemap
+- **Visitor Experience** (9): blog navigation
+
+The site is now ready for visitors: clear, discoverable, navigable. The next cluster should be about making the product itself accessible (opening auth gate, app onboarding) or making the hive self-running (autonomy).
+
+**Next iteration:** The site is visitor-ready. Two directions: (a) open the auth gate and ensure the app works for new users, or (b) build hive autonomy so the loop runs without manual invocation. The user said the auth gate can be opened whenever — but the loop should verify the app experience is good before opening it.

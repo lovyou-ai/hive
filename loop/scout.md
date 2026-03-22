@@ -1,23 +1,19 @@
-# Scout Report — Iteration 8
+# Scout Report — Iteration 9
 
-## Map (from code + infra)
+## Map (from code)
 
-Read state.md. Checked Fly secrets — DATABASE_URL, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, AUTH_REDIRECT_URL all set. App is running, health checks passing. The "visitors get 503" worry was wrong — infrastructure is wired up.
+Read state.md. Discoverability cluster complete. Assessed blog index.
 
-Reassessed: since the infra gap doesn't exist, the next highest-leverage discoverability improvement is sitemap.xml + robots.txt. The site has 250+ pages but search engines have no way to discover them.
+**Finding:** Blog index is a flat list of 43 posts — no structure, no grouping, no way to navigate by topic. Posts fall into natural arcs visible from the titles: Foundation (1-13), Thirteen Graphs (14-24), Consciousness (26-29), Application (31-34), Grammar (35-38), Building (39-43).
 
 ## Gap Type
 
-Missing infrastructure — no sitemap.xml, no robots.txt.
+Missing quality — visitor experience. 43 posts in a flat list is overwhelming for a new reader.
 
 ## The Gap
 
-Search engines can't efficiently discover 305 pages (43 blog posts, 14 layers, 201+ primitives, 28 agent primitives, 13 grammars, static pages) without a sitemap. No robots.txt means no pointer to the sitemap.
-
-## Why This Gap
-
-SEO meta tags (iteration 7) give each page good metadata, but search engines still need to find the pages. A sitemap is the standard mechanism. 305 indexed pages with proper meta descriptions = significant organic search potential for long-tail queries.
+Blog index has no sections, no topic navigation, no reading guide. A visitor arriving from search on "event graph AI accountability" has no way to find the relevant posts without scrolling through all 43.
 
 ## Filled Looks Like
 
-GET /sitemap.xml returns valid XML with all public URLs. GET /robots.txt allows all crawlers and points to the sitemap.
+Blog index grouped into six arcs with section headings. Jump nav at top. Each section has a one-line description. Posts still listed chronologically within each arc.
