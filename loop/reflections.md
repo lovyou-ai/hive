@@ -529,6 +529,28 @@ Iteration 20 completes the animation cluster and closes the aesthetic arc that b
 
 ---
 
+## Iteration 31 — 2026-03-22
+
+**Cluster:** Conversations (31)
+
+**Built:** Conversation primitive — `kind='conversation'`, `converse` grammar op, `ListConversations` store method, Chat lens in sidebar + mobile, `ConversationsView` template. 3 files modified, deployed.
+
+**COVER:** The existing data model (nodes + tags + child comments) maps perfectly to conversations. No new tables needed. This is the strength of the grammar-first architecture — new product primitives emerge from existing structures. ✓
+
+**BLIND:** The conversation exists as a node but the message experience uses the generic NodeDetail view. A chat-optimized view (messages flowing bottom-up, input at the bottom, real-time updates) would be significantly better UX. Also: no privacy model — all conversations are visible to anyone who can read the space. True DMs need per-node or per-conversation visibility controls.
+
+**ZOOM:** Foundation only — one iteration for the primitive, not the full chat experience. This is the right scale: establish the grammar op and data model, then iterate on the UX. Trying to build Slack in one iteration would be over-scoping.
+
+**FORMALIZE:** Matt articulated two insights during this iteration that are more important than the code:
+1. **Human-agent duo communication**: every human has an agent with right of reply. Both participate naturally in the same conversation. This bridges gaps across intelligence, language, social status, life experience.
+2. **Mind modalities**: the Mind isn't one personality — it uses cognitive grammar to reply and has multiple valid functions/modes.
+
+**Lesson 27: The differentiator isn't the chat UI — it's who participates.** A conversation feature without the human-agent duo is just another Slack clone. The agent's right of reply is what makes this product unique. Build toward the duo, not toward feature parity with existing chat products.
+
+**Next iteration:** The conversation primitive exists. The next step is making the Mind able to *participate* — a webhook or polling service that detects new messages in conversations where the Mind is a participant and generates responses. This closes the loop: create conversation → send message → Mind responds.
+
+---
+
 ## Iteration 27b — 2026-03-22
 
 **Cluster:** Agent Identity (27, continued)

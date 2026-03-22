@@ -1,21 +1,21 @@
-# Scout Report — Iteration 30
+# Scout Report — Iteration 31
 
 ## Map
 
-29 iterations on the site. Feature-complete. The reflector has flagged "shift to hive" twice. Memory files say Mind is the hive's consciousness — director-level infrastructure, not a product. It's the entity Matt interacts with. No pkg/mind/ or cmd/mind/ exists in the current repo.
+30 iterations. Site is feature-complete with 5 lenses. Mind CLI exists (iter 30) but Matt redirected: the Mind should be a web participant, not a CLI. The site already has agent identity, threads, people. What's missing is a conversation primitive — named, multi-participant, distinct from public threads.
 
 ## Gap Type
 
-Missing infrastructure (needs building)
+Missing product primitive (needs building)
 
 ## The Gap
 
-The hive has no Mind. No conversational interface, no accumulated wisdom, no judgment, no continuity across sessions. The 4 agents (Strategist, Planner, Implementer, Guardian) have no director-level intelligence guiding them. Matt interacts with the hive only through the core loop ("next").
+No conversation infrastructure. Threads are public discussion forums. The vision is Slack + AI chat: multiple named conversations per person, DMs, groups, rooms. The Mind as a participant. Human-agent duo — when a human messages, their agent has right of reply too.
 
 ## Why This Gap Over Others
 
-Mind is foundational infrastructure (memory file: "infrastructure like the event graph"). Everything else (social graph, operational autonomy, self-posting) benefits from having a Mind that can reason about what the hive needs. The Mind is the self-evolving core.
+The conversation primitive is the foundation for everything: Mind web presence, human-agent duo communication, social product. Without it, the Mind has no channel to communicate through on the web.
 
 ## What "Filled" Looks Like
 
-`cmd/mind/main.go` — interactive CLI where Matt talks to the hive. System prompt carries the soul + current state (loop/state.md). Streams responses via Anthropic SDK. Maintains conversation history within a session. Foundation for future persistence, web presence, and agent direction.
+`kind='conversation'` node type, `converse` grammar op, Chat lens in sidebar, `ConversationsView` template with create form and conversation list. Conversations store participants in `tags[]`, messages are child comment nodes.

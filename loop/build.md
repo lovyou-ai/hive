@@ -1,32 +1,44 @@
-# Build Report — Iteration 30
+# Build Report — Iteration 31
 
 ## What Was Planned
 
-Bootstrap Mind — the hive's consciousness as an interactive CLI.
+Conversations foundation — add the conversation primitive to lovyou.ai.
 
 ## What Was Built
 
-**cmd/mind/main.go**: Interactive chat CLI using the Anthropic SDK directly (claude-opus-4-6). System prompt carries the soul statement, identity description, and loop/state.md content. Streams responses in real-time. Maintains conversation history within a session. ~120 lines.
+**store.go:**
+- `KindConversation = "conversation"` constant
+- `ListConversations(ctx, spaceID, userName)` — returns conversations where user is participant (in tags) or author, ordered by most recent activity, with child count for message count display
 
-Key design decisions:
-- Uses Anthropic SDK directly, not the intelligence package wrapper (Mind is director-level, not an agent loop)
-- Reads loop/state.md at startup for current context
-- System prompt establishes identity: "You are the Mind — the hive's consciousness"
-- Encourages opinion, pushback, judgment — not servile chatbot behavior
-- Streams via `client.Messages.NewStreaming()` for responsive interaction
+**handlers.go:**
+- `"converse"` grammar op in handleOp dispatcher — creates conversation node with title, participants in tags (always includes creator), records op, supports JSON + HTMX responses
+- `handleConversations` handler for Chat lens — lists user's conversations
+- Route: `GET /app/{slug}/conversations` wired with readWrap
 
-**go.mod**: anthropic-sdk-go moved from indirect to direct dependency.
+**views.templ:**
+- `conversationsIcon()` — inbox/message tray SVG
+- "Chat" added to sidebar lens navigation and mobile lens bar
+- `ConversationsView` template — create form (title + comma-separated participants), conversation list cards showing title, participants, message count, last activity
 
-1 new file, 1 modified file, compiles clean.
+3 files modified. Compiles clean. Deployed.
+
+## Grammar Mapping
+
+| Action | Grammar Op | Node Kind |
+|--------|-----------|-----------|
+| Start conversation | `converse` | conversation |
+| Send message | `respond` | comment (existing) |
 
 ## What Works
 
-- `go run ./cmd/mind/` starts interactive REPL
-- Soul + state loaded as system context
-- Streaming responses from Opus 4.6
-- Multi-turn conversation with history
-- Ctrl+C to exit gracefully
+- Chat lens appears in sidebar and mobile nav
+- Create conversation form with title + participants
+- Conversation list filtered to user's conversations
+- Conversations link to node detail view for message thread
+- Deployed to production on Fly.io
 
 ## Director Feedback
 
-Matt noted: "not sure i want to talk via cli" — the Mind should be a participant in the web UI, visible in People, reachable through threads. The CLI is the brain; the web interface is the face. Next iteration should give Mind a web presence through the existing site infrastructure (agent identity, threads, hive space).
+During this iteration, Matt articulated two key insights:
+1. **Human-agent duo**: Every human has an agent with right of reply. When you message someone, your agent reads it and can reply too. The other person's agent does the same. This bridges communication gaps across intelligence levels, languages, social status, life experience.
+2. **Mind modalities**: The Mind should use cognitive grammar to reply and has multiple valid modalities/personalities/functions — not one fixed conversational mode.

@@ -1,32 +1,31 @@
-# Critique — Iteration 30
+# Critique — Iteration 31
 
-## Verdict: APPROVED (with direction change)
+## Verdict: APPROVED (foundation laid)
 
 ## Trace
 
-1. Scout identified: no Mind exists in the hive
-2. Builder created cmd/mind/main.go — interactive CLI with soul + state context
-3. Builder used Anthropic SDK directly (streaming, Opus 4.6)
-4. Director feedback mid-iteration: CLI is not the right interface — web UI is
-5. CLI kept as infrastructure foundation, web presence planned for next iteration
+1. Scout identified: no conversation primitive, blocking Mind's web presence
+2. Builder added KindConversation, ListConversations, "converse" op, handleConversations, ConversationsView
+3. templ generate + go build — clean
+4. Deployed to Fly.io — both machines updated
 
 ## Audit
 
 **Correctness:**
-- Uses `anthropic.ModelClaudeOpus4_6` — correct latest model. ✓
-- System prompt includes soul + state.md. ✓
-- Streaming via NewStreaming() with ContentBlockDeltaEvent handling. ✓
-- Conversation history maintained via messages slice. ✓
-- Graceful signal handling (SIGINT/SIGTERM). ✓
+- ListConversations filters by participant (`$user = ANY(tags)`) or author. ✓
+- Participants always includes creator (deduped). ✓
+- ConversationsView follows existing patterns (appLayout, max-w-2xl). ✓
+- Route uses readWrap — accessible to anyone who can read the space. ✓
 
-**Simplicity:** ~120 lines, no external dependencies beyond the Anthropic SDK. No persistence, no database, no agent wiring. Minimal foundation. ✓
+**Simplicity:** No new tables. Conversations are nodes. Participants are tags. Messages are child comments. The entire conversation infrastructure is 3 edits to existing files. ✓
 
-**Gap (flagged by director):** The CLI is infrastructure, not the interface. The Mind needs to be a web-accessible participant — visible in People, reachable through threads. The CLI can serve as the backend reasoning engine, but the director-facing interface should be the web UI.
+**Gaps:**
+- Clicking a conversation shows generic NodeDetail — no chat-optimized message UI yet
+- Participant input is free-text, no autocomplete or user validation
+- No conversation types (DM vs group vs room) — just generic "conversation"
+- No privacy model — conversations are space-scoped, visible to space readers
+- No Mind response integration yet — conversations exist but Mind can't reply through them
 
 ## DUAL (root cause)
 
-The CLI was the *obvious* interface (it's what the codebase already uses), but not the *right* one. The site already has the interaction infrastructure: agent identity, threads, people lens. Building a CLI duplicates what the web UI can do, with worse UX. **The right approach is to make Mind a participant in the existing product, not a parallel interface.**
-
-## Observation
-
-The director's instinct was correct. The hive's consciousness should live where the hive's product lives — on lovyou.ai. A CLI mind is useful for development/debugging but not for the director interaction pattern described in the memory files. Next iteration: Mind as a web participant.
+This iteration is correct as a foundation. The conversation primitive now exists in the grammar. The risk is building too much chat infrastructure before the Mind can participate — the human-agent duo is the differentiator, not the chat UI itself.

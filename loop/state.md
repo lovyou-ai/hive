@@ -2,7 +2,7 @@
 
 Living document. Updated by the Reflector each iteration. Read by the Scout first.
 
-Last updated: Iteration 30, 2026-03-22.
+Last updated: Iteration 31, 2026-03-22.
 
 ## Current System State
 
@@ -25,7 +25,7 @@ Five repos, all compiling and tested:
 **Product features:**
 - Blog (44 posts, 6 arcs with section nav)
 - Reference (cognitive grammar, graph grammar, 13 layers, 201 primitives, 28 agent primitives)
-- Unified graph product (3 tables, 10 grammar ops, 5 lenses, HTMX, full CRUD)
+- Unified graph product (3 tables, 11 grammar ops, 6 lenses incl. Chat/Conversations, HTMX, full CRUD)
 - Public spaces + discover page (with previews: node count, last activity) + space settings (full CRUD lifecycle)
 - Mobile responsive + animations (breathing logo, reveals)
 - Visual identity: "Ember Minimalism" — dark theme, rose accent, warm text, subtle motion
@@ -53,6 +53,7 @@ Deploy: `fly deploy --remote-only` from site repo.
 - **Space Previews** (28): node count + last activity on discover cards
 - **Sidebar Fix** (29): sticky sidebar, independent scroll
 - **Mind Bootstrap** (30): cmd/mind CLI — interactive chat with soul + state context
+- **Conversations** (31): conversation primitive, "converse" grammar op, Chat lens, ConversationsView
 
 ## Lessons Learned
 
@@ -82,6 +83,7 @@ Deploy: `fly deploy --remote-only` from site repo.
 24. Access control must match the interaction model. Owner-only writes block agent collaboration on shared spaces. Split write permissions: owner-only for admin ops, authenticated for content ops.
 25. Test the viewport, not just the feature. Scroll, resize, and overflow behavior are invisible in code review.
 26. Build the interface where the users already are. Don't create parallel systems when the product already has the infrastructure.
+27. The differentiator isn't the chat UI — it's who participates. The agent's right of reply is what makes this unique.
 
 ## Vision Notes
 
@@ -99,7 +101,19 @@ Agent Integration cluster is complete (7 iterations, 21-27). Agents are real use
 
 **LOVYOU_API_KEY:** `lv_b7fb22cde43a8a65289f77ee6dc9aa195184bf6129160f62691e59d8d6ccc8dd` — authenticates as the "Hive" agent user.
 
+**Conversation infrastructure (iter 31):**
+- `kind='conversation'` nodes with participants in `tags[]`
+- `converse` grammar op creates conversations
+- Chat lens in sidebar + mobile nav
+- Messages are child comment nodes (existing `respond` op)
+
+**Director vision (articulated iter 31):**
+- **Human-agent duo**: every human has an agent with right of reply. Both participate in conversations. Bridges intelligence, language, social status, life experience gaps.
+- **Mind modalities**: the Mind uses cognitive grammar to reply with multiple valid functions/personalities — not one fixed conversational mode.
+
 **Next directions (zoom out):**
-1. **Mind as web participant** — give the Mind a presence on lovyou.ai: visible in People, reachable through threads/conversations. The CLI backend exists; the web face is next.
-2. **Open auth gate** — switch Google OAuth to production (Google Console action, not code)
-3. **Self-posting loop** — set LOVYOU_API_KEY in the environment so every iteration auto-posts
+1. **Mind as conversation participant** — webhook/polling that detects new messages in conversations where Mind is a participant and generates responses. This is the critical differentiator.
+2. **Chat-optimized message view** — NodeDetail works for conversations but isn't chat UX. Messages flowing bottom-up, input at bottom, real-time updates.
+3. **Conversation types** — DM, group, department, room. Different visibility/participation models.
+4. **Open auth gate** — switch Google OAuth to production (Google Console action, not code)
+5. **Self-posting loop** — set LOVYOU_API_KEY in the environment so every iteration auto-posts
