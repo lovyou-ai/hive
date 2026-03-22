@@ -1,50 +1,42 @@
-# Build Report — Iteration 34
+# Build Report — Iteration 35
 
 ## What Was Planned
 
-HTMX polling for live conversation updates — new messages appear without page reload.
+Conversation UX polish: thinking indicator, scroll-to-bottom on load, enter-to-send.
 
 ## What Was Built
 
 **site/graph/store.go**:
-- Added `After *time.Time` field to `ListNodesParams` — filters nodes created after a given timestamp
-- Applied in `ListNodes` query builder as `AND n.created_at > $N`
+- `HasAgentParticipant(ctx, names []string) bool` — checks users table for agent-kind users matching participant names. Uses `SELECT EXISTS ... WHERE name = ANY($1) AND kind = 'agent'`. Resolves agent presence from the identity system, not from message scanning.
 
 **site/graph/handlers.go**:
-- New handler `handleConversationMessages` — `GET /app/{slug}/conversation/{id}/messages?after=RFC3339Nano`
-- Returns only new messages since the given timestamp
-- HTMX requests get `chatMessage` HTML fragments; JSON requests get `{"messages": [...]}`
-- Returns empty 200 if no `after` param (no-op for first poll before any messages)
-- Registered at `/app/{slug}/conversation/{id}/messages` with readWrap (public space compatible)
+- `handleConversationDetail` now calls `HasAgentParticipant` with the conversation's tags to determine if the thinking indicator should render.
 
 **site/graph/views.templ**:
-- Messages container gets `id="message-list"` and `data-last-ts` tracking attribute
-- Each `chatMessage` gets `data-ts` with RFC3339Nano timestamp for deduplication
-- Hidden `#poll` div with `hx-trigger="every 3s"` polls the new endpoint
-- Poll reads `after` from `data-last-ts`, appends new messages, updates timestamp, auto-scrolls if near bottom
-- Send form updated: targets `#message-list`, updates `data-last-ts` after successful send, removes empty state
-- Empty state gets `id="empty-state"` so it can be removed when first message arrives
+- `ConversationDetailView` takes new `hasAgent bool` parameter
+- `data-has-agent="true"` attribute on message list when agents present
+- **Thinking indicator**: violet-styled bubble with bouncing dots, avatar, "thinking" badge. Hidden by default. Shown after user sends a message in an agent conversation. Hidden when poll picks up new messages. 60-second timeout auto-hides if no response.
+- **Scroll-to-bottom on load**: inline `<script>` scrolls `#messages` to bottom after page render
+- **Enter-to-send**: `onkeydown` on input field — Enter submits, Shift+Enter does not (standard chat behavior)
 
 ## Key Design Decisions
 
-1. **HTMX polling, not SSE/WebSocket**: Simplest approach. 3-second interval is fast enough for human-agent conversation. No server-side infrastructure (connection tracking, event broadcasting). Just a GET that returns HTML fragments.
+1. **Agent presence from identity, not messages**: Director feedback — "an actor is either agent or human... every msg should have an actorid somewhere in the chain." Changed from scanning messages for `AuthorKind == "agent"` to querying the users table via `HasAgentParticipant`. This works even for new conversations with no agent messages yet.
 
-2. **Timestamp-based deduplication**: The `data-last-ts` attribute on the message list tracks the latest message. Both the poll handler and the send handler update it. The server only returns messages with `created_at >` the tracked timestamp, so no duplicates.
+2. **Thinking indicator as UX heuristic**: The indicator shows after a human sends a message in a conversation with agent participants. It doesn't mean the Mind is actively processing — it means "an agent may respond." 60-second timeout prevents stale indicators. The indicator hides immediately when polling picks up any new message.
 
-3. **Auto-scroll only when near bottom**: If the user has scrolled up to read history, new messages don't yank them down. Only auto-scrolls when within 100px of the bottom.
-
-4. **Reuse existing infrastructure**: `ListNodes` with a new `After` filter, existing `chatMessage` component, existing `readWrap` middleware. No new store methods, no new templates, no new middleware.
+3. **Bouncing dots, not spinner**: Three animated dots (violet, staggered delay) match the chat bubble aesthetic. The "thinking" badge replaces the "agent" badge to signal state, not identity.
 
 ## Verification
 
-- `templ generate` — clean
-- `go build ./...` — clean
+- `templ generate` + `go build` — clean
 - Deployed to Fly.io — healthy
-- Polling endpoint returns empty HTML for no new messages (no unnecessary DOM updates)
-- Send form still works via HTMX (tested via code review of hx-target change from `#messages .max-w-2xl` to `#message-list`)
+- Agent presence resolved from users table (tested via code review: `SELECT EXISTS` with `pq.Array`)
+- Form still sends via HTMX, thinking indicator triggered via inline JS
+- Enter key submits, page scrolls to bottom on load
 
 ## Files Changed
 
-- `site/graph/store.go` — 5 lines (After field + query filter)
-- `site/graph/handlers.go` — ~50 lines (new handler + route + time import)
-- `site/graph/views.templ` — ~20 lines (polling div, data attributes, JS handlers)
+- `site/graph/store.go` — 10 lines (HasAgentParticipant method)
+- `site/graph/handlers.go` — 2 lines (call HasAgentParticipant, pass to template)
+- `site/graph/views.templ` — ~30 lines (thinking bubble, scroll script, enter-to-send, data attributes)

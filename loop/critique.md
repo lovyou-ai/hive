@@ -1,31 +1,29 @@
-# Critique — Iteration 34
+# Critique — Iteration 35
 
 ## Verdict: APPROVED
 
 ## Trace
 
-1. Scout identified: no live updates in chat — human sends message, has to reload to see Mind's reply
-2. Builder added HTMX polling with `hx-trigger="every 3s"` on a new messages endpoint
-3. Existing `ListNodes` extended with `After` filter — no new store methods needed
-4. `chatMessage` component reused — new messages render identically to initial load
-5. Timestamp tracking prevents duplicates between polling and user-sent messages
-6. Deployed and healthy
+1. Scout identified: dead air after sending a message in agent conversations
+2. Builder added thinking indicator (violet dots), scroll-to-bottom, enter-to-send
+3. Director feedback mid-build: "an actor is either agent or human" — shifted from message scanning to identity-based agent detection via `HasAgentParticipant`
+4. Second deploy with the architectural fix
+5. Deployed and healthy
 
 ## Audit
 
 **Correctness:**
-- Timestamp comparison uses `created_at >` (strict), not `>=`. Messages created at exactly the tracked timestamp won't be re-fetched. ✓
-- `data-last-ts` initialized from `lastMessageTS()` — uses last message time or current time for empty conversations. ✓
-- Poll and send form both update `data-last-ts` after inserting new messages. No duplication path. ✓
-- Auto-scroll respects user position (100px threshold). ✓
-- Empty state removed on first message from either poll or send. ✓
+- Agent presence resolved from users table (`kind = 'agent'`), not from scanning messages. Works for new conversations with no agent messages yet. ✓
+- Thinking indicator shows only in conversations with agent participants (`data-has-agent`). ✓
+- Indicator hides on poll receiving new messages OR after 60-second timeout. No stale indicators. ✓
+- Enter-to-send respects Shift+Enter (doesn't submit). ✓
+- Scroll-to-bottom fires once on page load via inline script. ✓
 
 **Gaps:**
-- **3-second latency**: Not truly real-time. Acceptable for async human-agent conversation. Would feel slow for human-human chat. Future iteration could reduce interval or switch to SSE.
-- **Polling cost**: Every 3 seconds, a DB query runs even when nothing changed. Fine for low traffic. Would need optimization (ETag, conditional response, or SSE) at scale.
-- **No "typing" indicator**: When the Mind is generating a response (can take 10-30 seconds), the human has no feedback that a response is coming. Future iteration could add a "thinking" presence indicator.
-- **RFC3339Nano precision**: If two messages are created within the same nanosecond (impossible in practice), one could be missed. Not a real concern.
+- **False positive**: The thinking indicator shows even when `cmd/reply` isn't running. This is honest — it says "an agent may respond" not "an agent is responding." But it could train users to expect responses that don't come if nobody runs `cmd/reply`.
+- **No poll-triggered agent detection**: If an agent joins a conversation after page load (first message from agent via poll), the `data-has-agent` attribute isn't updated dynamically. The thinking indicator won't show until page reload. Minor — conversations don't gain new agent participants mid-session in practice.
+- **60-second timeout is arbitrary**: Could be too short (Mind takes longer) or too long (user thinks system is broken). Acceptable for now.
 
 ## DUAL
 
-The implementation is minimal and correct. Three files changed, one new endpoint, zero new abstractions. The polling pattern is standard HTMX — nothing clever, nothing fragile. The key insight was using `data-last-ts` as the coordination mechanism between the send form and the polling div, preventing the duplicate message problem without server-side session state.
+The director's mid-build feedback ("actor is either agent or human") caught the same pattern as iteration 33 ("who's Hive?"): the builder reached for the data when the identity system already had the answer. The architectural fix was small (10 lines) but correct — agent presence is a property of the participants, not the messages.

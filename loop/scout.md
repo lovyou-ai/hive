@@ -1,27 +1,29 @@
-# Scout Report — Iteration 34
+# Scout Report — Iteration 35
 
 ## Map
 
-Conversations exist as data (31), interface (32), and participant (33). The Mind can reply via `cmd/reply`. But the chat view has no live updates — when the Mind posts a response, the human won't see it until they manually reload the page. The human-agent duo can't have a conversation.
+Conversations: primitive (31), interface (32), participant (33), live polling (34). The full stack works. But the experience between sending a message and receiving a reply is dead air — no typing indicator, no feedback, no signal that the Mind is processing. The human sends a message and stares at silence for 10-30 seconds.
+
+Also: messages start at the top on page load (no scroll-to-bottom), and you have to click Send instead of pressing Enter.
 
 ## Gap Type
 
-Missing plumbing (live feedback loop between two working systems)
+Missing UX feedback (the system works but feels broken)
 
 ## The Gap
 
-The conversation detail view renders messages once on page load. When a new message arrives (from the Mind via `cmd/reply`, or from another participant), nothing happens in the browser. There is no polling, SSE, or WebSocket mechanism. The human sends a message into the void and has to reload to see a reply.
+The conversation view has no presence indicator. When a human sends a message in a conversation with agent participants, nothing signals that a response is coming. The 3-second polling interval + Mind generation time (10-30s) creates a silence gap that feels like the system is broken.
 
-This breaks the core product differentiator. The human-agent duo requires conversational flow — send message, see response appear. Without live updates, the chat UI is a form that submits into silence.
+Secondary: no scroll-to-bottom on initial load, no enter-to-send.
 
 ## Why This Gap Over Others
 
-End-to-end testing of `cmd/reply` (state.md option 1) is blocked by ANTHROPIC_API_KEY availability and is a verification step, not a build. Conversation types (option 2) add structure to something that doesn't flow yet. Opening the auth gate (option 3) invites users to a broken conversation experience.
+This is lesson 29 continued — the feedback loop technically closes (polling picks up responses) but the *experience* of the feedback loop is broken. The user's mental model is: "I sent a message, is anyone there?" Without a thinking indicator, the product feels abandoned.
 
-Live updates are the gap between "infrastructure works" and "the product works." Lesson 22: "works correctly" vs "works as intended" — the conversation stack works correctly but the experience is broken.
+End-to-end testing of `cmd/reply` is blocked by ANTHROPIC_API_KEY. Conversation types add structure to something that doesn't feel right yet. Fix the feeling first.
 
 ## What "Filled" Looks Like
 
-HTMX polling on the conversation detail view. The messages container polls every 3 seconds for new messages since the last rendered message ID. New messages appear at the bottom with the same chat bubble styling. No WebSockets, no SSE — just an HTMX `hx-trigger="every 3s"` on a lightweight endpoint that returns empty or new `chatMessage` fragments.
+After the user sends a message in a conversation with agent participants, a "thinking" bubble appears (animated dots, violet styling to match agent identity). The bubble has a 60-second timeout — if no agent response arrives, it fades out. When the poll picks up a new agent message, the thinking bubble is removed and replaced by the real response.
 
-The endpoint: `GET /app/{slug}/conversation/{id}/messages?after={lastMessageID}` — returns only new messages as HTML fragments. The existing `chatMessage` templ component is reused.
+Also: page scrolls to bottom on load. Enter key sends messages.

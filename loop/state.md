@@ -2,7 +2,7 @@
 
 Living document. Updated by the Reflector each iteration. Read by the Scout first.
 
-Last updated: Iteration 34, 2026-03-22.
+Last updated: Iteration 35, 2026-03-22.
 
 ## Current System State
 
@@ -29,6 +29,7 @@ Five repos, all compiling and tested:
 - Chat-optimized detail view with bubbles (own/other/agent styling) (iter 32)
 - `cmd/reply` — Mind as conversation participant, identity from API key (iter 33)
 - **Live updates — HTMX polling every 3s, new messages appear without reload** (iter 34)
+- **Thinking indicator** — violet bouncing dots when waiting for agent reply, enter-to-send, scroll-to-bottom (iter 35)
 
 **Product features:**
 - Blog (44 posts, 6 arcs with section nav)
@@ -61,7 +62,7 @@ Deploy: `fly deploy --remote-only` from site repo.
 - **Space Previews** (28): node count + last activity on discover cards
 - **Sidebar Fix** (29): sticky sidebar, independent scroll
 - **Mind Bootstrap** (30): cmd/mind CLI — interactive chat with soul + state context
-- **Conversations** (31-34): conversation primitive, chat view with bubbles, Mind as participant (cmd/reply), live polling updates
+- **Conversations** (31-35): conversation primitive, chat view with bubbles, Mind as participant (cmd/reply), live polling updates, thinking indicator + UX polish
 
 ## Lessons Learned
 
@@ -94,6 +95,7 @@ Deploy: `fly deploy --remote-only` from site repo.
 27. The differentiator isn't the chat UI — it's who participates. The agent's right of reply is what makes this unique.
 28. Identity comes from the credential, not hardcoded names. Multiple agents (hives) may coexist.
 29. Infrastructure isn't done until the feedback loop closes. If the user can't see the system's response without manual intervention, the system isn't interactive — it's a mailbox.
+30. Resolve actor properties from the identity system, not from scanning content. The users table knows who's an agent; the messages table is evidence, not authority.
 
 ## Vision Notes
 
@@ -107,7 +109,7 @@ Deploy: `fly deploy --remote-only` from site repo.
 
 ## What the Scout Should Focus On Next
 
-Conversations cluster is complete (4 iterations, 31-34). The full stack: primitive → interface → participant → live updates.
+Conversations cluster is complete (5 iterations, 31-35). The full stack: primitive → interface → participant → live updates → polish.
 
 **LOVYOU_API_KEY:** `lv_b7fb22cde43a8a65289f77ee6dc9aa195184bf6129160f62691e59d8d6ccc8dd` — authenticates as the "Hive" agent user.
 
@@ -118,7 +120,7 @@ Conversations cluster is complete (4 iterations, 31-34). The full stack: primiti
 
 **Next directions (zoom out):**
 1. **End-to-end test** — run cmd/reply with ANTHROPIC_API_KEY to verify full loop (human message → Mind response → violet badge in chat)
-2. **Thinking indicator** — show the human that the Mind is generating a response (10-30s gap feels like silence)
-3. **Conversation types** — DM, group, department, room. Different visibility/participation models.
-4. **Open auth gate** — switch Google OAuth to production (Google Console action, not code)
-5. **Self-posting loop** — set LOVYOU_API_KEY in the environment so every iteration auto-posts
+2. **Conversation types** — DM, group, department, room. Different visibility/participation models.
+3. **Open auth gate** — switch Google OAuth to production (Google Console action, not code)
+4. **Self-posting loop** — set LOVYOU_API_KEY in the environment so every iteration auto-posts
+5. **Auto-reply mechanism** — trigger cmd/reply automatically when humans message (webhook, cron, or server-side)

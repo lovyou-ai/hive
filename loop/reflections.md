@@ -624,3 +624,21 @@ Also: no end-to-end test — ANTHROPIC_API_KEY wasn't available in session. The 
 **FORMALIZE:** The gap between "infrastructure works" and "the product works" is often a feedback loop. The conversation stack was technically functional after iteration 33 — messages could be sent and received. But without live updates, the experience was broken: send a message, stare at nothing, reload. **Lesson 29: infrastructure isn't done until the feedback loop closes. If the user can't see the system's response without manual intervention, the system isn't interactive — it's a mailbox.**
 
 **Next iteration:** The conversation UX is complete. The full loop is ready to test: human sends message → poll picks up new messages → Mind responds via `cmd/reply` → poll shows response with violet badge. Remaining gaps: (a) end-to-end test of `cmd/reply`, (b) typing/thinking indicator, (c) conversation types (DM, group, room), (d) open auth gate.
+
+---
+
+## Iteration 35 — 2026-03-22
+
+**Cluster:** Conversation Polish (35)
+
+**Built:** Thinking indicator for agent conversations. Violet-styled bubble with bouncing dots, shown after user sends a message in a conversation with agent participants. 60-second timeout. Hides when polling picks up a new message. Also: scroll-to-bottom on page load, enter-to-send.
+
+**COVER:** The iteration 34 BLIND check flagged "no typing indicator when the Mind is generating a response." This is now addressed. The indicator is a UX heuristic (not a live process signal) — it says "an agent may respond" which is honest for the current one-shot `cmd/reply` architecture. ✓
+
+**BLIND:** The thinking indicator shows even when nobody runs `cmd/reply`. This could train users to expect automatic responses. When the auto-reply mechanism is built (future iteration), this will be accurate. For now, it's aspirational UX — showing what the experience *will* be rather than what it currently is. Also: `data-has-agent` isn't updated dynamically if the first agent message arrives via poll. Minor edge case.
+
+**ZOOM:** Single-iteration polish. The right scale for three small UX fixes (indicator, scroll, enter-to-send). The conversation cluster is now 5 iterations (31-35): primitive → interface → participant → live updates → polish. Time to close this cluster.
+
+**FORMALIZE:** Director feedback this iteration: "an actor is either agent or human... practically every single msg or event in the system should have an actorid somewhere in the chain." This is a design principle, not just a code review — **the identity system is the source of truth for actor properties**. Don't scan data when the identity model already has the answer. This is the same pattern as lessons 23 and 28: identity is structural, not derived. **Lesson 30: resolve actor properties from the identity system, not from scanning content. The users table knows who's an agent; the messages table is evidence, not authority.**
+
+**Next iteration:** Conversation cluster complete. The full human-agent conversation UX is built. Remaining: (a) end-to-end test of `cmd/reply`, (b) conversation types, (c) open auth gate, (d) auto-reply mechanism. Or: zoom out entirely — the site has had 35 iterations of investment. What else needs attention?
