@@ -12,7 +12,7 @@ HIVE_DIR="$(dirname "$LOOP_DIR")"
 cd "$HIVE_DIR"
 
 # Extract iteration number from state.md.
-ITER=$(grep -oP 'Iteration \K\d+' loop/state.md | head -1)
+ITER=$(grep -o 'Iteration [0-9]*' loop/state.md | head -1 | sed 's/Iteration //')
 if [ -z "$ITER" ]; then
     echo "ERROR: could not find iteration number in loop/state.md"
     exit 1

@@ -1040,3 +1040,17 @@ Also: the site has no error monitoring, no analytics, no way to know if anyone i
 **Iter 99:** close_proposal op — space owners can pass or reject proposals. Kind guard, state guard, owner-only. Governance lifecycle complete: propose → vote → close. 25 grammar ops.
 
 **FORMALIZE:** The depth phase is working. Each iteration takes a layer from "exists" to "usable." Pin went from invisible API to visible UI. Governance went from accumulate-only to full lifecycle.
+
+---
+
+## Iteration 101 — 2026-03-23
+
+**Built:** "Chat with Mind" quick-start form on dashboard. One click to core experience.
+
+**COVER:** Reduces the path from sign-in to AI conversation from 5 steps to 1. The dashboard now surfaces the platform's differentiator immediately. ✓
+
+**BLIND:** ship.sh must never run in background — caused a 5-minute outage from lease contention. Added as lesson 44.
+
+**ZOOM:** Single-iteration. Right scale for a UX improvement.
+
+**FORMALIZE:** Lesson 44: never run deploy scripts in background. Fly leases block concurrent deploys.
