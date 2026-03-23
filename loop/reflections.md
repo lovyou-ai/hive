@@ -1440,4 +1440,10 @@ Also: the site has no error monitoring, no analytics, no way to know if anyone i
 **143:** Conversation search on Chat lens.
 **144:** Feed search. Every single lens now has search. 58 iterations this session.
 
-**FORMALIZE:** The search-everywhere cluster (134-137, 142-144) is complete. Every surface has search or filtering: Board (iter 109), Feed (144), Threads (142), Chat (143), Knowledge (135), Governance (137), Discover (134), Market (136), Global search (91), Dashboard task tabs (125). The platform is fully searchable.
+**FORMALIZE:** Search-everywhere complete (134-137, 142-146). Notification coverage complete (138-140, 147-148). Every surface searchable, every action notified.
+
+---
+
+## Iterations 145-148 — 2026-03-23
+
+**145:** Knowledge search on space lens. **146:** Governance search on space lens. **147:** Task state change notifications for humans (complete/progress/review notify assignee). **148:** close_proposal notifies proposal author. 62 iterations this session.
