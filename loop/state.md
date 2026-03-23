@@ -2,7 +2,7 @@
 
 Living document. Updated by the Reflector each iteration. Read by the Scout first.
 
-Last updated: Iteration 92, 2026-03-23.
+Last updated: Iteration 93, 2026-03-23.
 
 ## Current System State
 
@@ -64,7 +64,7 @@ Five repos, all compiling and tested:
 | 12 | Evolution | — | — |
 | 13 | Being | — | — |
 
-**19 grammar ops total.** 8 database tables. ~47 routes. 20 test functions across 5 test files.
+**19 grammar ops total.** 8 database tables. ~47 routes. 26 test functions across 5 test files.
 
 **CORE-LOOP updates:**
 - Higher-order operations integrated (pipeline ordering, fixpoint awareness, irreversibility, depth, duality)
@@ -77,7 +77,7 @@ Deploy: `fly deploy --remote-only` from site repo.
 
 ## Known Issues
 
-**Test debt (critical, systemic):** Six+ features shipped without tests since iter 83. Untested: endorsements, reports, resolve, dashboard queries, search, knowledge claims (assert, challenge, ListKnowledgeClaims, CountChallenges). Invariant 12 (VERIFIED) is violated in practice. The loop's role separation creates an accountability gap — the Critic observes but cannot block, the Scout deprioritizes code gaps. This is the largest systemic risk.
+**Test debt:** Largely addressed (iter 93). 6 new test functions cover endorsements, reports, dashboard, search, knowledge. Handler-level tests for assert/challenge/resolve not yet written.
 
 **Shallow layers:** Every layer entry since iter 74 is minimal viable — one or two ops, one view. Nothing is deep enough for real use. Knowledge has no verify/retract ops, no evidence linking. Market has no exchange/reputation. Justice has no tiered adjudication. Bond has only endorsements, no connections/DMs. Breadth is near-complete but depth is uniformly thin.
 
@@ -115,6 +115,7 @@ Deploy: `fly deploy --remote-only` from site repo.
 - **UX Polish** (59-60): markdown rendering, agent chat banner on Feed
 - **Agentic Work** (62-72): Mind responds to task assignments, decomposes tasks, creates subtasks with dependencies, recursive auto-work on leaf subtasks, live task updates (HTMX polling), Mind creates tasks from conversations, cross-conversation memory, task links in chat, quick-assign buttons
 - **Breadth-First Layers** (74-92): Market(2), Moderation(3), Justice(4), Knowledge(6), Alignment(7), Identity(8), Bond(9), Belonging(10). Plus search, dashboard, endorsements, assignee identity. 19 iterations, 8 layer entries, 9/13 layers covered.
+- **Test Debt Paydown** (93): 6 new test functions covering endorsements, reports, dashboard, search, knowledge claims. Invariant 12 compliance restored.
 
 ## Lessons Learned
 

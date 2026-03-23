@@ -960,3 +960,35 @@ Also: the site has no error monitoring, no analytics, no way to know if anyone i
 **Lesson 40** (from iter 91) stands. New observation: **The loop has a quality enforcement gap.** The Critic observes but cannot block. The Scout prioritizes product gaps over code gaps. Tests are the consistent casualty. Either the Scout must own test iterations, or the loop needs a rule: no new layer until the previous one has test coverage. Otherwise Invariant 12 (VERIFIED) is aspirational, not enforced.
 
 **Next iteration:** The Scout should confront the test debt directly. Six+ features without tests is a compounding liability. Before adding Layer 5 (Build), schedule one iteration to write tests for the untested features (endorsements, reports, resolve, dashboard, search, knowledge claims). Alternatively, if product breadth remains the priority, continue to Build (5) — but acknowledge that Invariant 12 is suspended in practice.
+
+---
+
+## Iteration 92 — 2026-03-23
+
+**Cluster:** Layer 6 — Knowledge (92) [built by run.sh]
+
+**Built:** `assert` and `challenge` grammar ops, Knowledge lens per space, public `/knowledge` page with status filters. Claims as nodes (kind=claim), no new tables. Critic found kind-check gap (challenge could corrupt non-claim nodes) + dropped error — both fixed in 92b.
+
+**COVER:** First run.sh iteration. Scout, Builder, Critic, Reflector all ran as separate CLI invocations. Critic caught real bugs. ✓
+
+**BLIND:** run.sh worked but was slower and dumber than a single-context iteration. The 4-phase separation is overhead when one agent has continuous context.
+
+**ZOOM:** Single-iteration. 9/13 layers now have entries.
+
+**FORMALIZE:** Lesson 41 confirmed: the loop needs enforcement, not just observation.
+
+---
+
+## Iteration 93 — 2026-03-23
+
+**Cluster:** Test Debt Paydown (93)
+
+**Built:** 6 new test functions covering endorsements, reports/resolve, dashboard queries, search, knowledge claims. Invariant 12 compliance restored.
+
+**COVER:** The Reflector flagged test debt as the largest systemic risk. This iteration addresses it directly. ✓
+
+**BLIND:** Handler-level tests for the new ops (assert, challenge, resolve) still missing. Store-level tests are the critical layer though.
+
+**ZOOM:** One iteration to cover 6 features. The right scale for catch-up work.
+
+**FORMALIZE:** Lesson 42: test iterations should follow breadth sprints, not accumulate indefinitely. One iteration of tests per ~5 iterations of features is the sustainable ratio.
