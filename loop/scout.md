@@ -1,5 +1,5 @@
-# Scout Report — Iteration 132
+# Scout Report — Iteration 133
 
-## Gap: Space overview activity lacks node context
+## Gap: Space owners can't manage members
 
-Recent activity on space overview shows "Matt intend" without what was created. Data already available (ListOps JOINs nodes since iter 127), just not displayed.
+No way to remove members. If someone causes trouble in a public space, owner has no recourse.

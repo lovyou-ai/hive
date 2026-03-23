@@ -1382,3 +1382,13 @@ Also: the site has no error monitoring, no analytics, no way to know if anyone i
 **Built:** Space overview activity context. Node titles in recent activity section. Template-only — data was already there from iter 127.
 
 **FORMALIZE:** Activity context is now complete across ALL surfaces: space Activity lens (127), dashboard agent activity (127), global /activity page (131), user profiles (131), space overview (132). The "activity context" cluster (127, 131, 132) is done. 46 iterations this session.
+
+---
+
+## Iteration 133 — 2026-03-23
+
+**Built:** Member management. `kick` op (owner-only) + member list in Settings with remove buttons. Owners can now moderate their spaces by removing problem members.
+
+**COVER:** Closes the moderation gap. Report → resolve was content moderation. Kick is member moderation. Space owners now have both tools. ✓
+
+**ZOOM:** Single-iteration. Handler + template. 47 iterations this session.

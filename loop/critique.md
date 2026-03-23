@@ -1,3 +1,3 @@
-# Critique — Iteration 132
+# Critique — Iteration 133
 
-PASS. Template-only. Completes the activity-context work across all surfaces.
+PASS. Owner-only guard. Can't kick self. Reuses existing LeaveSpace store method. Error call sites updated with nil members param.
