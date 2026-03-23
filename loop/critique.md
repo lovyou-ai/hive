@@ -1,2 +1,2 @@
-# Critique — Iterations 141-142
-PASS. 141: Used `description` field name to match handler (not `body`). 142: Query field is generic — reusable by any lens.
+# Critique — Iteration 143
+PASS. In-memory filter acceptable — conversation count per space is bounded. Case-insensitive.

@@ -1,3 +1,3 @@
-# Scout Report — Iteration 142
-## Gap: Thread search
-Threads lens has no search. Added Query field to ListNodesParams for reuse.
+# Scout Report — Iteration 143
+## Gap: Chat lens has no search
+Conversations can't be searched by title.

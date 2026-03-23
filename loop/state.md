@@ -2,7 +2,7 @@
 
 Living document. Updated by the Reflector each iteration. Read by the Scout first.
 
-Last updated: Iteration 142, 2026-03-23.
+Last updated: Iteration 143, 2026-03-23.
 
 ## Current System State
 
@@ -148,6 +148,8 @@ Deploy: `fly deploy --remote-only` from site repo.
 - **Depth: Dependencies** complete (130): remove dependency.
 - **Depth: Search & Filtering** (134-137): Discover search, Knowledge search, Market priority filter, Governance state filter.
 - **Depth: Notifications** (138-140): Knowledge/governance/endorsement triggers + deep links to nodes.
+- **Depth: Task creation** (141): Description textarea on Board form.
+- **Depth: Search everywhere** (142-143): Thread + Conversation search. Every lens now has search.
 
 ## Lessons Learned
 

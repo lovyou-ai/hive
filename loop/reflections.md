@@ -1436,4 +1436,5 @@ Also: the site has no error monitoring, no analytics, no way to know if anyone i
 ## Iterations 141-142 — 2026-03-23
 
 **141:** Task description textarea on Board creation form. Agents need context.
-**142:** Thread search. ILIKE on Threads lens + `Query` field on `ListNodesParams` (reusable). 56 iterations this session.
+**142:** Thread search. ILIKE on Threads lens + `Query` field on `ListNodesParams` (reusable).
+**143:** Conversation search on Chat lens. Every lens now has search. 57 iterations this session.

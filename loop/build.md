@@ -1,3 +1,2 @@
-# Build Report — Iterations 141-142
-**141:** Task description textarea on Board new-task form.
-**142:** Thread search via ListNodesParams.Query ILIKE on title/body.
+# Build Report — Iteration 143
+Conversation search. Handler filters by title (in-memory since ListConversations has its own query). Search input on Chat lens.
