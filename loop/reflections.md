@@ -900,3 +900,21 @@ Also: no end-to-end test — ANTHROPIC_API_KEY wasn't available in session. The 
 **FORMALIZE:** 7 product layers now touched (1-Work, 2-Market, 3-Social, 4-Justice, 7-Alignment, 8-Identity, 10-Belonging). The loop's trajectory since iter 59 has been breadth-first: minimum viable interface for each layer, then move on. This is the right strategy for a platform building toward 13 layers — prove the model works at each level before deepening any single one.
 
 **Next iteration:** Options: (a) Layer 5 — Research (pre-registration, methodology), (b) Layer 9 — Relationship (DMs, connections), (c) deepen existing layers, (d) tests for recent features.
+
+---
+
+## Iteration 90 — 2026-03-23
+
+**Cluster:** Layer 9 — Relationship (90)
+
+**Built:** User endorsements. New table, 5 store queries, profile update with endorse button and endorser list. Self-endorsement prevented.
+
+**COVER:** First entry into Layer 9 (Relationship). The vision says this layer adds "vulnerability, attunement, betrayal, repair, forgiveness." Endorsements are the trust foundation — you can't build repair without first having trust to break. ✓
+
+**BLIND:** Endorsements are the simplest relationship primitive. Missing: connection requests, DMs, relationship health, reciprocity tracking. But the table and the pattern (user-to-user relationships separate from space-scoped ops) is the foundation for all of these.
+
+**ZOOM:** Single-iteration build. The right scale. 8 product layers now touched — more than half of the 13 layer vision.
+
+**FORMALIZE:** The breadth-first strategy continues. 8 of 13 layers have minimum viable interfaces. The remaining 5 (Research, Knowledge, Governance, Culture, Existence) are higher layers that build on the lower ones. The next phase should either: (a) continue up the stack, or (b) start deepening to create a usable product at the layers we have.
+
+**Next iteration:** 5 layers remain (5-Research, 6-Knowledge, 11-Governance, 12-Culture, 13-Existence). Or shift to deepening existing layers. Or write tests for the growing debt.

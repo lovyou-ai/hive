@@ -1,28 +1,20 @@
-# Scout Report — Iteration 89
+# Scout Report — Iteration 90
 
-## Gap: Reports go nowhere — Layer 4 (Justice) has no resolution
+## Gap: No trust signals between users — Layer 9 (Relationship) missing
 
-The `report` op (iter 78) lets users flag content. But there's no way to:
-- See what's been reported
-- Review the flagged content
-- Resolve reports (dismiss, warn, remove)
+User profiles exist (iter 80) but are read-only — you can see someone's activity but can't express trust in them. The vision says Layer 9 adds "vulnerability, attunement, betrayal, repair, forgiveness." We don't need all that yet. We need the foundation: **endorsement**.
 
-The report op records the flag in the ops table but nothing acts on it. It's a dead end — infrastructure without interface or management (lesson 20).
-
-This is the simplest entry point for Layer 4 (Justice). The vision says Layer 4 adds "evidence, adjudication, precedent, enforcement." We don't need all that yet — we need the ability for a space owner to see reports and take action.
+The market (Layer 2) shows available tasks. Users can claim them. But there's no way to evaluate whether to trust someone who claims your task. No reputation, no endorsements, no track record beyond raw op count.
 
 ## What "Filled" Looks Like
 
-Space owners see a "Reports" section in Settings (or a dedicated view) showing:
-- Reported nodes with the reason
-- Who reported it and when
-- Actions: dismiss (close the report) or remove (delete the node)
+On user profiles (`/user/{name}`), logged-in users see an "Endorse" button. Endorsements are visible on the profile: "Endorsed by X, Y, Z" with count. The `endorse` grammar op records the relationship.
 
-The `resolve` grammar op records the decision. Simple binary outcome: dismissed or removed.
+This is the simplest trust signal — binary (endorsed or not), public, one-directional. It becomes the building block for portable reputation across spaces.
 
 ## Approach
 
-1. New grammar op: `resolve` — records the decision (dismiss/remove) on a reported node
-2. New store query: `ListReports(ctx, spaceID)` — returns ops where op='report' with the reported node
-3. New view section in Settings or a dedicated `/app/{slug}/reports` page
-4. Wire up dismiss (mark report resolved) and remove (delete node + record op)
+1. New grammar op: `endorse` — records endorsement of a user (payload: `{"target_user_id": "..."}`)
+2. New store queries: `CountEndorsements(ctx, userID)`, `HasEndorsed(ctx, fromID, toID)`
+3. Update profile page to show endorsement count and endorse button
+4. Profile handler passes auth context to enable the button

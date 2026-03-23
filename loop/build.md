@@ -1,15 +1,17 @@
-# Build Report — Iteration 89
+# Build Report — Iteration 90
 
-Layer 4 (Justice) entry point: report resolution.
+Layer 9 (Relationship) entry: user endorsements.
 
-**New grammar op:** `resolve` — space owner dismisses or removes reported content. Records decision in ops with `{"action": "dismiss|remove"}` payload. Owner-only (403 for non-owners).
+**New table:** `endorsements` (from_id, to_id, created_at) with composite PK and index on to_id.
 
-**New store query:** `ListReports(ctx, spaceID)` — returns report ops that have no corresponding resolve op for the same node_id. Includes node title/kind and extracted reason from payload.
+**New store queries:** Endorse, Unendorse, CountEndorsements, HasEndorsed, ListEndorsers.
 
-**New type:** `Report` — extends Op with NodeTitle, NodeKind, Reason.
+**New route:** `POST /user/{name}/endorse` — toggle endorse/unendorse. Requires auth. Self-endorsement prevented.
 
-**Settings update:** Reports section (amber border) appears between save button and danger zone when unresolved reports exist. Shows reported node with link, reporter name, reason, and dismiss/remove buttons.
+**Profile update:** Shows endorsement count in stats, endorser names with links, and endorse/unendorse button for logged-in viewers. Profile page now uses readWrap for optional auth context.
 
-**Op count:** 17 grammar ops total.
+**Scope change:** Moved `readWrap`/`writeWrap` declaration to outer scope so routes outside the DB block can use auth middleware.
+
+8 tables total. 8 product layers touched (1-Work, 2-Market, 3-Social, 4-Justice, 7-Alignment, 8-Identity, 9-Relationship, 10-Belonging).
 
 Deployed. All tests pass.

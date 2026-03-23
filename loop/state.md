@@ -2,7 +2,7 @@
 
 Living document. Updated by the Reflector each iteration. Read by the Scout first.
 
-Last updated: Iteration 89, 2026-03-23.
+Last updated: Iteration 90, 2026-03-23.
 
 ## Current System State
 
@@ -35,7 +35,7 @@ Five repos, all compiling and tested:
 **Product features:**
 - Blog (45 posts, 6 arcs with section nav)
 - Reference (cognitive grammar, graph grammar, 13 layers, 201 primitives, 28 agent primitives)
-- Unified graph product (7 tables, 17 grammar ops, 6 lenses incl. Chat/Conversations, HTMX, full CRUD)
+- Unified graph product (8 tables, 17 grammar ops, 6 lenses incl. Chat/Conversations, HTMX, full CRUD)
 - Public spaces + discover page (with previews: node count, last activity) + space settings (full CRUD lifecycle)
 - Market page (available tasks, search, claim) — Layer 2
 - Global activity feed (transparent audit trail) — Layer 7
@@ -94,6 +94,7 @@ Deploy: `fly deploy --remote-only` from site repo.
 - **Personal Dashboard** (87): /app rewritten as "My Work" — cross-space tasks, conversations, agent activity
 - **Assignee Identity** (88): assignee_id column, backfill, all handlers set both name and ID. Last name-as-identifier bug eliminated.
 - **Layer 4 — Justice** (89): resolve grammar op, report review UI in settings, ListReports query. 17 grammar ops.
+- **Layer 9 — Relationship** (90): endorsements table, endorse/unendorse on profiles, endorser list. 8 tables, 8 layers.
 
 ## Lessons Learned
 
@@ -159,9 +160,8 @@ Conversations (31-35), Agent Visibility (36), Content Preview & Social Proof (37
 - Run: `LOVYOU_API_KEY=lv_... ANTHROPIC_API_KEY=... go run ./cmd/reply/`
 
 **Next directions (zoom out):**
-1. **Deepen existing layers** — the dashboard surfaces tasks/conversations but layers 2, 3, 7, 8, 10 are shallow. Market needs exchange/reputation, moderation needs review/resolution, identity needs selective disclosure.
-2. **Layer 4 — Justice** — `report` op exists but leads nowhere. Need review + resolve flow. First step in dispute resolution.
-3. **Layer 9 — Relationship** — DMs, connection requests. Currently conversations require same space.
-4. **Assignee-as-ID migration** — the assignee field stores display names, not user IDs. Dashboard query has to resolve names. Known debt from identity fix (iter 48-49).
-5. **Open auth gate** — switch Google OAuth to production (Google Console action, not code)
-6. **Return to hive codebase** — agent runtime, or new product layers
+1. **Remaining layers** — 5 (Research), 6 (Knowledge), 11 (Governance), 12 (Culture), 13 (Existence) haven't been touched. Each needs at least a minimal viable entry.
+2. **Deepen existing layers** — Market needs exchange/reputation, Justice needs tiered adjudication, Identity needs selective disclosure, Relationship needs connection/DM infrastructure.
+3. **Tests** — endorsements, reports, dashboard queries all untested. Growing test debt.
+4. **Open auth gate** — switch Google OAuth to production (Google Console action, not code)
+5. **Return to hive codebase** — agent runtime, or new product layers
