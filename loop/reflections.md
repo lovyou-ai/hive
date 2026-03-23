@@ -1417,4 +1417,10 @@ Also: the site has no error monitoring, no analytics, no way to know if anyone i
 
 ## Iteration 138 — 2026-03-23
 
-**Built:** Knowledge + governance notifications. Challenge/verify/retract notify claim author. Vote notifies proposal author. 4 new notification triggers. The notification system now covers: tasks (assign, complete, decompose), conversations (respond), knowledge (challenge, verify, retract), governance (vote). 52 iterations this session.
+**Built:** Knowledge + governance notifications. Challenge/verify/retract notify claim author. Vote notifies proposal author. 4 new notification triggers. 52 iterations this session.
+
+---
+
+## Iteration 139 — 2026-03-23
+
+**Built:** Endorsement notification. Users get notified when someone endorses them. The notification system now covers all significant social actions: tasks, conversations, knowledge, governance, endorsements. 53 iterations this session.

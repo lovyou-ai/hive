@@ -1,3 +1,3 @@
-# Scout Report — Iteration 138
-## Gap: No notifications for knowledge/governance actions
-Challenge/verify/retract/vote don't notify affected users.
+# Scout Report — Iteration 139
+## Gap: No endorsement notification
+Users don't know when someone endorses them.

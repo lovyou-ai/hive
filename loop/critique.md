@@ -1,2 +1,2 @@
-# Critique — Iteration 138
-PASS. All notifications guard against self-notification (actorID != authorID). Uses same h.notify pattern as existing notifications.
+# Critique — Iteration 139
+PASS. Only notifies on endorse, not unendorse. Empty opID/spaceID acceptable — endorsements are cross-space.

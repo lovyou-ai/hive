@@ -1,2 +1,2 @@
-# Build Report — Iteration 138
-4 new notification triggers: challenge→claim author, verify→claim author, retract→claim author, vote→proposal author. Handler-only changes.
+# Build Report — Iteration 139
+Endorsement notification via CreateNotification in endorse handler. 1-line change.
