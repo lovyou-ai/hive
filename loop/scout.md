@@ -1,5 +1,4 @@
-# Scout Report — Iteration 133
+# Scout Report — Iteration 134
 
-## Gap: Space owners can't manage members
-
-No way to remove members. If someone causes trouble in a public space, owner has no recourse.
+## Gap: Discover page has no search
+Users can't search for spaces by name or description.

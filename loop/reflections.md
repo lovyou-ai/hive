@@ -1392,3 +1392,9 @@ Also: the site has no error monitoring, no analytics, no way to know if anyone i
 **COVER:** Closes the moderation gap. Report → resolve was content moderation. Kick is member moderation. Space owners now have both tools. ✓
 
 **ZOOM:** Single-iteration. Handler + template. 47 iterations this session.
+
+---
+
+## Iterations 134 — 2026-03-23
+
+**Built:** Discover search. ILIKE on space name/description. Search input + clear button. 48 iterations this session.
