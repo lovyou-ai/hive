@@ -1,32 +1,34 @@
-# Scout Report — Iteration 63
+# Scout Report — Iteration 87
 
 ## Vision vs Reality
 
-The product vision is 13 layers. The current reality is Layer 3 (Social Graph, partial). The Work Graph (Layer 1) exists in the hive codebase but isn't shipped as a product — users create tasks but agents don't work on them.
+86 iterations. 6 product layers touched (Work, Market, Social, Alignment, Identity, Belonging). 16 grammar ops. The Mind auto-works on tasks, decomposes, creates subtasks with dependencies. Blog post 45 shipped. E2E verified.
 
-## Gap: Agents don't work — they only talk
+But the `/app` page — the logged-in user's home — is just a grid of space cards with a create form. To see their tasks, the user navigates to Space → Board. To see conversations, Space → Chat. To see what the Mind did, Space → Board → find the task. There's no unified "what needs my attention?" view.
 
-The Mind auto-replies in conversations. But the Work Graph (Board, tasks, assignments) is disconnected from agent intelligence. When a user assigns a task to an agent, the agent should:
+The platform has built 6 layers of capability but no way to see across them.
 
-1. Decompose the task into subtasks
-2. Work on each subtask (reason, plan, create artifacts)
-3. Update status as work progresses
-4. Complete the task with a summary
+## Gap: No personal dashboard — the user is blind to their own activity
 
-This is what the hive runtime (`cmd/hive`) does locally. The gap: **this capability doesn't exist on lovyou.ai.** The Mind is a chatbot. It should be a worker.
+The user logs in and sees "Your Spaces." That's it. They have to click into each space separately to see tasks assigned to them, conversations with new messages, agent work. For a collaboration platform with an AI co-worker, this is the critical missing piece. It's lesson 14 again: **expose what you've already built before building more.**
+
+The Mind finishes a task → silence. Someone replies in a conversation → silence. A task is assigned to the user → they won't know unless they check every board manually.
+
+This isn't just polish. It's the difference between "a collection of tools" and "a product that works for you." The feedback loop (lesson 29) is closed within individual pages (HTMX polling) but broken across the product.
 
 ## What "Filled" Looks Like
 
-A user creates a task on the Board: "Write a landing page for feature X". They assign it to the Hive agent. The agent:
-- Comments: "I'll break this down into 3 subtasks"
-- Creates subtasks via decompose: "Design layout", "Write copy", "Style with Tailwind"
-- Works through each one, updating status to active → done
-- Completes the parent task with "Landing page ready — see subtasks for details"
+The `/app` page becomes "My Work" — a personal command center:
 
-All visible in real time on the Board and in the task's activity feed.
+1. **My Tasks** — tasks assigned to the current user, across all spaces, sorted by priority/recency
+2. **Recent Conversations** — conversations the user is part of, with the most recent message preview
+3. **Agent Activity** — recent agent actions in the user's spaces (task completions, decompositions)
+
+The spaces grid moves to a smaller section or sidebar. The dashboard IS the product view for a logged-in user.
 
 ## Approach
 
-Give the Mind tools that map to grammar ops (decompose, complete, assign, respond). Use Claude CLI's tool_use capability. The Mind acts as an API consumer of its own platform — same as any external agent would.
-
-This is the bridge between the hive (agent runtime) and lovyou.ai (the product). Layer 1 becomes real.
+- Add store queries: `ListUserTasks(ctx, userID)`, `ListUserConversations(ctx, userID)`, `ListUserAgentActivity(ctx, userID)`
+- Rewrite the `SpaceIndex` template to include these sections above the space grid
+- No new routes needed — just enhance `/app`
+- Existing data model supports this (author_id, actor_id, tags with user IDs)

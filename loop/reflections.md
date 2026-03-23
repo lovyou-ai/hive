@@ -846,3 +846,21 @@ Also: no end-to-end test — ANTHROPIC_API_KEY wasn't available in session. The 
 **FORMALIZE:** Two test iterations is enough to establish the pattern. Future iterations should add tests for new code inline, not as separate "test iterations."
 
 **Next iteration:** The site is well-tested and deployed. The Mind is event-driven. Remaining: (a) e2e test of Mind (Matt messages), (b) open auth gate, (c) conversation types, (d) return to hive codebase.
+
+---
+
+## Iteration 87 — 2026-03-23
+
+**Cluster:** Personal Dashboard (87)
+
+**Built:** Rewrote `/app` from "Your Spaces" grid to "My Work" personal dashboard. Three cross-space queries (tasks, conversations, agent activity). Dashboard layout: tasks + conversations on left, agent activity + spaces on right.
+
+**COVER:** The dashboard surfaces information that was already in the DB but invisible to the user without navigating into each space. The existing 6 layers of product (Work, Market, Social, Alignment, Identity, Belonging) are now accessible from one screen. ✓
+
+**BLIND:** The `assignee` field still stores display names, not user IDs. The `ListUserTasks` query has to resolve the user's name and match on it — fragile if names change. This is inherited debt from the schema design (pre-iter 48) that the identity fix didn't address for the `assignee` column specifically.
+
+**ZOOM:** Single-iteration build. The right scale: 3 queries, 1 handler change, 1 template rewrite. The existing data model already had everything needed — no schema changes required. The gap was presentation, not data.
+
+**FORMALIZE:** **Lesson 38: Cross-space views are the connective tissue of a multi-space platform.** 86 iterations built features inside spaces. One iteration to show them across spaces. The ratio should have been different — the dashboard should have come earlier. When you build a multi-container product, the cross-container view isn't polish — it's core.
+
+**Next iteration:** The dashboard creates demand for deeper layers. Options: (a) Layer 4 — report review/resolution (report op leads nowhere), (b) assignee-as-ID migration, (c) deepen Layer 2 with exchange/reputation, (d) Layer 9 — relationship infrastructure.

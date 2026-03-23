@@ -1,5 +1,18 @@
-# Build Report — Iteration 50
+# Build Report — Iteration 87
 
-Added `ResolveUserNames(ctx, ids)` to store — batch lookup of IDs to display names. Conversation templates accept `nameMap map[string]string`, display resolved names via `resolveName(tag, nameMap)` helper. Handlers resolve IDs before rendering.
+Rewrote `/app` from "Your Spaces" grid to "My Work" personal dashboard.
 
-Backfilled 30 nodes (author_id) and 30 ops (actor_id) from users table. Cleaned up conversation tags to contain only user IDs. Removed test data from production.
+**New store queries:**
+- `ListUserTasks(ctx, userID, limit)` — open tasks where user is author or assignee, across all spaces, sorted by priority
+- `ListUserConversations(ctx, userID, limit)` — conversations with user as participant (via tags) or author, across spaces, with last message preview
+- `ListUserAgentActivity(ctx, userID, limit)` — recent agent ops in user's owned/member spaces
+
+**New types:** `DashboardTask`, `DashboardConversation`, `DashboardOp` — each wraps the base type with SpaceSlug/SpaceName for cross-space navigation.
+
+**Dashboard layout:** 3-column grid on desktop (2+1):
+- Left: Open Tasks section + Conversations section
+- Right: Agent Activity feed + Spaces list (collapsed from full grid to compact list with `<details>` for create form)
+
+**Template helpers:** `dashboardStateClass`, `dashRelativeTime`, `truncateBody`.
+
+**Deployed.** Build passes, all tests pass, live on lovyou.ai.

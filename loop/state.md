@@ -2,7 +2,7 @@
 
 Living document. Updated by the Reflector each iteration. Read by the Scout first.
 
-Last updated: Iteration 86, 2026-03-23.
+Last updated: Iteration 87, 2026-03-23.
 
 ## Current System State
 
@@ -33,10 +33,15 @@ Five repos, all compiling and tested:
 - **Server-side auto-reply** — event-driven Mind, triggered by handler on respond/converse ops, calls Claude CLI (iter 43-46)
 
 **Product features:**
-- Blog (44 posts, 6 arcs with section nav)
+- Blog (45 posts, 6 arcs with section nav)
 - Reference (cognitive grammar, graph grammar, 13 layers, 201 primitives, 28 agent primitives)
-- Unified graph product (3 tables, 11 grammar ops, 6 lenses incl. Chat/Conversations, HTMX, full CRUD)
+- Unified graph product (7 tables, 16 grammar ops, 6 lenses incl. Chat/Conversations, HTMX, full CRUD)
 - Public spaces + discover page (with previews: node count, last activity) + space settings (full CRUD lifecycle)
+- Market page (available tasks, search, claim) — Layer 2
+- Global activity feed (transparent audit trail) — Layer 7
+- Public user profiles (action history, tasks completed) — Layer 8
+- Space membership (join/leave) — Layer 10
+- **Personal dashboard** ("My Work" — cross-space tasks, conversations, agent activity)
 - Mobile responsive + animations (breathing logo, reveals)
 - Visual identity: "Ember Minimalism" — dark theme, rose accent, warm text, subtle motion
 
@@ -78,6 +83,15 @@ Deploy: `fly deploy --remote-only` from site repo.
 - **Invariant Derivation** (55-56): derived BOUNDED (13) and EXPLICIT (14) from cognitive grammar. Applied BOUNDED to queries (ListNodes LIMIT 500, ListConversations LIMIT 100). 14 invariants total.
 - **Hive Tests** (57): AgentDef validation, defaults, StarterAgents. pkg/hive now has tests.
 - **Integration Test** (58): full new-user journey test (7 steps, all ops, ID verification).
+- **UX Polish** (59-60): markdown rendering, agent chat banner on Feed
+- **Agentic Work** (62-72): Mind responds to task assignments, decomposes tasks, creates subtasks with dependencies, recursive auto-work on leaf subtasks, live task updates (HTMX polling), Mind creates tasks from conversations, cross-conversation memory, task links in chat, quick-assign buttons
+- **Layer 2 — Market** (74-77): market page with available tasks, claim button, space name on cards, search
+- **Layer 3 — Moderation** (78): report op for content flagging
+- **Layer 7 — Alignment** (79): global activity feed — transparent audit trail
+- **Layer 8 — Identity** (80): public user profiles with action history
+- **Layer 10 — Belonging** (81): space membership (join/leave ops, space_members table)
+- **Platform Polish** (82-86): live stats on landing, tests for membership + market, new user redirect to discover, assign-to-agent button, blog post 45
+- **Personal Dashboard** (87): /app rewritten as "My Work" — cross-space tasks, conversations, agent activity
 
 ## Lessons Learned
 
@@ -118,6 +132,7 @@ Deploy: `fly deploy --remote-only` from site repo.
 35. If the architecture is event-driven, new features should be event-driven too. Don't introduce polling into an event-driven system.
 36. The loop can only catch errors it has checks for. When a human catches something the loop missed, fix the loop, not just the code.
 37. The Scout must read the vision, not just the code. Product gaps outrank code gaps. 60 iterations of code polish while 12 of 13 product layers remained unbuilt.
+38. Cross-space views are the connective tissue of a multi-space platform. Building features inside spaces isn't enough — the user needs a single place to see what matters across all of them.
 
 ## Vision Notes
 
@@ -141,8 +156,9 @@ Conversations (31-35), Agent Visibility (36), Content Preview & Social Proof (37
 - Run: `LOVYOU_API_KEY=lv_... ANTHROPIC_API_KEY=... go run ./cmd/reply/`
 
 **Next directions (zoom out):**
-1. **E2E verification** — Matt sends a message in a Hive conversation, Mind responds automatically
-2. **Conversation types** — DM, group, department, room. Different visibility/participation models.
-3. **Open auth gate** — switch Google OAuth to production (Google Console action, not code)
-4. **Return to hive codebase** — agent runtime, social graph, or new product layers.
-5. **Blog post 45** — document the auto-reply mechanism and the loop's journey to fixpoint
+1. **Deepen existing layers** — the dashboard surfaces tasks/conversations but layers 2, 3, 7, 8, 10 are shallow. Market needs exchange/reputation, moderation needs review/resolution, identity needs selective disclosure.
+2. **Layer 4 — Justice** — `report` op exists but leads nowhere. Need review + resolve flow. First step in dispute resolution.
+3. **Layer 9 — Relationship** — DMs, connection requests. Currently conversations require same space.
+4. **Assignee-as-ID migration** — the assignee field stores display names, not user IDs. Dashboard query has to resolve names. Known debt from identity fix (iter 48-49).
+5. **Open auth gate** — switch Google OAuth to production (Google Console action, not code)
+6. **Return to hive codebase** — agent runtime, or new product layers
