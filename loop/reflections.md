@@ -1364,3 +1364,13 @@ Also: the site has no error monitoring, no analytics, no way to know if anyone i
 **COVER:** Completes the dependency feature started in iter 122. Create + view + remove. ✓
 
 **ZOOM:** Single-iteration. 44 iterations this session.
+
+---
+
+## Iteration 131 — 2026-03-23
+
+**Built:** Global activity context. Node titles now appear on /activity page and user profile recent activity. Completes the activity-context work from iter 127 across all surfaces.
+
+**COVER:** All activity views (space lens, dashboard, global page, profile) now show node titles. Activity is now a readable audit trail everywhere. ✓
+
+**ZOOM:** Single-iteration. 45 iterations this session.

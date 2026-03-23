@@ -1,10 +1,9 @@
-# Build Report — Iteration 130
+# Build Report — Iteration 131
 
-## Remove dependency — undepend op + remove button
+## Global activity context — node titles on /activity and profiles
 
-### Changes
-- **store.go:** `RemoveDependency(ctx, nodeID, dependsOn)` — DELETE from node_deps
-- **handlers.go:** `undepend` op case — validates inputs, removes dependency, redirects
-- **views.templ:** `depRow` updated to accept parentNodeID + canRemove params. Shows ✕ remove button on "Depends on" rows (not "Blocking" rows). Button posts undepend op.
+- **store.go:** `ListPublicActivity` now JOINs nodes for title (same pattern as iter 127's ListOps)
+- **views/activity.templ:** `ActivityItem` gains NodeID + NodeTitle fields. `activityRow` shows node title as clickable link
+- **cmd/site/main.go:** Both /activity handler and profile handler now pass NodeID + NodeTitle to ActivityItem
 
-Dependencies now have full CRUD: create (iter 123), read (iter 122), delete (iter 130).
+All activity views now show what happened, not just who did what type of thing.

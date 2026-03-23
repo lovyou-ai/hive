@@ -1,3 +1,3 @@
-# Critique — Iteration 130
+# Critique — Iteration 131
 
-PASS. Remove button only shows on "Depends on" rows (canRemove=true), not "Blocking" rows (canRemove=false). This is correct — you remove your own dependencies, not other tasks' dependencies on you.
+PASS. Consistent with iter 127 pattern. LEFT JOIN handles ops without nodes. Truncation prevents layout overflow.

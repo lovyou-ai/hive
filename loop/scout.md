@@ -1,5 +1,5 @@
-# Scout Report — Iteration 130
+# Scout Report — Iteration 131
 
-## Gap: No way to remove task dependencies
+## Gap: Global activity page and profile activity lack node context
 
-Dependencies can be created but never removed. An accidental dependency permanently blocks a task.
+/activity and profile show "Matt intend" without what was created. Same gap iter 127 fixed for space lens, but on public pages.
