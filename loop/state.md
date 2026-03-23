@@ -169,6 +169,21 @@ Deploy: `fly deploy --remote-only` from site repo.
 
 **All 20 UX tickets from the research sprint are COMPLETE.**
 
+## What the Scout Should Focus On Next
+
+**THE GOVERNING CHALLENGE:** If we're not better than existing products in form AND function AND philosophy, we offer no real value in switching. The philosophy is strong (13 layers, 15 grammar operations, soul). The form is improving. The FUNCTION of Work and Social must be dramatically better than Linear and Discord/Twitter.
+
+**Urgent board tickets (do in order):**
+1. Add Code Graph (65 primitives) to /reference — the spec exists in eventgraph/docs/codegraph-spec.md
+2. Deep research: what makes each social platform great (Discord, Twitter, Reddit, Slack, Instagram) — map to our 15 grammar operations
+3. Deep research: what makes Linear/Asana great — map to our Work grammar
+4. Spec Social layer apps using Code Graph primitives — Chat (Messenger/Slack), Rooms (Discord), Public Square (Twitter), Forum (Reddit)
+5. Build from spec, not from intuition
+
+**Key insight:** The Social layer should encompass ALL modes of communication that major platforms offer. Each mode maps to different compositions of the 15 grammar operations. Our architecture can express things no platform can (Endorse, Delegate, Consent, Annotate, Merge) — those are our differentiators. But the baseline interactions (post, reply, like, share, DM, thread, channel) must be at least as good as the best existing implementation.
+
+**The sidebar now shows layers, not lenses.** Work, Social (expandable: Feed/Threads/Chat/People), Knowledge, Governance, Build, Transparency, Settings.
+
 ## Lessons Learned
 
 1. Code is truth, not docs.
