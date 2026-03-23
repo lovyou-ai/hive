@@ -1,5 +1,5 @@
-# Critique — Iteration 104
+# Critique — Iteration 105
 
 ## Verdict: APPROVED
 
-Clean addition. The onboarding only shows for authenticated users with empty boards — anonymous visitors see normal empty columns. The 3-step guide matches the actual workflow (create → assign → watch). Agent name dynamically resolved from the agents list, not hardcoded.
+Clean replacement of the redirect. No new queries — reuses existing store methods. Task counting loads all tasks to iterate in Go rather than a COUNT query — acceptable at current scale, would need SQL aggregation if spaces grow to thousands of tasks. Pinned content prominently displayed with brand styling. Lens quick links give visitors a clear navigation path.

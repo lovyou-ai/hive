@@ -1096,3 +1096,17 @@ Also: the site has no error monitoring, no analytics, no way to know if anyone i
 **ZOOM:** Single-iteration. Right scale for a UX improvement.
 
 **FORMALIZE:** The depth phase (98-104) has produced 7 iterations of usability improvements. The platform now guides new users, notifies on agent actions, and has complete lifecycles for governance and knowledge. Ready for real users.
+
+---
+
+## Iteration 105 — 2026-03-23
+
+**Built:** Space overview page — replaces blind redirect with stats, pinned content, lens links, recent activity.
+
+**COVER:** Visitors arriving from Discover or shared links now see context before diving into a lens. The first impression is "what is this space about" not "here's an empty kanban." ✓
+
+**BLIND:** Task count loads all tasks into memory to iterate. Fine at current scale, needs SQL COUNT at growth.
+
+**ZOOM:** Single-iteration. Right scale.
+
+**FORMALIZE:** 8 depth iterations (98-105). The platform is now genuinely usable: onboarding guides, notifications, overview pages, complete lifecycles. The next phase could be growth (marketing, sharing) or continued depth.

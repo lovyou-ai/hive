@@ -1,7 +1,7 @@
-# Build Report — Iteration 104
+# Build Report — Iteration 105
 
-Board onboarding for empty spaces. When all board columns are empty and user is authenticated, shows a 3-step guide: (1) Create a task, (2) Assign to agent, (3) Watch it happen. Links to conversations as alternative.
+Space overview page replaces the blind redirect on `/app/{slug}`.
 
-**Changes:** `boardEmpty()` helper checks if all columns have zero nodes. `boardOnboarding` template shows the guided steps. Conditionally rendered in BoardView.
+Shows: space name/description, kind badge, member count, task stats (open/active/done), lens quick links (Board/Feed/Chat/Governance), pinned content with pin icons, and 5 most recent ops. "View all activity" link at bottom.
 
-Deploy had a transient Fly auth error on one machine but the other is running v130 healthy.
+Handler fetches: spaces, pinned nodes, member count, recent ops, and counts tasks by state. No new store queries — reuses ListPinnedNodes, MemberCount, ListOps, ListNodes.
