@@ -1170,3 +1170,11 @@ Also: the site has no error monitoring, no analytics, no way to know if anyone i
 **Built:** Due date picker on task creation form. Wires up existing schema field.
 
 **ZOOM:** Tiny iteration. One input, one parse. Dead schema brought to life.
+
+---
+
+## Iteration 112 — 2026-03-23
+
+**Built:** Member list on space overview — names, avatars, profile links, agent badges.
+
+**FORMALIZE:** 26 iterations this session (87-112). 27 grammar ops, 11 tables, 13 layers, invites, notifications, search, filtering, onboarding, due dates, member lists. The platform is production-ready for early users.

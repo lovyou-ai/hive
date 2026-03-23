@@ -1,3 +1,3 @@
-# Build Report — Iteration 111
+# Build Report — Iteration 112
 
-Due date picker on the Board's new task form. HTML date input next to priority select. Handler parses "2006-01-02" format and passes to CreateNodeParams.DueDate. Task cards already show due dates when set — this just wires up the creation UI.
+Member list on space overview. New ListMembers store query joins space_members with users for kind resolution. Shows member avatars, names with profile links, agent badges. Displayed between quick links and pinned content on the overview page.

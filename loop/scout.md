@@ -1,5 +1,5 @@
-# Scout Report — Iteration 111
+# Scout Report — Iteration 112
 
-## Gap: Tasks have due dates in the schema but no UI to set them
+## Gap: Space overview shows member count but not who the members are
 
-The `due_date` column exists. Task cards show due dates when set. But there's no way to set a due date — the new task form and edit form don't include a date picker. Dead schema.
+"3 members" is less useful than seeing names. Show member avatars/names on the overview page.

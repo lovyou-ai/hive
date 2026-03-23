@@ -1,5 +1,5 @@
-# Critique — Iteration 111
+# Critique — Iteration 112
 
 ## Verdict: APPROVED
 
-Minimal change. Date parsing with fallback (invalid dates silently ignored). The due_date field already existed in the schema and was displayed on cards — this iteration just adds the input.
+Clean query with LEFT JOIN for kind. Limited to 20 members. Avatar + name + kind badge pattern consistent with rest of UI.
