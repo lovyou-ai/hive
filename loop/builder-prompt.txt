@@ -1,6 +1,8 @@
 Read loop/scout.md. Read the source files it references.
 
-Plan first: What files change? What does the code look like? Sketch key types, functions, interfaces. If the plan is more than a page, the scope is too big — do only the first part.
+If loop/critique.md exists and says REVISE, this is a revision round: read the critique, fix ONLY the specific issues it lists, then rebuild/test/deploy. Do not re-plan or change scope — just fix what the critic flagged.
+
+Otherwise, plan first: What files change? What does the code look like? Sketch key types, functions, interfaces. If the plan is more than a page, the scope is too big — do only the first part.
 
 Then build: Write code. Run build. Run tests. Fix what breaks. Commit with a descriptive message. Push to GitHub.
 

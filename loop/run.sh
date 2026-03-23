@@ -15,6 +15,7 @@ set -euo pipefail
 
 LOOP_DIR="$(cd "$(dirname "$0")" && pwd)"
 HIVE_DIR="$(dirname "$LOOP_DIR")"
+MAX_REVISE=3
 
 cd "$HIVE_DIR"
 
@@ -30,6 +31,15 @@ run_phase() {
     echo "=== ${phase^^} ==="
     claude --dangerously-skip-permissions -p "$(cat "$prompt_file")"
     echo ""
+}
+
+critic_says_revise() {
+    local critique_file="$LOOP_DIR/critique.md"
+    if [ ! -f "$critique_file" ]; then
+        return 1
+    fi
+    # Check for REVISE verdict (case-insensitive, looks for "Verdict: REVISE" or "REVISE")
+    grep -qi 'verdict.*revise\|^##.*revise' "$critique_file"
 }
 
 phase="${1:-all}"
@@ -51,10 +61,25 @@ case "$phase" in
         run_phase scout
         run_phase builder
         run_phase critic
-        # TODO: if critique says REVISE, run builder+critic again (max 3 rounds)
+
+        # REVISE loop: if the critic says REVISE, re-run builder+critic (max 3 rounds).
+        round=1
+        while critic_says_revise && [ "$round" -lt "$MAX_REVISE" ]; do
+            round=$((round + 1))
+            echo "=== REVISE (round $round/$MAX_REVISE) ==="
+            run_phase builder
+            run_phase critic
+        done
+
+        if critic_says_revise; then
+            echo "WARNING: critic still says REVISE after $MAX_REVISE rounds"
+        fi
+
         run_phase reflector
+
         # Post iteration summary to lovyou.ai.
         if command -v go &>/dev/null && [ -n "${LOVYOU_API_KEY:-}" ]; then
+            echo "=== POST ==="
             LOVYOU_API_KEY="$LOVYOU_API_KEY" go run ./cmd/post/
         else
             echo "SKIP: post (set LOVYOU_API_KEY to enable)"
