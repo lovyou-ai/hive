@@ -1,13 +1,8 @@
-# Build Report — Iteration 102
+# Build Report — Iteration 103
 
-Notifications system. New `notifications` table (id, user_id, op_id, space_id, message, read, created_at).
+Two notification triggers added to complete the feedback loop:
 
-**Store:** CreateNotification, ListNotifications, UnreadCount, MarkNotificationsRead.
+1. **complete op by agent** → notifies task author: "Hive completed your task: <title>"
+2. **decompose op by agent** → notifies parent task author: "Hive broke down your task: <title>"
 
-**Triggers:** `assign` op notifies assignee. `intend` with assignee notifies them. `respond` in conversations notifies all other participants.
-
-**UI:** Unread count badge on dashboard header. `/app/notifications` page with read/unread styling, space links, relative timestamps. Viewing the page marks all as read.
-
-**Dashboard:** Now takes `unreadCount` param.
-
-Shipped via `ship.sh` (foreground). 10 tables total.
+Both only fire when the actor is an agent and the author is someone else. 2 lines of notification logic each, using the existing `notify` helper from iter 102.

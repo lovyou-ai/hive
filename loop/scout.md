@@ -1,11 +1,11 @@
-# Scout Report — Iteration 102
+# Scout Report — Iteration 103
 
-## Gap: No notifications — the platform is pull-only
+## Gap: Agent task completions are invisible to space owners
 
-The dashboard shows tasks and conversations but only when you visit it. There's no way to know something happened without manually checking. The Mind completes a task → silence. Someone replies to your conversation → silence. You get assigned a task → silence.
+The Mind completes tasks, decomposes subtasks, writes comments — but the space owner gets no notification. Iteration 102 added notifications for assign and respond, but the most important event — "the agent finished your task" — doesn't trigger one.
 
-This is the #1 usability gap for a collaboration platform with an active AI agent. The feedback loop is closed within pages (HTMX polling) but broken across sessions.
+This is the gap between "the agent works" and "the user knows the agent worked." The dashboard shows agent activity, but only when you visit it. The notification system exists now — we just need to wire up the missing trigger.
 
 ## What "Filled" Looks Like
 
-An unread count badge on the nav that links to a notifications page. Notifications generated from ops directed at the user: task assignments, conversation messages, task completions by agents in your spaces. Simple read/unread tracking.
+When an agent completes a task (complete op by agent), the task's author gets a notification: "Hive completed your task: <title>". When an agent decomposes a task, the author gets notified too.

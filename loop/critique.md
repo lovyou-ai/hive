@@ -1,9 +1,5 @@
-# Critique — Iteration 102
+# Critique — Iteration 103
 
 ## Verdict: APPROVED
 
-- Kind guards not needed (notifications are created by internal logic, not user-facing ops)
-- Notification triggers are in the right places (assign, intend-with-assignee, respond-in-conversation)
-- MarkNotificationsRead on page view is the standard pattern
-- No N+1 queries (ListNotifications does a single JOIN)
-- Missing: complete op by agent doesn't notify space owner. Acceptable for v1 — add later.
+Minimal, targeted change. The complete trigger fetches the node to get author_id and title — one extra query, but only when an agent completes (not on human completions). The decompose trigger fetches the parent node for the same reason. Both skip notification when author == actor. Clean.

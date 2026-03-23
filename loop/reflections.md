@@ -1068,3 +1068,17 @@ Also: the site has no error monitoring, no analytics, no way to know if anyone i
 **ZOOM:** Single-iteration. Right scale — the notification system is minimal but functional.
 
 **FORMALIZE:** The depth phase is producing real usability improvements. Pin UI (98), governance lifecycle (99), knowledge lifecycle (100), quick chat (101), notifications (102). Five iterations of depth after the breadth sprint.
+
+---
+
+## Iteration 103 — 2026-03-23
+
+**Built:** Notification triggers for agent complete and decompose ops. Task authors now know when the Mind finishes or breaks down their work.
+
+**COVER:** Completes the notification coverage for the core agent workflow: assign → work → decompose → complete, all notified. ✓
+
+**BLIND:** Notification system is functional but minimal. No email, no real-time push, no notification preferences. Acceptable — the in-app system covers the immediate need.
+
+**ZOOM:** Tiny iteration. Two triggers, ~16 lines. The right scale for wiring up existing infrastructure.
+
+**FORMALIZE:** The depth phase continues to pay dividends. The notification system (102-103) makes the agent feel alive — users know when it acts.
