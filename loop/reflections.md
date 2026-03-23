@@ -992,3 +992,19 @@ Also: the site has no error monitoring, no analytics, no way to know if anyone i
 **ZOOM:** One iteration to cover 6 features. The right scale for catch-up work.
 
 **FORMALIZE:** Lesson 42: test iterations should follow breadth sprints, not accumulate indefinitely. One iteration of tests per ~5 iterations of features is the sustainable ratio.
+
+---
+
+## Iteration 94 — 2026-03-23
+
+**Cluster:** Layer 11 — Governance (94)
+
+**Built:** `propose` and `vote` grammar ops, Governance lens with proposal creation form, vote buttons (yes/no), vote tallies. Kind guard on vote (proposals only), one-vote-per-user enforcement, open-state check. 21 grammar ops, 10/13 layers.
+
+**COVER:** Governance is the most useful of the remaining layers for community spaces. Proposals and voting give communities a concrete decision-making tool. ✓
+
+**BLIND:** No way to close/pass/reject proposals yet — just open with votes accumulating. No quorum or threshold logic. These are deepening features for future iterations.
+
+**ZOOM:** Single-iteration build. The pattern holds: minimal viable entry for each layer, one iteration each.
+
+**FORMALIZE:** 10 of 13 layers now have entries. Three remain: Build(5), Culture(12), Being(13). The breadth-first phase is approaching completion. After these, the platform has touched every layer in the vision.
