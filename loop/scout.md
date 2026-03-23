@@ -1,2 +1,2 @@
-# Scout Report — Iterations 155-156
-155: Edit form on all node types. 156: Blocker count on dashboard task cards.
+# Scout Report — Iterations 157-160 (Visual)
+Visual refresh. Typography, atmosphere, and polish across the entire site.

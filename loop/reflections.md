@@ -1470,6 +1470,10 @@ Also: the site has no error monitoring, no analytics, no way to know if anyone i
 
 ## Iterations 155-156 — 2026-03-24
 
-**155:** Edit form on all node types (posts, claims, proposals, threads — not just tasks). **156:** Blocker count on dashboard task cards. 70 iterations this session (87-156). 36 depth iterations (121-156).
+**155:** Edit form on all node types. **156:** Dashboard blocker count. 70 iterations.
 
-**FORMALIZE:** The depth sprint has reached diminishing returns. Every lens has search. Every action notifies with deep links. Dependencies have full CRUD. Tasks show overdue + blockers everywhere. All node types are editable. The remaining gaps (market exchange, DMs, observability) are multi-iteration structural features, not depth polish. The platform is production-ready for real users.
+---
+
+## Iterations 157-160 — 2026-03-24 (Visual)
+
+**Visual refresh.** Source Serif 4 display font across entire site. Italic serif logo (*lovyou.ai*). Ember glow on landing hero (radial gradient + pulse animation). Serif headings on all public pages and all in-app lenses. Refined footer with blog/reference links. Sidebar active lens indicator (left border accent). Task card hover with brand shadow. Board column headers with pill state indicators and uppercase tracking. 74 iterations this session (87-160).

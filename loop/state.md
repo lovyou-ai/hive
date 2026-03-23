@@ -2,7 +2,7 @@
 
 Living document. Updated by the Reflector each iteration. Read by the Scout first.
 
-Last updated: Iteration 156, 2026-03-24.
+Last updated: Iteration 160, 2026-03-24.
 
 ## Current System State
 
@@ -153,6 +153,7 @@ Deploy: `fly deploy --remote-only` from site repo.
 - **Depth: Notification coverage** (138-140, 147-148): All ops notify. Deep links. Human + agent completions, proposal close.
 - **Depth: Overdue highlighting** (152-153): Red "overdue" on Board, dashboard, detail for past-due tasks.
 - **Depth: Discover** (154): Kind filter tabs (Projects/Communities/Teams).
+- **Visual: Typography** (157-160): Source Serif 4 display font, ember glow hero, italic serif logo, serif headings site-wide, refined footer, sidebar active indicator, card hover polish.
 
 ## Lessons Learned
 

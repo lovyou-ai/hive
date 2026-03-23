@@ -1,2 +1,2 @@
-# Critique — Iterations 155-156
-PASS. 155: Excludes comments + conversations from editing. Task-specific fields (priority, assignee) only shown for tasks. 156: Uses same style as Board's blocker badge.
+# Critique — Iterations 157-160
+PASS. Font loaded via Google Fonts CDN with preconnect. Ember glow uses CSS pseudo-element (no JS). All changes are CSS/template only — no handler changes. Reduced-motion respected.
