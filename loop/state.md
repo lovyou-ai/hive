@@ -2,7 +2,7 @@
 
 Living document. Updated by the Reflector each iteration. Read by the Scout first.
 
-Last updated: Iteration 161, 2026-03-24.
+Last updated: Iteration 167, 2026-03-24.
 
 ## Current System State
 
@@ -154,6 +154,11 @@ Deploy: `fly deploy --remote-only` from site repo.
 - **Depth: Overdue highlighting** (152-153): Red "overdue" on Board, dashboard, detail for past-due tasks.
 - **Depth: Discover** (154): Kind filter tabs (Projects/Communities/Teams).
 - **Visual: Typography** (157-160): Source Serif 4 display font, ember glow hero, italic serif logo, serif headings site-wide, refined footer, sidebar active indicator, card hover polish.
+- **Visual: Nav** (161): Unified nav across all 3 headers, secondary links to footer.
+- **UX: Cmd+K** (162): Command palette on every page, fuzzy search, arrow key nav.
+- **UX: Board DnD** (163): Drag-and-drop task cards between kanban columns.
+- **UX: Chat** (164, 166): Message grouping by author+time, auto-expanding textarea with shift+enter.
+- **UX: Polish** (165, 167): Card hover lift effect, toast notification infrastructure.
 
 ## Lessons Learned
 
