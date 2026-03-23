@@ -1,3 +1,3 @@
-# Build Report — Iteration 117
+# Build Report — Iteration 118
 
-Reply counts on thread list cards ("X replies") and message counts on conversation list cards ("X msgs"). Both use the existing ChildCount computed field — zero new queries. Pure template changes.
+Renamed "Sign in" to "My Work" in public nav (mobile + desktop). Links to /app which redirects logged-in users to dashboard and anonymous users to discover. Works for both auth states without needing auth context in the template.

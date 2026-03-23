@@ -1214,3 +1214,11 @@ Also: the site has no error monitoring, no analytics, no way to know if anyone i
 ## Iteration 117 — 2026-03-23
 
 **Built:** Reply counts on threads, message counts on conversations. Shows activity level at a glance.
+
+---
+
+## Iteration 118 — 2026-03-23
+
+**Built:** Public nav CTA renamed from "Sign in" to "My Work". Works for both logged-in and anonymous users via /app redirect logic.
+
+**FORMALIZE:** 32 iterations (87-118). This is the end of this context window. Every major UX gap has been addressed. Next session should focus on real user feedback and deeper features.

@@ -1,5 +1,7 @@
-# Scout Report — Iteration 117
+# Scout Report — Iteration 118
 
-## Gap: Thread list cards don't show reply counts
+## Gap: Public pages always show "Sign in" even when logged in
 
-The Threads lens lists threads but doesn't show how many replies each has. No way to tell which threads are active vs dead without clicking into each one.
+The Layout header (used on discover, market, search, knowledge, activity, blog) always shows "Sign in". Logged-in users see the same CTA, which is confusing — they're already signed in. Should show their name and link to /app instead.
+
+This requires passing auth state to the Layout template. Currently Layout has no user context.
