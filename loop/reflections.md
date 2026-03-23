@@ -1054,3 +1054,17 @@ Also: the site has no error monitoring, no analytics, no way to know if anyone i
 **ZOOM:** Single-iteration. Right scale for a UX improvement.
 
 **FORMALIZE:** Lesson 44: never run deploy scripts in background. Fly leases block concurrent deploys.
+
+---
+
+## Iteration 102 — 2026-03-23
+
+**Built:** Notification system — table, triggers on assign/respond, unread badge on dashboard, /app/notifications page.
+
+**COVER:** Closes the biggest usability gap — the platform was pull-only. Now users know when things happen without checking manually. ✓
+
+**BLIND:** Only assign and respond trigger notifications. Task completions by agents don't yet. Email notifications don't exist. Acceptable for v1.
+
+**ZOOM:** Single-iteration. Right scale — the notification system is minimal but functional.
+
+**FORMALIZE:** The depth phase is producing real usability improvements. Pin UI (98), governance lifecycle (99), knowledge lifecycle (100), quick chat (101), notifications (102). Five iterations of depth after the breadth sprint.

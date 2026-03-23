@@ -1,7 +1,13 @@
-# Build Report — Iteration 101
+# Build Report — Iteration 102
 
-Added "Chat with Mind" form to the dashboard. Uses the user's first space and the first agent name. One input field + submit button creates a converse op with the agent as participant.
+Notifications system. New `notifications` table (id, user_id, op_id, space_id, message, read, created_at).
 
-**Changes:** Dashboard template takes `defaultSpaceSlug` and `agents []string` params. Handler fetches agent names via `ListAgentNames`. Form POSTs to `/app/{slug}/op` with `op=converse`.
+**Store:** CreateNotification, ListNotifications, UnreadCount, MarkNotificationsRead.
 
-**Incident:** ship.sh was run in background, causing Fly lease contention. Deploys failed for ~5 minutes until leases expired. **Lesson: never run ship.sh in background — it holds deploy leases that block subsequent deploys.**
+**Triggers:** `assign` op notifies assignee. `intend` with assignee notifies them. `respond` in conversations notifies all other participants.
+
+**UI:** Unread count badge on dashboard header. `/app/notifications` page with read/unread styling, space links, relative timestamps. Viewing the page marks all as read.
+
+**Dashboard:** Now takes `unreadCount` param.
+
+Shipped via `ship.sh` (foreground). 10 tables total.

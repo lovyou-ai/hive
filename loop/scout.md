@@ -1,11 +1,11 @@
-# Scout Report — Iteration 101
+# Scout Report — Iteration 102
 
-## Gap: Starting a conversation with the Mind takes too many clicks
+## Gap: No notifications — the platform is pull-only
 
-The Mind agent is the platform's differentiator. But chatting with it requires: navigate to space → Chat → create conversation → select agent → send message. Five steps.
+The dashboard shows tasks and conversations but only when you visit it. There's no way to know something happened without manually checking. The Mind completes a task → silence. Someone replies to your conversation → silence. You get assigned a task → silence.
 
-The dashboard has no quick path to the core experience.
+This is the #1 usability gap for a collaboration platform with an active AI agent. The feedback loop is closed within pages (HTMX polling) but broken across sessions.
 
 ## What "Filled" Looks Like
 
-"Chat with Mind" form on the dashboard — one input, one click, creates a conversation with the Hive agent in the user's first space.
+An unread count badge on the nav that links to a notifications page. Notifications generated from ops directed at the user: task assignments, conversation messages, task completions by agents in your spaces. Simple read/unread tracking.
