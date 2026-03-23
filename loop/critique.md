@@ -1,5 +1,5 @@
-# Critique — Iteration 108
+# Critique — Iteration 109
 
 ## Verdict: APPROVED
 
-Reuses existing ListPublicSpaces query (already sorted by activity). Limits to 4 spaces in the handler. No new queries needed.
+Filtering in Go (not SQL) is acceptable at current scale. The assignee dropdown shows agent names from ListAgentNames — should also include human assignees for completeness, but agents are the primary assignees. The onboarding guard correctly checks filter state.

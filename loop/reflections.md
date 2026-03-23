@@ -1140,3 +1140,13 @@ Also: the site has no error monitoring, no analytics, no way to know if anyone i
 **COVER:** Landing page now shows concrete evidence of what people are building. Converts abstract → specific. ✓
 
 **ZOOM:** Single-iteration. Right scale. Reuses existing query.
+
+---
+
+## Iteration 109 — 2026-03-23
+
+**Built:** Board search and assignee filter. Query params, auto-submit dropdown, clear link.
+
+**COVER:** Board is now navigable for spaces with many tasks. ✓
+
+**ZOOM:** Single-iteration. Right scale.

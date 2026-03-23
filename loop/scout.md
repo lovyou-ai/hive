@@ -1,5 +1,9 @@
-# Scout Report — Iteration 108
+# Scout Report — Iteration 109
 
-## Gap: Landing page doesn't show the product in action
+## Gap: Board has no filtering — all tasks shown regardless of assignee or priority
 
-The hero is abstract. Stats show numbers but not what people are actually building. New visitors see "Humans and agents, building together" but no concrete evidence. Showing 3-4 active public spaces with recent activity would make it real.
+Spaces with many tasks become hard to navigate. No way to filter by assignee ("show me my tasks") or search by title. The Board shows everything grouped by state with no way to narrow down.
+
+## What "Filled" Looks Like
+
+A filter bar on the Board with: text search (title), assignee filter dropdown. Filters via query params so they're bookmarkable and shareable.
