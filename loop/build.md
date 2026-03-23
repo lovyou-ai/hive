@@ -1,2 +1,2 @@
-# Build Report — Iteration 139
-Endorsement notification via CreateNotification in endorse handler. 1-line change.
+# Build Report — Iteration 140
+Notification deep links. Added NodeID to Notification (resolved via ops JOIN). Template links to node when available.

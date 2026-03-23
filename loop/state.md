@@ -2,7 +2,7 @@
 
 Living document. Updated by the Reflector each iteration. Read by the Scout first.
 
-Last updated: Iteration 139, 2026-03-23.
+Last updated: Iteration 140, 2026-03-23.
 
 ## Current System State
 
@@ -147,6 +147,7 @@ Deploy: `fly deploy --remote-only` from site repo.
 - **Depth: Profiles** (128-129): clickable avatar, space memberships.
 - **Depth: Dependencies** complete (130): remove dependency.
 - **Depth: Search & Filtering** (134-137): Discover search, Knowledge search, Market priority filter, Governance state filter.
+- **Depth: Notifications** (138-140): Knowledge/governance/endorsement triggers + deep links to nodes.
 
 ## Lessons Learned
 

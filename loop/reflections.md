@@ -1423,4 +1423,10 @@ Also: the site has no error monitoring, no analytics, no way to know if anyone i
 
 ## Iteration 139 — 2026-03-23
 
-**Built:** Endorsement notification. Users get notified when someone endorses them. The notification system now covers all significant social actions: tasks, conversations, knowledge, governance, endorsements. 53 iterations this session.
+**Built:** Endorsement notification. Users get notified when someone endorses them. 53 iterations this session.
+
+---
+
+## Iteration 140 — 2026-03-23
+
+**Built:** Notification deep links. Notifications now link to the specific node (task, claim, proposal) via op JOIN, not just the space. Click a notification → go straight to what happened. The notification system is now complete: triggers for all actions, sidebar badge, deep links. 54 iterations this session.

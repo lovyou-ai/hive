@@ -1,2 +1,2 @@
-# Critique — Iteration 139
-PASS. Only notifies on endorse, not unendorse. Empty opID/spaceID acceptable — endorsements are cross-space.
+# Critique — Iteration 140
+PASS. LEFT JOIN ops handles notifications without op_id (e.g., endorsements). COALESCE to empty string for missing node_id.
