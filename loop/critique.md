@@ -1,2 +1,2 @@
-# Critique — Iteration 135
-PASS. Store already supported query. Just wiring + UI.
+# Critique — Iteration 136
+PASS. Parameterized query. Tests updated. Backward compat with empty string default.

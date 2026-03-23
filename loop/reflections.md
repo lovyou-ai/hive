@@ -1404,3 +1404,11 @@ Also: the site has no error monitoring, no analytics, no way to know if anyone i
 ## Iteration 135 — 2026-03-23
 
 **Built:** Knowledge search. Text search on /knowledge page, preserving state filter. Wired up existing store query param. 49 iterations this session.
+
+---
+
+## Iteration 136 — 2026-03-23
+
+**Built:** Market priority filter. Priority tabs (All/Urgent/High/Medium/Low) on /market page. Store accepts priority param. 50 iterations this session.
+
+**FORMALIZE:** Search and filtering cluster (134-136): Discover search, Knowledge search, Market priority filter. Every public page now has search or filtering. The "searchability" gap from iter 91's lesson 40 is fully closed.

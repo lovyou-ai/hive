@@ -1,3 +1,3 @@
-# Scout Report — Iteration 135
-## Gap: /knowledge page has no text search
-State filter tabs exist but no way to search claims by text. Store already accepts query param.
+# Scout Report — Iteration 136
+## Gap: Market page has no priority filtering
+Tasks shown in priority order but no way to filter by priority level.
