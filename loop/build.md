@@ -1,8 +1,8 @@
-# Build Report — Iteration 128
+# Build Report — Iteration 129
 
-## Clickable user avatar — links to own profile
+## Profile space memberships
 
 ### Changes
-- appLayout nav: wrapped avatar + name in `<a href="/user/{name}">` with hover opacity
-- simpleHeader desktop: same treatment
-- simpleHeader mobile: avatar now links to profile, added fallback initial avatar
+- **store.go:** `UserMembership` type + `ListUserMemberships` method (public spaces where user is owner or member)
+- **views/profile.templ:** `SpaceMembership` type + Spaces section with clickable pills
+- **cmd/site/main.go:** Profile handler fetches memberships, maps to view type

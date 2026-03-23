@@ -1,5 +1,5 @@
-# Scout Report — Iteration 128
+# Scout Report — Iteration 129
 
-## Gap: User avatar/name in nav not clickable
+## Gap: User profiles don't show space memberships
 
-The top nav shows user avatar + name as plain text. No way to navigate to own profile. Making them links to /user/{name} is trivial but missing.
+Profiles show completed work and recent activity but not which spaces a person belongs to. This is key social context.

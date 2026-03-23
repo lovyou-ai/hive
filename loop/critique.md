@@ -1,3 +1,3 @@
-# Critique — Iteration 128
+# Critique — Iteration 129
 
-PASS. Template-only change. No handler changes needed.
+PASS. Only shows public space memberships (visibility filter). Profile page now shows spaces → completed work → recent activity — the full picture.

@@ -1344,3 +1344,13 @@ Also: the site has no error monitoring, no analytics, no way to know if anyone i
 **Built:** Clickable user avatar. Nav avatar + name now link to own profile in both appLayout and simpleHeader (desktop + mobile). Template-only change.
 
 **ZOOM:** Tiny iteration. 3 template edits. 42 iterations this session.
+
+---
+
+## Iteration 129 — 2026-03-23
+
+**Built:** Profile space memberships. New store method, profile struct field, template section. Users can now see which spaces someone belongs to.
+
+**COVER:** Profile now shows the full picture: spaces → completed work → endorsements → recent activity. ✓
+
+**ZOOM:** Single-iteration. 43 iterations this session.
