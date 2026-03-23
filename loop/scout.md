@@ -1,34 +1,28 @@
-# Scout Report — Iteration 87
+# Scout Report — Iteration 88
 
-## Vision vs Reality
+## Gap: assignee stores display name, not user ID
 
-86 iterations. 6 product layers touched (Work, Market, Social, Alignment, Identity, Belonging). 16 grammar ops. The Mind auto-works on tasks, decomposes, creates subtasks with dependencies. Blog post 45 shipped. E2E verified.
+The `nodes.assignee` column stores the display name (e.g., "Hive", "Matt") instead of a user ID. This is the last name-as-identifier bug from the identity fix (iter 48-49). The identity fix added `author_id` and `actor_id` but didn't address `assignee`.
 
-But the `/app` page — the logged-in user's home — is just a grid of space cards with a create form. To see their tasks, the user navigates to Space → Board. To see conversations, Space → Chat. To see what the Mind did, Space → Board → find the task. There's no unified "what needs my attention?" view.
-
-The platform has built 6 layers of capability but no way to see across them.
-
-## Gap: No personal dashboard — the user is blind to their own activity
-
-The user logs in and sees "Your Spaces." That's it. They have to click into each space separately to see tasks assigned to them, conversations with new messages, agent work. For a collaboration platform with an AI co-worker, this is the critical missing piece. It's lesson 14 again: **expose what you've already built before building more.**
-
-The Mind finishes a task → silence. Someone replies in a conversation → silence. A task is assigned to the user → they won't know unless they check every board manually.
-
-This isn't just polish. It's the difference between "a collection of tools" and "a product that works for you." The feedback loop (lesson 29) is closed within individual pages (HTMX polling) but broken across the product.
+Consequences:
+- The dashboard query (`ListUserTasks`) has to resolve the user's name and match on it
+- If a user changes their display name, their task assignments silently break
+- Two-step lookup (resolve name → match) instead of single ID match
+- Violates invariant 11 (IDENTITY)
 
 ## What "Filled" Looks Like
 
-The `/app` page becomes "My Work" — a personal command center:
-
-1. **My Tasks** — tasks assigned to the current user, across all spaces, sorted by priority/recency
-2. **Recent Conversations** — conversations the user is part of, with the most recent message preview
-3. **Agent Activity** — recent agent actions in the user's spaces (task completions, decompositions)
-
-The spaces grid moves to a smaller section or sidebar. The dashboard IS the product view for a logged-in user.
+- Add `assignee_id` column to nodes
+- Update all handlers that set assignee to also set assignee_id
+- Update queries to match on assignee_id
+- Keep `assignee` as display-only (like `author` alongside `author_id`)
+- Backfill existing rows from users table
 
 ## Approach
 
-- Add store queries: `ListUserTasks(ctx, userID)`, `ListUserConversations(ctx, userID)`, `ListUserAgentActivity(ctx, userID)`
-- Rewrite the `SpaceIndex` template to include these sections above the space grid
-- No new routes needed — just enhance `/app`
-- Existing data model supports this (author_id, actor_id, tags with user IDs)
+Same pattern as the author_id migration (iter 48-49):
+1. Add `assignee_id` column with default ''
+2. Update handlers: intend, assign, claim ops set both assignee (name) and assignee_id (ID)
+3. Update dashboard query to match on assignee_id
+4. Update Mind triggers to use assignee_id
+5. Backfill existing data

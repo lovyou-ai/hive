@@ -2,7 +2,7 @@
 
 Living document. Updated by the Reflector each iteration. Read by the Scout first.
 
-Last updated: Iteration 87, 2026-03-23.
+Last updated: Iteration 88, 2026-03-23.
 
 ## Current System State
 
@@ -92,6 +92,7 @@ Deploy: `fly deploy --remote-only` from site repo.
 - **Layer 10 — Belonging** (81): space membership (join/leave ops, space_members table)
 - **Platform Polish** (82-86): live stats on landing, tests for membership + market, new user redirect to discover, assign-to-agent button, blog post 45
 - **Personal Dashboard** (87): /app rewritten as "My Work" — cross-space tasks, conversations, agent activity
+- **Assignee Identity** (88): assignee_id column, backfill, all handlers set both name and ID. Last name-as-identifier bug eliminated.
 
 ## Lessons Learned
 
@@ -133,6 +134,7 @@ Deploy: `fly deploy --remote-only` from site repo.
 36. The loop can only catch errors it has checks for. When a human catches something the loop missed, fix the loop, not just the code.
 37. The Scout must read the vision, not just the code. Product gaps outrank code gaps. 60 iterations of code polish while 12 of 13 product layers remained unbuilt.
 38. Cross-space views are the connective tissue of a multi-space platform. Building features inside spaces isn't enough — the user needs a single place to see what matters across all of them.
+39. When fixing a systemic issue, grep the schema for ALL instances, not just the ones that triggered the bug. Incomplete fixes create false confidence.
 
 ## Vision Notes
 

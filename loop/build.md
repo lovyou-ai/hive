@@ -1,18 +1,22 @@
-# Build Report — Iteration 87
+# Build Report — Iteration 88
 
-Rewrote `/app` from "Your Spaces" grid to "My Work" personal dashboard.
+Added `assignee_id` column to nodes table. Same pattern as the author_id migration (iter 48-49).
 
-**New store queries:**
-- `ListUserTasks(ctx, userID, limit)` — open tasks where user is author or assignee, across all spaces, sorted by priority
-- `ListUserConversations(ctx, userID, limit)` — conversations with user as participant (via tags) or author, across spaces, with last message preview
-- `ListUserAgentActivity(ctx, userID, limit)` — recent agent ops in user's owned/member spaces
+**Schema:** `ALTER TABLE nodes ADD COLUMN IF NOT EXISTS assignee_id TEXT NOT NULL DEFAULT ''` + backfill migration.
 
-**New types:** `DashboardTask`, `DashboardConversation`, `DashboardOp` — each wraps the base type with SpaceSlug/SpaceName for cross-space navigation.
+**Handler changes:**
+- `intend`: resolves assignee name → ID, passes both to CreateNode
+- `assign`: passes resolved ID to UpdateNode
+- `claim`: passes actorID as assigneeID to UpdateNode
+- `handleUpdateNode`: resolves assignee name → ID when assignee field is updated
 
-**Dashboard layout:** 3-column grid on desktop (2+1):
-- Left: Open Tasks section + Conversations section
-- Right: Agent Activity feed + Spaces list (collapsed from full grid to compact list with `<details>` for create form)
+**Store changes:**
+- `CreateNode` stores assignee_id
+- `UpdateNode` accepts optional assignee_id parameter
+- `ListUserTasks` now matches on `n.assignee_id = $1` instead of resolving name
 
-**Template helpers:** `dashboardStateClass`, `dashRelativeTime`, `truncateBody`.
+**Mind:** task creation now sets AssigneeID = agentID.
 
-**Deployed.** Build passes, all tests pass, live on lovyou.ai.
+**Backfill:** `UPDATE nodes SET assignee_id = u.id FROM users u WHERE nodes.assignee = u.name AND nodes.assignee_id = '' AND nodes.assignee != ''`
+
+All tests pass. Deployed.

@@ -864,3 +864,21 @@ Also: no end-to-end test — ANTHROPIC_API_KEY wasn't available in session. The 
 **FORMALIZE:** **Lesson 38: Cross-space views are the connective tissue of a multi-space platform.** 86 iterations built features inside spaces. One iteration to show them across spaces. The ratio should have been different — the dashboard should have come earlier. When you build a multi-container product, the cross-container view isn't polish — it's core.
 
 **Next iteration:** The dashboard creates demand for deeper layers. Options: (a) Layer 4 — report review/resolution (report op leads nowhere), (b) assignee-as-ID migration, (c) deepen Layer 2 with exchange/reputation, (d) Layer 9 — relationship infrastructure.
+
+---
+
+## Iteration 88 — 2026-03-23
+
+**Cluster:** Assignee Identity (88)
+
+**Built:** Added `assignee_id` column, updated all handlers and Mind to set both name and ID, backfill migration, dashboard query now uses ID-based matching.
+
+**COVER:** This completes the identity fix started in iter 48-49. That fix addressed `author_id` and `actor_id` but missed `assignee`. Now all three entity references in the node model (author, actor, assignee) have ID columns. ✓
+
+**BLIND:** No further name-as-identifier columns remain in the schema. All JOINs and matches use IDs. The backfill runs on migration (idempotent, safe for repeated runs).
+
+**ZOOM:** Single-iteration fix. 7 files, ~50 lines changed. The right scale for completing an incomplete migration.
+
+**FORMALIZE:** The iter 48-49 identity fix was incomplete because the Critic didn't audit every column. **Lesson 39: when fixing a systemic issue (like name-as-identifier), grep the schema for ALL instances, not just the ones that caused the bug you're fixing. Incomplete fixes create false confidence.**
+
+**Next iteration:** Identity is now fully fixed. Personal dashboard works with proper ID matching. Ready for new product work.
