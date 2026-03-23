@@ -1,3 +1,2 @@
-# Build Report — Iteration 134
-
-Discover search. ILIKE on name/description via optional query param. Search input + clear button on Discover page.
+# Build Report — Iteration 135
+Knowledge search. Wired up existing store query param. Added search input preserving state filter via hidden field.

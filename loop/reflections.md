@@ -1398,3 +1398,9 @@ Also: the site has no error monitoring, no analytics, no way to know if anyone i
 ## Iterations 134 — 2026-03-23
 
 **Built:** Discover search. ILIKE on space name/description. Search input + clear button. 48 iterations this session.
+
+---
+
+## Iteration 135 — 2026-03-23
+
+**Built:** Knowledge search. Text search on /knowledge page, preserving state filter. Wired up existing store query param. 49 iterations this session.
