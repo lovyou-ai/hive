@@ -1310,3 +1310,17 @@ Also: the site has no error monitoring, no analytics, no way to know if anyone i
 **BLIND:** No space-level filtering on dashboard. Tasks from all spaces appear together. Also no sorting (by due date, priority, space).
 
 **ZOOM:** Single-iteration. Right scale. 39 iterations this session.
+
+---
+
+## Iteration 126 — 2026-03-23
+
+**Built:** Proposal deadlines. Date picker on creation form. "closes Jan 2" / "overdue Jan 2" on proposal cards. Reuses existing DueDate field.
+
+**COVER:** Governance layer goes from accumulate-forever to time-bounded. Proposals now have urgency. ✓
+
+**BLIND:** No auto-close on deadline. Proposals overdue remain open — owner must still manually close. Could be automated in a future iteration.
+
+**ZOOM:** Tiny iteration. ~12 lines total. Right scale. 40 iterations this session.
+
+**FORMALIZE:** Six depth iterations (121-126). Each makes an existing layer genuinely more useful: knowledge evidence, dependency CRUD, notification awareness, dashboard filtering, governance deadlines. The platform is substantively deeper than at iter 120.

@@ -1,7 +1,7 @@
-# Scout Report — Iteration 125
+# Scout Report — Iteration 126
 
-## Gap: Dashboard has no task filtering
+## Gap: Governance proposals have no deadlines
 
-Tasks section shows only open tasks with no way to filter by state, see completed work, or focus on active tasks.
+Proposals stay open forever. No urgency, no resolution timeline. The DueDate field exists on all nodes but isn't used for proposals.
 
-**Scope:** Add state filter tabs to dashboard tasks section via query params.
+**Scope:** Add deadline input to proposal form, parse in handler, show on proposal cards with overdue indicator.

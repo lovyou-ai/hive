@@ -1,20 +1,14 @@
-# Build Report — Iteration 125
+# Build Report — Iteration 126
 
-## Dashboard task filtering — state tabs with query params
+## Proposal deadlines — date picker + overdue display
 
 ### Changes
 
-**store.go:** `ListUserTasks` now accepts `stateFilter` param: "" (open), "active", "review", "done", "all". Switch-based SQL generation. Limit increased to 20.
-
-**handlers.go:** Reads `?tasks=` query param, passes to store and template.
+**handlers.go:** `propose` op now reads optional `deadline` form field, parses as `2006-01-02`, sets `CreateNodeParams.DueDate`.
 
 **views.templ:**
-- Dashboard signature extended with `taskFilter string`
-- Added filter tabs: Open / Active / Review / Done / All
-- `dashboardTaskTab` component with brand highlight for active tab
-- Context-aware empty state messages
-
-**store_test.go:** Updated `ListUserTasks` call to include state filter param.
+- Proposal creation form: added date picker inline with submit button
+- Proposal card: shows "closes Jan 2" for proposals with deadlines, "overdue Jan 2" in red for past-due open proposals
 
 ### Deployed
 `ship.sh` — all green.
