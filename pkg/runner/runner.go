@@ -35,6 +35,7 @@ var roleModel = map[string]string{
 	"critic":    "sonnet",
 	"reflector": "haiku",
 	"ops":       "haiku",
+	"observer":  "sonnet",
 	"guardian":  "haiku",
 	"monitor":   "haiku",
 	"pm":        "sonnet",
@@ -146,6 +147,8 @@ func (r *Runner) runTick(ctx context.Context) {
 		r.runScout(ctx)
 	case "critic":
 		r.runCritic(ctx)
+	case "observer":
+		r.runObserver(ctx)
 	case "monitor":
 		r.runMonitor(ctx)
 	default:
