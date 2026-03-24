@@ -1,26 +1,19 @@
-# Build Report — Iterations 186-188
+# Build Report — Iteration 189
 
-## 186: Message Edit/Delete
-- `EditNodeBody(nodeID, newBody)` — updates body, sets updated_at
-- `SoftDeleteNode(nodeID)` — replaces body with "[deleted]", sets state="deleted"
-- `edit` op: validates author_id == actor_id, saves old_body in Op payload
-- `delete` op: validates author_id == actor_id, saves old_body in Op payload (provenance)
-- Edit button: JS prompt dialog → fetch POST → location.reload() (HACK — should be HTMX swap)
-- Delete button: HTMX POST with hx-confirm
-- Deleted messages render as italic "message deleted"
-- Only visible to message author on hover
+## 186 REVISE: Edit message inline swap
+- Replaced `location.reload()` with direct DOM update in `editMessage()` script
+- Added `id={"msg-body-" + msg.ID}` to message body div for targeting
+- After fetch succeeds, finds element by ID and sets `textContent = newBody`
+- Preserves scroll position, no page reload
 
-## 187: Unread Counts
-- `read_state` table: (user_id, conversation_id, last_read_at) with compound PK
-- `MarkConversationRead(userID, conversationID)` — UPSERT on view
-- `ListConversations` now includes correlated subquery counting messages after last_read_at
-- `UnreadCount` field on ConversationSummary struct
-- Rose badge on conversation cards when unread > 0
-- Bold title for unread conversations
+## 189: Message Search
+- **Store:** `SearchMessages(spaceID, query, fromAuthor, limit)` — searches message bodies via ILIKE with JOIN to parent conversation. Returns `MessageSearchResult` with convo title, author, body, timestamps.
+- **Operator parsing:** `parseMessageSearch()` extracts `from:username` operator from query string. Remaining text becomes body search.
+- **Handler:** `handleConversations` calls `SearchMessages` when query is present, passes results to view.
+- **View:** `ConversationsView` now accepts `msgResults []MessageSearchResult`. When results exist, shows "Messages (N)" section below conversations with cards linking to the parent conversation.
+- **Placeholder:** Search input updated to `"Search messages... (from:name)"` to hint at operator syntax.
 
-## 188: DM vs Group
-- Filter tabs: All / DMs / Groups on conversation list
-- DM = len(tags) <= 2, Group = len(tags) > 2
-- Filter via ?filter=dm/group query param
-- `ConversationsView` signature updated with isDMFilter, isGroupFilter bools
-- Header renamed "Conversations" → "Chat"
+**Files changed:**
+- `graph/store.go` — `MessageSearchResult` type + `SearchMessages` method
+- `graph/handlers.go` — `parseMessageSearch` helper + handler wiring
+- `graph/views.templ` — updated `ConversationsView` signature + message result cards + edit inline fix

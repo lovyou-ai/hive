@@ -1,21 +1,34 @@
-# Critique — Iterations 186-188
+# Critique — Iteration 189
 
-## Process Failure
-These three iterations were batched without individual Scout/Critic/Reflector passes. The user caught this. Lesson: batching iterations is fine for shipping, but each iteration still needs the loop artifacts written.
+## Derivation Chain
+- **Gap:** Phase 1 item 6 — message search. Last Chat Foundation item.
+- **Plan:** SearchMessages store method, from: operator, handler wiring, template.
+- **Code:** Matches plan exactly. No scope creep.
 
-## 186 Edit/Delete: PASS with NOTE
-- **Correctness:** Author-only enforcement correct. Old body preserved in Op payload (audit trail). Soft delete uses tombstone "[deleted]" — provenance survives. State set to "deleted".
-- **Identity:** author_id comparison, not name. PASS.
-- **BUG:** editMessage() uses `location.reload()` after fetch. This is a hack — it should use HTMX to swap just the message element. The reload breaks scroll position and feels jarring. **REVISE needed.**
-- **Tests:** No new tests. Debt acknowledged.
+## 186 REVISE Fix: PASS
+- `location.reload()` replaced with `getElementById('msg-body-' + msgID).textContent = newBody`
+- Preserves scroll position. No reload. Clean.
+- Added `id={"msg-body-" + msg.ID}` to body div for targeting.
 
-## 187 Unread Counts: PASS
-- **Correctness:** UPSERT on read_state is idempotent. Correlated subquery counts messages after last_read_at correctly. Default to epoch (1970-01-01) for users who never viewed = all messages unread.
-- **Identity:** user_id in read_state, not name. PASS.
-- **Performance:** Correlated subquery per conversation in ListConversations. OK at <100 conversations. May need indexing on nodes(parent_id, created_at) if slow.
+## 189 Message Search: PASS
 
-## 188 DM vs Group: PASS
-- **Correctness:** len(tags) <= 2 for DM is correct (creator + one other participant). Filter is client-side (post-query), not DB-level. Acceptable at <100 conversations.
-- **Note:** The "Chat" rename from "Conversations" is a product decision that should have been in the Scout report, not embedded in a code change.
+**Correctness:**
+- ILIKE with parameterized `$N` — no SQL injection risk. ✓
+- JOIN `nodes m → nodes c ON c.id = m.parent_id AND c.kind = 'conversation'` — correct parent traversal. ✓
+- `m.body != '[deleted]'` — excludes tombstoned messages. ✓
+- Empty query + empty fromAuthor → early return nil. ✓
+- Results bounded at 20 (BOUNDED invariant). ✓
 
-## Verdict: 186 needs REVISE (edit JS hack). 187-188 PASS.
+**Identity:**
+- `from:` operator uses `m.author ILIKE` (display name). This is a user-facing search feature, not identity matching. Consistent with existing `Search` function which also does `name ILIKE` on users. Not an IDENTITY violation.
+
+**Operator parsing:**
+- `parseMessageSearch` correctly splits `from:username` from body text. Multiple body words rejoin. Only one `from:` supported (last wins if multiple). Acceptable.
+
+**Template:**
+- Results show author, conversation title ("in {convo}"), timestamp, body snippet (truncated 200).
+- Links to conversation detail. Correct URL pattern.
+
+**Tests:** No new tests. `parseMessageSearch` is pure and testable. `SearchMessages` is a DB query. Test debt acknowledged — systemic issue tracked in lessons.
+
+## Verdict: PASS

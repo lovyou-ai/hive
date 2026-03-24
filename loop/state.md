@@ -2,7 +2,7 @@
 
 Living document. Updated by the Reflector each iteration. Read by the Scout first.
 
-Last updated: Iteration 183, 2026-03-24.
+Last updated: Iteration 189, 2026-03-24.
 
 ## Current System State
 
@@ -170,22 +170,23 @@ Deploy: `fly deploy --remote-only` from site repo.
 **All 20 UX tickets from the research sprint are COMPLETE.**
 
 - **Social Layer Sprint** (182-183): Code Graph on /reference (65 primitives). Message reactions (emoji) with toggle, hover picker, HTMX reactivity. Social layer spec written (4 modes, 33 planned iterations).
+- **Phase 1 — Chat Foundation** (184-189): Reply-to linkage (structured, not markdown), message edit/delete (author-only, soft delete, audit trail), unread counts (read_state table, UPSERT), DM/group filter tabs, message search (ILIKE on bodies, from: operator, conversation context). Edit REVISE fixed (inline DOM swap, not reload).
 
-**Social layer spec at hive/loop/social-spec.md. Phase 1 (Chat Foundation) in progress.**
+**Phase 1 (Chat Foundation) COMPLETE.** All 6 items shipped. Phase 2 (Square) next: Endorse, Follow, Quote, Repost.
 
 ## What the Scout Should Focus On Next
 
 **THE GOVERNING CHALLENGE:** If we're not better than existing products in form AND function AND philosophy, we offer no real value in switching. The philosophy is strong (13 layers, 15 grammar operations, soul). The form is improving. The FUNCTION of Work and Social must be dramatically better than Linear and Discord/Twitter.
 
-**Phase 1 — Chat Foundation (from social-spec.md):**
-1. ~~Reactions (emoji on messages)~~ — DONE (iter 183)
-2. Reply-to linkage (fix existing partial implementation)
-3. Message edit/delete
-4. Unread count per conversation
-5. DM vs group conversation distinction
-6. Message search
+**Phase 1 — Chat Foundation: COMPLETE** (all 6 items shipped, iters 183-189)
 
-**Key insight:** The Social layer should encompass ALL modes of communication that major platforms offer. Each mode maps to different compositions of the 15 grammar operations. Our architecture can express things no platform can (Endorse, Delegate, Consent, Annotate, Merge) — those are our differentiators. But the baseline interactions (post, reply, like, share, DM, thread, channel) must be at least as good as the best existing implementation.
+**Phase 2 — Square (from social-spec.md + board milestones):**
+1. Endorse on posts — extend existing endorsement system from user profiles to posts/content
+2. Follow users — subscribe to a user's activity, notification on their new posts
+3. Quote post — create a new post that embeds/references another post
+4. Repost — share someone else's post to your feed
+
+**Key insight:** Phase 2 is where our differentiators emerge. Endorse is unique to us (Code Graph primitive — no other platform has it on content). Follow+Quote+Repost are baseline social features, but built on grammar operations (react, relate, express) rather than ad-hoc implementations.
 
 **The sidebar now shows layers, not lenses.** Work, Social (expandable: Feed/Threads/Chat/People), Knowledge, Governance, Build, Transparency, Settings.
 
@@ -234,6 +235,10 @@ Deploy: `fly deploy --remote-only` from site repo.
 41. The loop needs enforcement, not just observation. If the Critic can flag a violation indefinitely without consequence, the invariant is aspirational. Either give the Critic blocking power or make the Scout own quality iterations.
 42. Test iterations should follow breadth sprints, not accumulate indefinitely. One iteration of tests per ~5 iterations of features.
 43. **NEVER skip artifact writes.** Every phase must write its file (scout.md, build.md, critique.md, reflections.md, state.md). Skipping them breaks the post tool, loses the audit trail, and means the process didn't happen. Violated in iters 93-100 — caused the stale-post bug.
+44. **Research before spec, spec before code.** The competitive research produced specific findings that sharpened the spec. The spec produced a phased build plan. Build from spec, not intuition.
+45. **The loop is not optional when batching.** Running 3 iterations without Critic caught a JS hack that shipped to production. When batching, run 3 full loops, not 3 builds.
+46. **Three layers of spec, each converged independently.** Primitives (vocabulary), Product (meaning), Compositions (appearance). Missing any layer leaves gaps.
+47. **REVISE before new work.** Iteration 189 fixed the iter 186 REVISE (edit reload hack) before starting new work. Outstanding REVISE flags should be resolved at the start of the next iteration, not deferred.
 
 ## Vision Notes
 

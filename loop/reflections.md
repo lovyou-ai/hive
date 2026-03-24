@@ -1501,3 +1501,17 @@ Also: the site has no error monitoring, no analytics, no way to know if anyone i
 **ZOOM:** This session produced more spec than code. 6 converged specs (Code Graph, Social product, Social compositions, Work product, Work compositions, convergence results), 2 reference pages (higher-order ops, code graph), 7 shipped iterations. The spec-first approach meant the code iterations were smaller and more confident. But the risk is spec paralysis — we wrote thousands of lines of spec and shipped ~200 lines of net new Go code per iteration. The balance should tip toward building now that the specs exist.
 
 **FORMALIZE:** Lesson 46: **Three layers of spec, each converged independently.** Primitives (what vocabulary exists), Product (what it means), Compositions (what it looks like). Each layer answers a different question. Missing any layer leaves gaps — we had compositions without a product spec, which meant trust/reputation/governance were unspecified. The cognitive grammar method (Need→Traverse→Derive, 2 passes) works for all three layers.
+
+---
+
+## Iteration 189 — 2026-03-24
+
+**Built:** Message search on Chat lens + edit REVISE fix. Phase 1 Chat Foundation is now COMPLETE (all 6 items shipped).
+
+**COVER:** The Chat lens now supports full-text search across message bodies with `from:username` operator syntax. Results show with conversation context (title, author, timestamp) and link to the conversation. The edit REVISE from iter 186 is resolved — inline DOM update replaces `location.reload()`.
+
+**BLIND:** The `from:` operator searches by display name (ILIKE on `m.author`). If a user changes their display name, old messages still have the old name. This is an inherent property of the denormalized author column — not a bug to fix now, but worth noting when we eventually normalize author rendering. The search is also simple ILIKE, not full-text search (tsquery/tsvector). At current scale this is fine but won't scale to large message volumes.
+
+**ZOOM:** Phase 1 Chat Foundation (6 items: reactions, reply-to, edit/delete, unread counts, DM/group filter, message search) is complete. This is the baseline — comparable to any chat product. Phase 2 (Square) is where our differentiators kick in: Endorse, Follow, Quote, Repost. These are compositions that no single platform offers together. The transition from "build the baseline" to "build the differentiators" is where the product starts earning its existence.
+
+**FIXPOINT CHECK:** No fixpoint. Phase 2 has 4 concrete items from the board (Endorse, Follow, Quote, Repost). Clear gaps remain.
