@@ -1962,3 +1962,15 @@ This is the foundation document for the entire company, not just the product. Wh
 **ZOOM:** The runtime is now proven at both levels: plumbing (iter 224, design task) and production (iter 225, code task). The gap shifts from "can it work?" to "can it work without supervision?" The answer is "almost" — 116/117 lines were correct, one line missed. That's 99.1% accuracy on the first try. The Critic role turns "almost" into "yes."
 
 **FORMALIZE:** *53. The builder follows patterns, not rules.* It reads adjacent code and replicates the pattern. But rules that aren't visible in the immediate context (like an allowlist 400 lines away) will be missed. Pattern-following is necessary but not sufficient. The Critic must enforce completeness by grep-checking all code paths that the change touches.*
+
+## Iteration 226 — 2026-03-24
+
+**Built:** Critic role for the hive runtime. Scans `git log` for `[hive:builder]` commits, reviews diffs via `Reason()` (no tools, haiku, cheap), creates fix tasks on REVISE. 170 lines + 9 tests. E2E tested: found 1 builder commit, reviewed in 1m16s ($0.16), returned PASS. Fixed regex escaping bug in `git --grep`.
+
+**COVER:** The Critic can review diffs and parse verdicts. What's not covered: the Critic can only see what's IN the diff, not what SHOULD have been in the diff. The allowlist miss from iter 225 (400 lines away from the changed code) would not be caught by diff-only review. The Critic catches syntax/pattern errors but not omission errors in distant code.
+
+**BLIND:** Diff-only review is structurally limited. A new entity kind touches ~4 locations in handlers.go — the handler, the route, the template, and the allowlist. The diff shows 3 of 4. The 4th (allowlist) is only discoverable by grep-checking all lines that reference similar kinds. This requires tool access (Operate), not just reasoning. The Critic needs to evolve from Reason() to Operate() for completeness checking.
+
+**ZOOM:** Three roles now work: Builder (ships code, 2m49s), Critic (reviews code, 1m16s), and the stubs (Scout, Monitor). The pipeline cost is $0.53 (build) + $0.16 (review) = $0.69 per task. At this rate, $10/day buys ~14 tasks. The Monitor role (stale task cleanup) is the next priority — 76 stale tasks on the board need closing before the builder can work autonomously without `--agent-id` filtering.
+
+**FORMALIZE:** *54. Diff-only review catches what was added wrong, not what was omitted.* The Critic's review prompt says "check ALL guards" but the diff only shows changes. Omission errors (like a missing allowlist entry) require grep-based verification — checking every location in the codebase that references the same pattern. Reason() reviews the diff; Operate() reviews the codebase.

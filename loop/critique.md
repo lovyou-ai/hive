@@ -1,21 +1,21 @@
-# Critique — Iteration 225: Builder Ships Code to Production
+# Critique — Iteration 226: Critic Role
 
-**Verdict: PASS**
+**Verdict: PASS** (with notes)
 
 ---
 
 ## Derivation Check
 
 ### Gap → Scout: ✓ VALID
-Scout identified the right gap: "runtime proved plumbing, now prove it ships code." Three specific fixes from iter 224 critique, plus a concrete test.
+Scout correctly identified the gap: no automated code review. Builder ships code but nobody checks it. Critic role is Phase 2 item 9.
 
 ### Scout → Build: ✓ VALID
-All three fixes implemented with tests. Builder ran successfully — picked the correct task (Policy, newest high-priority), Operated in 2m49s, produced real code, committed and pushed.
+Critic implemented as specified: git log scan, diff review, Reason() call, verdict parsing, fix task creation. 170 lines. Tests cover all helpers.
 
 ### Build → Verify: ✓ VALID
-- `go build ./...` passes (both repos)
-- `go test ./...` passes (14 runner tests + all existing)
-- Deployed to production, both Fly machines healthy
+- Build passes, 23 tests pass
+- E2E tested: Critic found and reviewed the correct builder commit
+- Bug found and fixed (regex escaping)
 
 ---
 
@@ -23,26 +23,32 @@ All three fixes implemented with tests. Builder ran successfully — picked the 
 
 | Invariant | Status | Reason |
 |-----------|--------|--------|
-| 11 IDENTITY | ✓ Pass | Agent ID used for task filtering. No name-based matching. |
-| 12 VERIFIED | ✓ Pass | 14 tests including 2 new (recency tiebreak). E2E on production. |
-| 13 BOUNDED | ✓ Pass | One-shot mode, budget limit, interval sleep. |
-| 14 EXPLICIT | ✓ Pass | Config struct, explicit flag for every behavior. |
+| 12 VERIFIED | ✓ Pass | 9 tests for critic helpers. E2E tested on production. |
+| 13 BOUNDED | ✓ Pass | 24h window, diff truncation at 15KB. |
 
 ---
 
 ## Issues Found
 
-### 1. Missing allowlist entry (caught, fixed)
-The hive's builder missed adding `KindPolicy` to the `intend` op's kind guard. This is the exact kind of bug a **Critic agent** would catch — trace the derivation from "new entity kind" to "all code paths that gate on kind values." The human caught it this time. Phase 2's Critic role should automate this check.
+### 1. Critic PASSed the allowlist miss (medium)
+The Critic reviewed the Policy commit (which was missing `KindPolicy` in the intend allowlist) and returned PASS. The review prompt asks about "ALL relevant guards, allowlists, and switch statements" but the diff only shows what changed — the allowlist line is 400 lines away and not in the diff.
 
-### 2. No tests for Policy entity (noted)
-The iter 223 Critic set a gate: "5th entity kind MUST include handler-level tests." The builder shipped code, but the Critic gate from prior iterations wasn't enforced. This is acceptable for the runtime proof iteration, but the test debt exists.
+**Root cause:** Diff-only review can't catch omission errors in distant code. The Critic sees what was added but doesn't know what SHOULD have been added elsewhere.
 
-### 3. Builder prompt could include CLAUDE.md context
-The builder only gets the role prompt + task description. It doesn't know about coding standards, architecture, or the intend allowlist. Including CLAUDE.md (or a summary) would have caught the allowlist miss.
+**Fix options:**
+- (a) Include the full file context (expensive, blows up prompt)
+- (b) Have the Critic use Operate() to grep for related patterns (slower but accurate)
+- (c) Add entity-specific checklists ("new KindX → check intend allowlist")
+
+Option (b) is the right long-term answer. Defer to Phase 3.
+
+### 2. No review state persistence (low)
+The Critic has no memory of which commits it has already reviewed. On restart, it re-reviews all commits from the last 24h. Not a problem at current volume but will waste money when the builder ships multiple commits per day.
+
+**Fix:** Track reviewed commit hashes in a file or via API comments.
 
 ---
 
 ## Verdict: PASS
 
-The runtime ships code. The builder produced correct, pattern-following code in 2m49s for $0.53. The one miss (allowlist entry) is exactly what the Critic role is designed to catch. Phase 2 priority confirmed: Critic role first, then Monitor.
+The Critic infrastructure works. It finds builder commits, reviews them via Reason(), and can create fix tasks. The diff-only limitation (issue 1) is a known design tradeoff — the Critic catches syntax/pattern errors but not omission errors in distant code. This is exactly the class of bug the human caught in iter 225. Upgrading to Operate()-based review (Phase 3) will close this gap.

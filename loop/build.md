@@ -1,59 +1,50 @@
-# Build Report — Iteration 225: Builder Ships Code to Production
+# Build Report — Iteration 226: Critic Role
 
 ## What This Iteration Does
 
-Fixes 3 critique issues from iter 224, then runs the builder on a real coding task. The hive ships its first autonomous code commit to production.
+Implements the Critic role for the hive runtime (Phase 2, item 9 from hive-runtime-spec.md). The Critic reviews builder commits automatically, creating fix tasks when issues are found.
 
-## Runner Fixes
+## Files Changed
 
-### 1. Removed double role prompt
-Provider no longer gets `SystemPrompt: rolePrompt`. Role prompt is only in the instruction (where it has task context). Saves ~500 tokens per call.
+| File | Lines | What |
+|------|-------|------|
+| `pkg/runner/critic.go` | 170 | New. Critic role: find unreviewed builder commits, review diffs via Reason(), create fix tasks on REVISE. |
+| `pkg/runner/critic_test.go` | 65 | New. 9 tests: parseVerdict, extractIssues, buildReviewPrompt. |
+| `pkg/runner/runner.go` | -5 | Removed critic stub (now in critic.go). |
 
-### 2. Recency tiebreak in task selection
-`pickHighestPriority` now tiebreaks by `created_at` descending when tasks share the same priority. Newest tasks are preferred — most likely to be fresh assignments, not stale work.
+## How It Works
 
-### 3. Changes-required guard
-After ACTION: DONE, builder checks `git status --porcelain`. If no files changed, the task stays in-progress with a comment explaining the issue. Prevents hollow completions.
+1. **Every 4th tick** (~60s), Critic runs `git log --grep=\[hive:builder\]` for commits in the last 24h
+2. For each unreviewed commit, gets the diff via `git diff hash~1..hash`
+3. Calls `Reason()` (no tools, haiku model) with the diff + review checklist
+4. Parses `VERDICT: PASS` or `VERDICT: REVISE` from the response
+5. On REVISE: creates a fix task on the lovyou.ai board
+6. On PASS: logs and moves on
 
-### 4. Extracted `hasUncommittedChanges()` helper
-Factored git status check out of `commitAndPush` into reusable helper.
+## Review Checklist (sent to LLM)
 
-## Builder E2E Result
+1. **Completeness** — new constant/kind present in ALL guards and allowlists?
+2. **Identity (invariant 11)** — IDs for matching, not names?
+3. **Bounded (invariant 13)** — queries have LIMIT?
+4. **Correctness** — injection, races, nil handling?
+5. **Tests** — flagged but not REVISE-blocking (known systemic issue)
 
+## E2E Test Results
+
+**Run 1 (bug):** Unescaped regex brackets in `git --grep` matched 54 commits instead of 1. Fixed.
+
+**Run 2 (correct):**
 ```
-[builder] working task 61f38992: Add Policy entity kind to the site
-  ⏳ working done (2m49s)
-[builder] Operate done (cost=$0.5325, tokens=31+7912)
-[builder] action: DONE
-[builder] committed and pushed: [hive:builder] Add Policy entity kind to the site
-[builder] task 61f38992 DONE
+[critic] tick 4: found 1 unreviewed commits
+[critic] reviewing 31f3349ca8b6: [hive:builder] Add Policy entity kind to the site
+  ⏳ thinking done (1m16s)
+[critic] review done (cost=$0.1631)
+[critic] verdict: PASS
 ```
 
-**2m49s. $0.53. One Operate call. Real code committed and pushed.**
-
-## Hive's Code Changes (autonomous)
-
-| File | What |
-|------|------|
-| `site/graph/store.go` | `KindPolicy = "policy"` constant |
-| `site/graph/handlers.go` | `handlePolicies` handler (34 lines) |
-| `site/graph/views.templ` | `policiesIcon()`, sidebar + mobile nav, `PoliciesView` template (81 lines) |
-| `site/graph/views_templ.go` | Generated |
-
-## Human Fix (Critic catch)
-
-The builder missed adding `KindPolicy` to the `intend` op's kind allowlist (line 1487 of handlers.go). Without this, creating a policy via the API would fall through to KindTask. Fixed manually and deployed.
-
-## Files Changed (hive repo)
-
-| File | What |
-|------|------|
-| `cmd/hive/main.go` | Removed SystemPrompt from provider config |
-| `pkg/runner/runner.go` | Recency tiebreak, changes-required guard, hasUncommittedChanges helper |
-| `pkg/runner/runner_test.go` | 2 new tests (recency tiebreak, priority-beats-recency) |
+1 commit found, 1m16s review time, $0.16 cost. Correct commit identified and reviewed.
 
 ## Build
 
-- `go build ./...` ✓ (hive + site)
-- `go test ./...` ✓ (14 runner tests + all existing)
-- `flyctl deploy --remote-only` ✓ — Policy entity live on lovyou.ai
+- `go build ./...` ✓
+- `go test ./...` ✓ (23 tests: 9 critic + 14 existing)

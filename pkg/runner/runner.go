@@ -396,11 +396,7 @@ func (r *Runner) runScout(ctx context.Context) {
 	}
 }
 
-func (r *Runner) runCritic(ctx context.Context) {
-	if r.tick%4 == 0 {
-		log.Printf("[critic] tick %d: reviewing (not yet implemented)", r.tick)
-	}
-}
+// runCritic is in critic.go
 
 func (r *Runner) runMonitor(ctx context.Context) {
 	if r.tick%4 == 0 {
