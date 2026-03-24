@@ -2,7 +2,7 @@
 
 Living document. Updated by the Reflector each iteration. Read by the Scout first.
 
-Last updated: Iteration 199, 2026-03-24.
+Last updated: Iteration 200, 2026-03-24.
 
 ## Current System State
 
@@ -184,7 +184,10 @@ Deploy: `fly deploy --remote-only` from site repo.
 **Social layer Phases 1-3 COMPLETE.** 16 iterations (183-198). Chat Foundation + Square mode + Feed composition + engagement bar everywhere.
 - **Test debt paydown** (199): 6 new test functions covering follows, reposts, quote posts, message search, bulk endorsements, parseMessageSearch.
 
-**20 test functions in store_test.go, 5 in handlers_test.go.** Next: Work depth (from work-spec.md + work-product-spec.md).
+**20 test functions in store_test.go, 5 in handlers_test.go.**
+- **Work Depth** (200): Task List view — sortable table with Board/List toggle. Priority/state/due/assignee/created sort. Compact rows for power users.
+
+**Work depth in progress.** Board + List views. 6 of 12 ops. Remaining ops: claim, prioritize, block, unblock, handoff, review. Missing views: Triage, Timeline.
 
 ## What the Scout Should Focus On Next
 

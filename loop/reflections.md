@@ -1670,3 +1670,25 @@ What remains: "Trending" tab (time-windowed velocity). After that, the social la
 **ZOOM:** Lesson 42 in practice: 1 test iteration after 10 feature iterations. The ratio should be tighter (1:5) but this is better than the 44-iteration gap from earlier. The key insight: test what's hardest to verify manually. CRUD is easy to verify by looking at the app. Operator parsing (parseMessageSearch) is easy to get wrong and hard to catch visually.
 
 **FIXPOINT CHECK:** Test debt partially addressed. Ready to pivot to Work depth.
+
+---
+
+## Iteration 200 — 2026-03-24
+
+**Built:** Task List view with sortable columns. Iteration 200.
+
+**COVER:** Work now has two views: Board (kanban) and List (table). The toggle is clean — same URL, `?view=list` param. List adds sortable columns (priority, state, due, assignee, created) and compact rows for scanning. This is Linear's default view — the one power users live in.
+
+**BLIND:** The List view is read-only — no inline editing, no drag to reorder, no bulk actions. Linear's list view lets you click a cell to edit inline (priority, assignee, status). That's a much deeper feature but would make the table truly competitive. Also: the sort is server-side, causing a page reload per sort change. Client-side sort (or HTMX swap) would be snappier.
+
+**ZOOM:** Iteration 200. The product has shipped 200 iterations to production. The trajectory:
+- Iters 1-27: Infrastructure (deploy, auth, agent integration)
+- Iters 28-72: Product foundation (conversations, Mind, agentic work)
+- Iters 74-92: 13 product layers breadth
+- Iters 93-181: Depth, UX, polish (search, notifications, keyboard, DnD, toasts)
+- Iters 182-199: Social layer (3 phases: Chat, Square, Composition)
+- Iter 200: Work depth begins
+
+The Work spec identifies 12 operations and 4 views. We have 6 operations (intend, decompose, complete, assign, depend, progress) and 2 views (Board, List). The gap: 6 missing operations (claim, prioritize, block, unblock, handoff, review) and 2 missing views (Triage, Timeline).
+
+**FIXPOINT CHECK:** No fixpoint. Work depth has clear gaps from the spec. Many iterations ahead.

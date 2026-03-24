@@ -1,20 +1,25 @@
-# Build Report — Iteration 199
+# Build Report — Iteration 200
 
-## Test Debt Paydown
+## Task List View (Work Depth)
 
-**6 new test functions** covering the Social layer sprint (iters 189-198):
+**Handler:**
+- Board handler: reads `?view=list` query param, branches to list rendering
+- `sortTasks(tasks, sortBy)` — sorts by priority/due/created/state/assignee
+- `priorityRank()` and `stateRank()` helpers for sort ordering
+- Default sort: priority then created (urgent first, newest within same priority)
 
-| Test | What | Type |
-|------|------|------|
-| `TestFollows` | Follow/Unfollow/IsFollowing/CountFollowers/CountFollowing/ListFollowedIDs | Store (DB) |
-| `TestReposts` | Repost/Unrepost/HasReposted/GetBulkRepostCounts/GetBulkUserReposts | Store (DB) |
-| `TestQuotePost` | CreateNode with QuoteOfID, GetNode resolves quote_of_author/title/body | Store (DB) |
-| `TestMessageSearch` | SearchMessages body filter, from: filter, no-match case | Store (DB) |
-| `TestBulkEndorsements` | GetBulkEndorsementCounts, GetBulkUserEndorsements on posts (not users) | Store (DB) |
-| `TestParseMessageSearch` | Pure function: operator parsing, 6 cases | Handler (no DB) |
+**Template:**
+- `ListView` — full table view with sortable column headers
+- Columns: State (badge), Priority (dot), Title (link), Assignee (avatar + name), Due (red if overdue), Subtasks (done/total)
+- Column headers link to `?view=list&sort=X` for server-side sorting
+- Board/List toggle pills at top of both views
+- Search + filter preserved via hidden `view=list` input
 
-**Coverage:** Follows the lesson 42 ratio (1 test iter per ~5 feature iters). Covers the 5 most critical new features. Feed algorithm tests deferred (timing-dependent scoring is hard to assert deterministically).
+**View toggle:**
+- Board view: shows "Board (active) | List" pills
+- List view: shows "Board | List (active)" pills
+- Both use same URL base (`/app/{slug}/board`) with `?view=list` differentiator
 
 **Files changed:**
-- `graph/store_test.go` — 5 new test functions (~200 lines)
-- `graph/handlers_test.go` — `TestParseMessageSearch` (~25 lines)
+- `graph/handlers.go` — list branch, sortTasks, priorityRank, stateRank (added `sort` import)
+- `graph/views.templ` — ListView template, Board/List toggle on BoardView
