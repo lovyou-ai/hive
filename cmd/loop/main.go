@@ -492,7 +492,13 @@ func runAgent(agent, prompt string, needsTools bool, siteRepo string) (string, e
 	if sessionID != "" {
 		// Resume existing session — agent already has CONTEXT, METHOD, and role prompt.
 		fmt.Fprintf(os.Stderr, "  Resuming session for %s\n", agent)
-		args = []string{"--resume", sessionID, "--print"}
+		if sessionID == "__continue__" {
+			// Tool agent: use --continue (resumes most recent session in the dir)
+			args = []string{"--continue", "--print"}
+		} else {
+			// Non-tool agent: use --resume with UUID
+			args = []string{"--resume", sessionID, "--print"}
+		}
 		message = "New iteration. Execute your role with the following context:\n\n" + extractPhaseContext(prompt)
 	} else {
 		// First run — write system prompt to temp file.
@@ -510,9 +516,21 @@ func runAgent(agent, prompt string, needsTools bool, siteRepo string) (string, e
 		message = "You are now initialized. Execute your role. Produce the required artifacts."
 	}
 
-	// For first run, use --output-format json to capture session_id.
+	// Tool-using agents need broader permissions and directory access.
+	if needsTools {
+		absRepo, _ := filepath.Abs(siteRepo)
+		absHive, _ := filepath.Abs(".")
+		args = append(args,
+			"--permission-mode", "bypassPermissions",
+			"--add-dir", absRepo,
+			"--add-dir", absHive,
+		)
+	}
+
+	// For first run of NON-tool agents, use --output-format json to capture session_id.
+	// Tool agents skip json format because it may interfere with tool execution.
 	isFirstRun := sessionID == ""
-	if isFirstRun {
+	if isFirstRun && !needsTools {
 		args = append(args, "--output-format", "json")
 	}
 
@@ -532,16 +550,25 @@ func runAgent(agent, prompt string, needsTools bool, siteRepo string) (string, e
 
 	result := string(output)
 
-	// On first run, parse the JSON to extract session_id and the actual text response.
+	// On first run, capture the session ID for future --resume.
 	if isFirstRun {
-		var jsonResp struct {
-			SessionID string `json:"session_id"`
-			Result    string `json:"result"`
-		}
-		if json.Unmarshal(output, &jsonResp) == nil && jsonResp.SessionID != "" {
-			saveSessionID(agent, jsonResp.SessionID)
-			fmt.Fprintf(os.Stderr, "  Session created: %s\n", jsonResp.SessionID[:8])
-			result = jsonResp.Result
+		if needsTools {
+			// Tool agents: we can't capture UUID from json output (it breaks tools).
+			// Save the session name — we'll use --resume with name search later.
+			// For now, mark as "needs-name-lookup" and use --continue on next run.
+			saveSessionID(agent, "__continue__")
+			fmt.Fprintf(os.Stderr, "  Session created (tool agent, will use --continue)\n")
+		} else {
+			// Non-tool agents: parse JSON to get session UUID.
+			var jsonResp struct {
+				SessionID string `json:"session_id"`
+				Result    string `json:"result"`
+			}
+			if json.Unmarshal(output, &jsonResp) == nil && jsonResp.SessionID != "" {
+				saveSessionID(agent, jsonResp.SessionID)
+				fmt.Fprintf(os.Stderr, "  Session created: %s\n", jsonResp.SessionID[:8])
+				result = jsonResp.Result
+			}
 		}
 	}
 
