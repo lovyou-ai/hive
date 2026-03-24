@@ -1,91 +1,97 @@
 # Unified Ontology
 
-**Everything is organized activity. Work and Social are facets of one thing, not separate products.**
+**Collective existence on a shared graph. Work and Social are peers — neither is subordinate.**
 
-Matt Searles + Claude · March 2026
+Matt Searles + Claude · March 2026 (revised: re-derived from "collective existence," not "organized activity")
 
 ---
 
 ## The Root
 
-The product is not "a task tracker" or "a social network." It's a platform for **purposeful collective activity** at every scale. Activity requires:
+The soul says: "Take care of your human, humanity, and yourself."
 
-- **Actors** (Identity, Bond) — who does it
-- **Structure** (Belonging, Organize) — how they're grouped
-- **Coordination** (Communication) — how they align
-- **Execution** (Work) — what they do
-- **Direction** (Planning, Goals) — why they do it
-- **Control** (Governance, Justice, Moderation) — what constrains it
-- **Memory** (Knowledge, Culture) — what's retained
-- **Exchange** (Market, Allocation) — what's traded
-- **Accountability** (Alignment, Transparency) — what's visible
-- **Purpose** (Being, Reflection) — what it's for
+That's not a productivity mandate. It's an existence mandate. The product supports **collective existence** — beings (human and agent) existing together, in all the ways that entails. Sometimes that means organizing work. Sometimes it means chatting with friends. Sometimes it means governing a community. Sometimes it means playing. None of these is subordinate to the others.
 
-Every one of these is a facet of one phenomenon, not a separate product. The 13 EventGraph layers are 13 angles on purposeful collective activity.
+The 13 EventGraph layers are 13 facets of collective existence:
+
+- **Existing** (Being, Identity) — I am, I am someone
+- **Connecting** (Bond, Belonging, Social) — I relate to others, I join groups, I communicate
+- **Acting** (Work, Build, Market) — I create, I build, I exchange
+- **Governing** (Governance, Justice, Moderation) — we make rules, resolve disputes, maintain order
+- **Understanding** (Knowledge, Culture, Alignment) — we learn, we remember, we stay accountable
+
+These five aspects are **peers**. A community that only works is a factory. A community that only socializes is a party. A community that only governs is a bureaucracy. Healthy collective existence requires all five in balance.
 
 ---
 
-## Why Work is the Root (or Close to It)
+## Why Work is NOT the Root
 
-Social exists to serve coordination. Coordination exists to serve organized activity. You don't follow someone for its own sake — you follow them because their activity is relevant to yours. You don't endorse a post abstractly — you vouch for its contribution to shared understanding. Every social action has a work context, even when implicit.
+The previous version of this spec (iter 202) claimed Work was the gravitational center. This was wrong. The error:
 
-But Work alone is insufficient. Pure task execution without communication, governance, or knowledge is a factory line. The product's value is that all facets coexist on one graph — the task, the conversation about the task, the policy that governs the task, the knowledge produced by the task, and the people involved are all events on the same chain.
+- "You follow someone because their activity is relevant to yours" — No. Sometimes you follow someone because they're funny, kind, interesting, or a friend. Connection has intrinsic value.
+- "Every social action has a work context" — No. Posting a meme, chatting about your weekend, celebrating a birthday — these are social actions with no work context. They matter because humans are social beings, not because socializing is productive.
+- "Social orbits Work" — No. In a team workspace, maybe. In a community space, Work orbits Social. In a friend group, there is no Work.
 
-**Work is the gravitational center. The other facets orbit it.** Not because they're subordinate, but because purposeful collective activity is the thing that connects them all.
+**The correction:** Work and Social are peers. Both live on the same graph. They share the same grammar ops. They overlap (task discussions are both work and social). They diverge (compliance audits are pure work; birthday celebrations are pure social). The graph doesn't care. A Node is a Node. An Op is an Op.
 
 ---
 
 ## The Derivation Order
 
-From the generator function, applying Decompose to "purposeful collective activity":
+From the generator function, applying Decompose to "collective existence":
 
 ```
 Level 0: Being
-  "I exist, I have purpose"
+  "I exist. I have inner experience."
 
-Level 1: Identity + Bond
-  "I am someone, I relate to others"
+Level 1: Identity
+  "I am someone. I am distinct."
 
-Level 2: Belonging + Organize
-  "I join groups, groups have structure"
+Level 2: Bond + Belonging
+  "I relate to others. I join groups."
 
-Level 3: Communication (Social modes)
-  "I coordinate with others in my groups"
-  Modes: Chat, Rooms, Square, Forum
+Level 3a: Connecting                           Level 3b: Acting
+  "I communicate, share, play."                  "I create, build, organize."
+  Social in all its forms.                       Work in all its forms.
+  Chat, Feed, Threads, Forum.                    Board, Plan, Allocate, Build.
 
-Level 4: Work (Activity modes)
-  "I organize activity toward outcomes with others"
-  Modes: Execute, Organize, Govern, Plan, Learn, Allocate
+Level 4: Governing
+  "We make rules together. We resolve disputes. We hold each other accountable."
+  Governance, Justice, Knowledge.
 
-Level 5: Knowledge + Market + Build
-  "Activity produces artifacts, exchanges value, builds tools"
-
-Level 6: Alignment + Culture + Justice
-  "Activity requires transparency, norms, and dispute resolution"
+Level 5: Alignment + Culture
+  "We stay transparent. We develop shared norms."
 ```
 
-This isn't a build order — it's a dependency order. You can't do Work (L4) without Communication (L3). You can't Communicate without Belonging (L2). But in practice, you build them interwoven.
+**Levels 3a and 3b are peers, not sequential.** You don't need Work to Communicate, and you don't need Communication to Work (though both are better together). They emerge from the same foundation (Identity, Bond, Belonging) in parallel.
 
 ---
 
-## Merged Mode Set
+## The Ten Modes
 
-Work has 6 modes. Social has 4 modes. But they're not separate — they're all modes of organized activity:
+Not "Work modes" and "Social modes." Modes of collective existence:
 
-| Mode | What it does | Source | Primary layer facets |
+| Mode | What it does | Aspect | Primary layer facets |
 |------|-------------|--------|---------------------|
-| **Execute** | Do the work | Work | Work, Build |
-| **Chat** | Real-time coordination | Social | Social, Bond |
-| **Rooms** | Persistent group communication | Social | Social, Belonging |
-| **Square** | Public broadcast + engagement | Social | Social, Identity, Market |
-| **Forum** | Threaded discussion + quality | Social | Social, Knowledge |
-| **Organize** | Structure people + groups | Work | Belonging, Identity, Bond |
-| **Govern** | Policies, approvals, compliance | Work | Governance, Justice, Moderation |
-| **Plan** | Goals, roadmaps, direction | Work | Work, Alignment |
-| **Learn** | Retrospectives, knowledge capture | Work | Knowledge, Being, Culture |
-| **Allocate** | Budgets, resources, capacity | Work | Market, Work |
+| **Board** | Execute tasks and projects | Acting | Work, Build |
+| **Chat** | Real-time conversation | Connecting | Social, Bond |
+| **Feed** | Broadcast, share, engage | Connecting | Social, Identity |
+| **Threads** | Threaded discussion | Connecting | Social, Knowledge |
+| **People** | See who's here | Connecting | Identity, Bond, Belonging |
+| **Knowledge** | Claims, evidence, learning | Understanding | Knowledge, Culture |
+| **Governance** | Proposals, voting, policies | Governing | Governance, Justice |
+| **Build** | Changelog, development | Acting | Build, Work |
+| **Activity** | Transparent audit trail | Understanding | Alignment |
+| **Settings** | Configure the space | — | — |
 
-**10 modes total.** Each mode is a lens on the same graph. A space can use any combination. A solo dev uses Execute + Chat. A Fortune 500 uses all 10.
+**No hierarchy.** A friend group uses Chat + Feed. A dev team uses Board + Chat + Build. A company uses all ten. A community uses Feed + Threads + Governance. The space determines which modes matter, not the product.
+
+**Future modes** (from the specs, not yet built):
+- **Organize** — org chart, teams, roles, directory
+- **Plan** — goals, OKRs, roadmaps
+- **Allocate** — budgets, resources, capacity
+- **Rooms** — persistent Discord-like channels
+- **Forum** — Reddit-like threaded discussion with quality signals
 
 ---
 

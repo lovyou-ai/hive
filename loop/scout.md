@@ -1,43 +1,11 @@
-# Scout Report — Iteration 203
+# Scout Report — Iteration 204
 
-## Gap: Sidebar still presents Work and Social as separate products
+## Gap: Ontology rooted in "organized activity" — wrong root
 
-**Source:** unified-spec.md — "Not 'Work' and 'Social' as separate sections. Instead, the sidebar presents available modes."
+**The problem:** The unified spec (iter 202) claimed Work is the gravitational center. The sidebar (iter 203) grouped everything as Execute/Communicate/Govern — implying all activity serves productivity. But chatting with friends isn't work. Posting memes isn't organized activity. Community, play, connection exist independently.
 
-**Current state:** Sidebar has "Work" (→ Board) then expandable "Social" (→ Feed/Threads/Chat/People) then Knowledge, Governance, Build, Transparency, Settings. This framing says "here are two products." The unified ontology says they're all modes of one thing.
+**The correct root:** The soul says "take care of your human, humanity, and yourself." That's not a work mandate — it's an existence mandate. The root is **collective existence**, not organized activity. Work is one aspect. Social connection is another. Neither is subordinate.
 
-**What's needed:** Reorganize sidebar into modes of organized activity. Group by purpose, not by product line.
+**Method:** Re-derive from "collective existence" using the generator function. Update the unified spec. Fix the sidebar to not impose a productivity framing.
 
-**Proposed sidebar:**
-```
-My Work (dashboard)
-
-Activity:
-  Execute (Board/List)
-  Chat
-  Feed
-  Threads
-  Forum (future)
-
-Structure: (future — when org entities exist)
-  Teams
-  Roles
-  Policies
-  Goals
-
-Knowledge:
-  Knowledge
-  Build (changelog)
-
-Governance:
-  Governance
-
-Transparency:
-  Activity
-
-Settings
-```
-
-**Simpler first step:** Remove the Work/Social division. Make all modes top-level under one "Modes" or unlabeled nav section. Keep existing routes — just reorganize the sidebar.
-
-**Risk:** Low. Template-only change. No handler/store changes. No route changes.
+**Output:** Updated unified-spec.md + sidebar fix.
