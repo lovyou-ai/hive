@@ -1,23 +1,25 @@
-# Scout Report — Iteration 195
+# Scout Report — Iteration 196
 
-## Gap: Endorsement-weighted feed ("For You" tab)
+## Gap: Repost attribution on Following feed
 
-**Source:** social-spec.md SquareMode — "For You" tab. Phase 3 composition.
+**Source:** social-spec.md PostCard — "↻ reposted_by.name reposted" header. Phase 3 composition.
 
-**Current state:** Feed has All and Following tabs. Both sort by `pinned DESC, created_at` (chronological). Endorsements exist but don't affect visibility or ranking.
+**Current state:** Following feed includes posts reposted by followed users, but doesn't show WHO reposted them. Posts appear as if they're regular feed items — no context for why you're seeing them.
 
 **What's needed:**
-1. A "For You" tab that ranks posts by engagement signals (endorsements, reposts, replies)
-2. Scoring: endorsement_count as primary signal, with reply count and repost count as secondary, time decay so old posts don't dominate
-3. Tab pill added to the existing All / Following row
+1. Handler: when building the Following feed, track which posts were included via repost (not direct authorship)
+2. Store: resolve reposter names for those posts (who among the followed users reposted this?)
+3. Template: "↻ username reposted" header above the FeedCard when attribution exists
 
-**Why this:** Endorsement is our differentiator (Code Graph primitive). Making it the ranking signal means endorsing a post actually does something — it makes the post more visible. This is the first time a Code Graph primitive directly affects the user experience beyond a counter.
+**From the spec:**
+```
+if post.reposted_by {
+    Layout(row, gap: xs, class: "text-xs text-muted mb-1", [
+      Display("↻"), Display(post.reposted_by.name + " reposted")
+    ])
+}
+```
 
-**Approach:**
-- SQL scoring: `(endorsement_count * 3 + repost_count * 2 + reply_count) + recency_days_bonus`
-- Recency bonus: posts < 7 days old get `(7 - days_old)` added to score
-- New store method: `ListPostsByEngagement(spaceID, limit)` with the scoring ORDER BY
-- Handler: when `tab=foryou`, use the engagement-sorted query
-- Template: add "For You" tab pill
+**Approach:** In the Following filter, build a `repostedBy map[string]string` (nodeID → reposter name). Pass it through FeedView to FeedCard. When set, render the attribution header. Use ResolveUserNames to get display names from IDs.
 
-**Risk:** Low. One new store method, one handler branch, one template pill. The scoring formula can be tuned later.
+**Risk:** Low. Handler logic + template addition. No schema changes. No new store methods needed beyond existing ones.

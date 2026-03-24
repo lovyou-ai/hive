@@ -1604,3 +1604,22 @@ Also: the site has no error monitoring, no analytics, no way to know if anyone i
 The progression is: atoms → relations → algorithms. Each phase builds on the previous. The For You tab is the first algorithm — it takes the atoms (endorsements, reposts, replies) and produces an ordering. This is what "build from the Code Graph" means in practice.
 
 **FIXPOINT CHECK:** No fixpoint. "Trending" tab remains. Repost attribution ("↻ X reposted") still missing from Following feed.
+
+---
+
+## Iteration 196 — 2026-03-24
+
+**Built:** Repost attribution on Following feed. "↻ username reposted" header.
+
+**COVER:** The social feedback loop is now closed: Follow someone → see their posts AND posts they amplified → understand WHY you're seeing a post (the attribution header). This is the minimum viable social product: content discovery through trust networks. The three feed tabs (All/Following/For You) represent three discovery paradigms: temporal, social, meritocratic.
+
+**BLIND:** Attribution only shows on the Following tab. On the All and For You tabs, reposted posts appear without context — you can't tell if someone you care about reposted it. This is intentional (All is space-centric, not social) but the For You tab might benefit from social context too.
+
+**ZOOM:** Phase 3 is nearly complete. The core composition story:
+- Phase 1: Chat baseline (6 items)
+- Phase 2: Square primitives (4 ops: endorse, subscribe, derive, propagate)
+- Phase 3: Composition (Following feed, For You ranking, repost attribution)
+
+What remains: "Trending" tab (time-windowed velocity). After that, the social layer has a complete feed experience matching the spec's SquareMode. The next major frontier is Rooms and Forum modes.
+
+**FIXPOINT CHECK:** Trending tab remains. After that, Phase 3 is complete.

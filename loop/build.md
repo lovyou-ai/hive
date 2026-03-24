@@ -1,28 +1,23 @@
-# Build Report — Iteration 195
+# Build Report — Iteration 196
 
-## For You Feed (Endorsement-Weighted Ranking)
+## Repost Attribution
 
 **Store:**
-- `ListPostsByEngagement(spaceID, limit)` — new query with engagement scoring
-- Score formula: `endorsements * 3 + reposts * 2 + replies + GREATEST(0, 7 - days_old)`
-- ORDER BY score DESC, created_at DESC (tiebreaker)
-- Same full Node scan (28 columns) as ListNodes for consistency
+- `GetRepostAttribution(userIDs, nodeIDs) map[string]string` — for each node, returns the user ID of the most recent reposter from the given user set. Uses `DISTINCT ON (node_id)` with `ORDER BY created_at DESC`.
 
 **Handler:**
-- Feed handler: when `tab=foryou` (and no search query), uses engagement-sorted query
-- Falls back to chronological ListNodes for search queries on For You tab
+- Following filter: after filtering posts, identifies which posts are in the feed via repost (not direct authorship)
+- Calls `GetRepostAttribution` to find which followed user reposted each
+- Resolves reposter IDs to display names via `ResolveUserNames`
+- Passes `repostedBy map[string]string` (nodeID → display name) to FeedView
 
 **Template:**
-- "For You" tab pill added between Following and the search bar
-- Same pill styling as All/Following (brand active, edge inactive)
-
-**Scoring rationale:**
-- Endorsements weighted 3x (our unique signal — quality/trust)
-- Reposts weighted 2x (propagation signal)
-- Replies weighted 1x (engagement signal)
-- Recency bonus: up to 7 points for posts < 7 days old, preventing stale content from dominating
+- `FeedView`: accepts `repostedBy map[string]string`
+- `FeedCard`: accepts `repostedByName string`
+- When `repostedByName != ""`, renders "↻ username reposted" header above the card (before pin indicator)
+- Uses the same ↻ arrows SVG as the repost button, 10px text, warm-faint color
 
 **Files changed:**
-- `graph/store.go` — `ListPostsByEngagement`
-- `graph/handlers.go` — foryou tab branch
-- `graph/views.templ` — For You tab pill
+- `graph/store.go` — `GetRepostAttribution`
+- `graph/handlers.go` — attribution logic in Following filter, FeedView call
+- `graph/views.templ` — FeedView, FeedCard signatures + attribution header

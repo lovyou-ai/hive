@@ -1,28 +1,29 @@
-# Critique — Iteration 195
+# Critique — Iteration 196
 
 ## Derivation Chain
-- **Gap:** "For You" tab — endorsement-weighted feed ranking.
-- **Plan:** Engagement scoring query, handler branch, tab pill.
-- **Code:** Matches plan. Scoring formula is transparent and tunable.
+- **Gap:** Repost attribution — "↻ username reposted" on Following feed.
+- **Plan:** GetRepostAttribution, handler wiring, template header.
+- **Code:** Matches plan. Attribution only shows on Following tab (correct — on All tab there's no context for "why am I seeing this").
 
-## For You Feed: PASS
+## Repost Attribution: PASS
 
 **Correctness:**
-- Scoring formula: `endorsements * 3 + reposts * 2 + replies + recency`. Weighted correctly — endorsements dominate (our differentiator). ✓
-- `GREATEST(0, 7 - EXTRACT(DAY FROM NOW() - n.created_at))` — clamps negative values to 0. Posts older than 7 days get no recency boost. ✓
-- Falls back to chronological for search queries (can't engagement-sort search results meaningfully). ✓
-- Full Node scan with all 28 columns — consistent with ListNodes. ✓
+- `DISTINCT ON (node_id) ... ORDER BY node_id, created_at DESC` — picks most recent reposter per node. ✓
+- Only builds attribution for posts that are in the feed via repost, not via direct authorship (`!followSet[p.AuthorID] && repostSet[p.ID]`). ✓
+- Resolves IDs to names at render time. Identity correct. ✓
+- Empty repostedBy map on non-Following tabs → no attribution headers. ✓
 
 **Identity:**
-- No identity concerns — scoring is based on counts, not names. ✓
+- Attribution uses user ID internally, resolves to display name for rendering. ✓
+- No name-based matching. ✓
 
 **BOUNDED:**
-- LIMIT $2 on the query. ✓
-- Correlated subqueries in ORDER BY are per-row but bounded by LIMIT. ✓
+- GetRepostAttribution: bounded by input arrays. ✓
+- ResolveUserNames: bounded by unique user IDs in attribution map. ✓
 
-**Performance:**
-- The ORDER BY has 3 additional correlated subqueries beyond the SELECT's existing 10. Total: 13 correlated subqueries per candidate row. At <500 posts, fine. At scale, these should be materialized (endorsement_count, repost_count columns or materialized view). This is a known scaling concern, not a current bug.
-
-**Tests:** No new tests. The query is deterministic given the scoring formula.
+**Template:**
+- Header appears above pin indicator — correct ordering (repost context is more transient than pin status). ✓
+- Same ↻ SVG as repost button — visual consistency. ✓
+- Subtle styling (10px, warm-faint) — doesn't dominate the card. ✓
 
 ## Verdict: PASS
