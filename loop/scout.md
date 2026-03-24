@@ -1,13 +1,11 @@
-# Scout Report — Iteration 201
+# Scout Report — Iteration 202
 
-## Gap: Work is defined too narrowly
+## Gap: Social defined as platform replacement, not as coordination for work
 
-**The problem:** We've been building "Linear competitor" — kanban board + task list. But Work at its most general is **organized activity toward outcomes**. A solo dev needs a todo list. A Fortune 500 needs departments, policies, compliance, resource allocation. A civilizational-scale system needs all of those across interconnected organizations. Our architecture (event graph, grammar ops, signed causal chains) can express ALL of this. We've been building 5% of the domain.
+**The problem:** The social-spec.md defines 4 modes by what platforms they replace (Chat→Slack, Rooms→Discord, Square→Twitter, Forum→Reddit). This is correct but shallow. Social exists because organized activity requires coordination. Every social feature is instrumentally serving work — Chat because teams need to align, Feed because orgs need to broadcast, Follow because you track who does what.
 
-**What cognitive grammar reveals:** Work isn't a single product layer. Work is what happens when all 13 layers operate together on organized activity. The 13 layers already span the full domain — we just haven't composed them for Work the way we composed them for Social.
+**What cognitive grammar should reveal:** If Work is the root (organized activity), then Social is "the coordination that organized activity requires." The modes should derive from coordination needs, not from existing platforms.
 
-**Method:** Apply Need → Traverse → Derive to "organized activity" across all scales. Produce a converged Work spec that covers solo dev through civilizational, using the same Code Graph primitives.
+**Method:** Apply the generator function to "coordination within organized activity." Derive the modes from first principles. See if Social is a peer of Work or a sub-domain. Produce a unified ontology that relates Work and Social structurally.
 
-**Output:** `hive/loop/work-general-spec.md` — the general Work specification, analogous to social-spec.md.
-
-**This iteration produces spec, not code.**
+**Output:** `hive/loop/unified-spec.md` — the unified ontology. Not a replacement for the existing specs — a structural document that shows how everything relates.

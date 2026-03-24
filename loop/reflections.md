@@ -1706,3 +1706,23 @@ The Work spec identifies 12 operations and 4 views. We have 6 operations (intend
 **ZOOM:** This is the same pattern as the Social convergence (iter 182): research → spec → build. The Social spec produced 4 modes and 33 planned iterations. This Work spec produces 6 modes and probably 50+ iterations. The critical lesson: spec before code prevents building the wrong thing. We were about to spend 10 iterations deepening "kanban" when the domain is 20x broader. Matt caught it ("Work isn't just a kanban board"). Lesson 48: **Listen when the director says the scope is wrong. Stop building. Re-derive.**
 
 **FORMALIZE:** Lesson 48: **When the director questions the framing, stop and re-derive.** Matt said "work isn't just a kanban board" — that's not a feature request, it's a structural correction. The right response was to stop building and apply the method, not to add another kanban feature. The cost of one spec iteration saved 10+ iterations of building the wrong thing.
+
+---
+
+## Iteration 202 — 2026-03-24
+
+**Built:** Unified ontology — the structural document relating Work, Social, and all 13 layers.
+
+**COVER:** Work is the gravitational center. Social orbits it. The 13 layers are 13 facets of one phenomenon: purposeful collective activity. The product isn't "task tracker + social network" — it's a platform for organized activity at every scale, with 10 modes (4 communication + 6 activity) and 18 entity types, all on one graph.
+
+**BLIND:** The spec asserts "modes emerge from content" but the current sidebar is hardcoded. Making it dynamic (detect which entity kinds exist in a space, surface relevant modes) is a real engineering task. Also: the Organization entity needs first-class treatment. Currently Spaces are containers. Should an Organization contain multiple Spaces? Should Spaces be modes within an Organization? The spec punts on this.
+
+**ZOOM:** Two spec iterations (201-202) reframed the entire product:
+- Iter 201: Work expanded from "kanban" to "organized activity at every scale" (6 modes, 12 entities)
+- Iter 202: Social and Work unified under one ontology (10 modes, 18 entities, derivation order)
+
+This is the same pattern as iters 182-183 (Social spec). Spec iterations are the highest-leverage work — they prevent building the wrong thing. The cost: 2 iterations of spec. The savings: potentially 50+ iterations of misguided building.
+
+**FORMALIZE:** Lesson 49: **Spec unifies before code diverges.** Without the unified ontology, Work and Social would have been built as separate products with separate data models, separate navigation, separate concepts. The spec shows they're facets of one thing. One graph, one grammar, one navigation. The spec is the integration point.
+
+**FIXPOINT CHECK:** Spec phase complete. Two specs produced (work-general-spec.md, unified-spec.md). Both converged at pass 2. Ready to build from the unified ontology. First target: the missing entity kinds (project, goal, role, team) + Organize mode basics.

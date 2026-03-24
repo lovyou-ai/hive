@@ -1,21 +1,23 @@
-# Build Report — Iteration 201
+# Build Report — Iteration 202
 
-## Work General Specification
+## Unified Ontology
 
-**Output:** `hive/loop/work-general-spec.md`
+**Output:** `hive/loop/unified-spec.md`
 
-**Method:** Applied cognitive grammar (Distinguish → Relate → Select → Compose) to "organized activity toward outcomes" across all scales: solo dev → small team → mid-size company → enterprise → civilizational.
+**Method:** Applied the generator function to "purposeful collective activity" — the root concept that Work and Social are both facets of. Derived the structural relationship between all 13 layers, 10 modes, and 18 entity types.
 
 **Key findings:**
 
-1. **12 entity types** (not just tasks): Task, Project, Goal, Role, Team, Department, Policy, Process, Decision, Resource, Document, Organization. All are Nodes with different kinds. No new tables needed.
+1. **Work is the gravitational center.** Social exists to coordinate activity. Knowledge exists to support it. Governance exists to control it. Market exists to exchange it. They orbit Work.
 
-2. **6 modes of work** (not just Execute): Execute (do it), Organize (structure it), Govern (control it), Plan (direct it), Learn (improve it), Allocate (resource it). Scale determines which modes you use.
+2. **10 modes, not "Work" + "Social."** Execute, Chat, Rooms, Square, Forum, Organize, Govern, Plan, Learn, Allocate. All modes of organized activity.
 
-3. **Grammar ops are universal.** Intend creates a task OR a policy OR a goal. Review approves work OR audits compliance. Consent votes on proposals OR approves budgets. The mechanism is the same; the mode determines semantics.
+3. **18 entity types.** Tasks through Organizations. All are Nodes. The grammar ops apply uniformly.
 
-4. **Architecture already supports this.** No new schema. Every entity is a Node. Every mutation is an Op. The work is in UI modes and entity kinds, not foundations.
+4. **Modes emerge from content.** No feature gates. When you create a Policy, Govern appears. When you create a Goal, Plan surfaces. Complexity is earned.
 
-5. **Convergence at pass 2.** Existing foothold: Governance lens (Govern), Knowledge lens (Learn), Dashboard (Plan), Membership (Organize). The architecture was designed for this — we just hadn't composed it yet.
+5. **The architecture IS the unified ontology.** The gap is naming and UI organization, not data model. Adding new entity kinds is trivial — create a form, a detail view, a lens.
+
+6. **Derivation order exists.** Being → Identity + Bond → Belonging + Organize → Communication → Work → Knowledge + Market + Build → Alignment + Culture + Justice. Not a build order — a dependency order.
 
 **This iteration produced spec, not code.**
