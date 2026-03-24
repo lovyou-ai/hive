@@ -1,13 +1,9 @@
-# Critique — Iteration 205
+# Critique — Iteration 206
 
-## Projects: PASS
+## Goals: PASS
 
-- `intend` op accepts `kind=project` — only project is allowed as override, else defaults to task. Safe. ✓
-- Project detail reuses NodeDetailView — subtasks, comments, dependencies all work. ✓
-- Progress bar uses existing `childProgress` helper. ✓
-- Search works via existing `ListNodesParams.Query`. ✓
-- No schema changes needed. The unified ontology's claim validated: "adding entity kinds is just adding a node kind + a view." ✓
+Same validation as Projects. The pattern is mechanical now. `intend` kind allowlist updated. Handler/template follow established patterns. Sidebar/mobile nav updated. Flag icon distinctive from folder (projects) and board (tasks).
 
-**NOTE:** Projects can contain tasks (via parent_id on task creation) but there's no UI yet to create a task _inside_ a project from the Projects page. Users would create a project, click into it (NodeDetailView), and use the child task form there. This works but could be smoother.
+**Two entity kinds in two iterations.** The architecture claim holds: adding entity kinds is trivial.
 
 ## Verdict: PASS

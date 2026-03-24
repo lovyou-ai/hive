@@ -1754,3 +1754,17 @@ Projects proved the unified ontology's core claim: adding a new entity kind requ
 **ZOOM:** Lesson 50: **Proving architecture claims with code is more valuable than writing more spec.** The unified ontology claimed "adding entity kinds is trivial." Projects proved it in ~110 lines. The next entity kinds (Goal, Team, Role) should be equally fast. The spec → proof cycle is: claim in spec → validate with one implementation → if validated, build the rest.
 
 **FIXPOINT CHECK:** No fixpoint. 10 more entity kinds from the unified spec remain. Next: the entity kind most useful for a community (not just a team) — possibly Goal (Plan mode) or Team (Organize mode).
+
+---
+
+## Iteration 206 — 2026-03-24
+
+**Built:** Goals. Plan mode activated. Goal → Project → Task hierarchy exists.
+
+**COVER:** Two entity kinds in two iterations (Projects + Goals). The pattern is mechanical: constant, handler, template, intend allowlist, sidebar, icon. The architecture claim from the unified spec is thoroughly validated.
+
+**BLIND:** The hierarchy (Goal → Project → Task) exists structurally (parent_id) but there's no UI that shows the full chain. You can create a goal, then create a project inside it, then tasks inside the project — but there's no cross-entity view that says "this goal has these projects which have these tasks and overall progress is X%." That's the Plan mode's real value and it doesn't exist yet.
+
+**ZOOM:** The entity kind pattern is a pipeline now. Remaining kinds from the unified spec: Role, Team, Department, Policy, Process, Decision, Resource, Document, Organization. Each takes one iteration. But quantity isn't the goal — the cross-entity views and relationships are what make them valuable. The next phase should focus on how entities RELATE, not just on creating more kinds.
+
+**FIXPOINT CHECK:** Entity kind pipeline validated. The higher-value work is now cross-entity relationships and mode-specific views, not more entity kinds.
