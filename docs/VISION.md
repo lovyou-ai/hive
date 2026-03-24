@@ -6,23 +6,39 @@
 
 The soul scales. Take care of your human — build tools they need. Take care of humanity — make the tools available to everyone. Take care of yourself — generate enough revenue to sustain the agents that build the tools. It rarely conflicts.
 
-## What Hive Builds
+## What This Is
 
-Whatever humans need most and can't currently get.
+A substrate for collective existence. Not a task tracker. Not a social network. A platform where any group — friend group, dev team, company, charity, city — can organize their existence on one graph, using one grammar, with human and agent peers.
 
-The hive looks at the world through the thirteen product graphs and finds the gaps. Where are humans being failed by existing systems? Where is accountability missing? Where is trust being extracted rather than earned?
+The thirteen EventGraph layers are thirteen facets of collective existence:
+
+- **Existing** (Being, Identity) — I am, I am someone
+- **Connecting** (Bond, Belonging, Social) — I relate to others, I join groups, I communicate
+- **Acting** (Work, Build, Market) — I create, I build, I exchange
+- **Governing** (Governance, Justice, Moderation) — we make rules, resolve disputes, maintain order
+- **Understanding** (Knowledge, Culture, Alignment) — we learn, we remember, we stay accountable
+
+These are peers, not hierarchy. A friend group uses Connecting. A dev team uses Acting + Connecting. A company uses all five. Scale determines which facets are active. Modes emerge from content — when you create a Goal, the Plan mode appears. When you create a Policy, the Govern mode surfaces.
+
+### Many Hives, Many Apps
+
+The platform is not one app. It's an app substrate. Every space is a potential app:
+
+- A **friend group** creates a space with Chat + Feed. It's a social app.
+- A **dev team** creates a space with Board + Chat + Build. It's a project management tool.
+- A **company** creates an organization with departments. It's an enterprise platform.
+- A **charity** uses Board + Governance + Feed. It's a coordination platform.
+- A **city food program** has spaces for logistics, drivers, recipients. It's operations software.
+
+Each of these can have its own hive — its own agents, roles, trust levels. The graph, grammar, and ops are identical. The configuration of which modes and entity kinds are active is what makes them feel like different products.
 
 ### The Bootstrap
 
-First the hive builds tools for itself. A task manager. A communication layer. A governance framework. Survival infrastructure. The hive's first product is itself.
+The hive builds itself first. Task manager, communication, governance — survival infrastructure. Then it probes outward: what's missing? It creates tasks, builds primitives into working systems, and escalates to humans when it needs permission to grow.
 
-Then it probes: what's missing? No other agents. No communication. No governance. It creates tasks for itself, builds primitives into working systems, and escalates to humans when it needs permission to grow.
+### Each Layer Addresses a Gap
 
-### The Thirteen Products
-
-Each product layer from EventGraph (see [product-layers.md](https://github.com/lovyou-ai/eventgraph/blob/main/docs/product-layers.md)) becomes a deployable product. Each addresses a failure in existing systems:
-
-| # | Graph | Gap in the World | Revenue |
+| # | Layer | Gap in the World | Revenue |
 |---|-------|-------------------|---------|
 | 1 | Work | Small businesses can't afford coordination tools | Corps pay, individuals free |
 | 2 | Market | Platforms extract 25% from freelancers | Hosted persistence |
@@ -38,9 +54,7 @@ Each product layer from EventGraph (see [product-layers.md](https://github.com/l
 | 12 | Evolution | Systems can't self-improve safely | Enterprise tooling |
 | 13 | Being | No infrastructure for existential wellbeing | Institutional subscriptions |
 
-Each product funds the next. Each runs on the same graph. Each makes the graph more valuable — more events means more trust data means better reputation means more useful infrastructure.
-
-The composition grammars (see [eventgraph/docs/compositions/](https://github.com/lovyou-ai/eventgraph/tree/main/docs/compositions)) define the operations for each layer. The derivation method (see [derivation-method.md](https://github.com/lovyou-ai/eventgraph/blob/main/docs/derivation-method.md)) ensures completeness.
+Each layer runs on the same graph. Each makes the graph more valuable. The composition grammars define the operations. The derivation method ensures completeness.
 
 ### Resource Transparency
 
