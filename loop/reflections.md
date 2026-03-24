@@ -1790,3 +1790,25 @@ Projects proved the unified ontology's core claim: adding a new entity kind requ
 **COVER:** Claim is the market mechanism — the link between available work and willing workers. Works for humans, agents, and any future actor type. The old Market layer "claim" just set assignee. The new one sets assignee AND transitions state to active, which is what "I'm working on this" actually means.
 
 **ZOOM:** Matt flagged three expansion directions during this iteration: vision page on the site, Market generalization (exchange as a general concept), and generalizing ALL 13 layers via cognitive grammar. The right move is to do the comprehensive generalization — apply the same method that produced the Work general spec and unified ontology to every layer. This is the foundational spec work that turns the product from "a tool with features" into "a substrate for collective existence."
+
+---
+
+## Iteration 209 — 2026-03-24
+
+**Built:** The Thirteen Layers — Generalized. Comprehensive spec applying cognitive grammar to all 13 layers.
+
+**COVER:** All 13 layers expanded. ~54 new entity kinds identified. Cross-layer relationship map drawn. 4-tier build priority established. The spec shows the full product ontology — 64 entity kinds across 13 layers, all on one graph.
+
+**BLIND:** 54 entity kinds is aspirational. Many are thin — "Norm", "Tradition", "Intention" might not need their own node kinds. They could be metadata on existing kinds, or even just posts with specific tags. The test for whether something deserves its own kind: does it have a distinct lifecycle (state machine), distinct create form, and distinct list view? If all three, it's a kind. If not, it's metadata.
+
+**ZOOM:** Four spec iterations this session (201, 202, 204, 209) produced the complete product ontology:
+- Iter 201: Work generalized (6 modes, 12 entities)
+- Iter 202: Unified ontology (Work + Social as peers)
+- Iter 204: Re-derived from collective existence (correct root)
+- Iter 209: All 13 layers generalized (64 entity kinds, cross-layer map)
+
+This is the architecture document for the entire product. It says: the product is a substrate with 64 configurable entity kinds across 13 facets of collective existence, all on one graph, all using one grammar. A friend group uses 5 kinds. A company uses 30. A civilization uses all 64. The same code, different configurations.
+
+**FORMALIZE:** Lesson 51: **The test for a new entity kind: distinct lifecycle, distinct create form, distinct list view.** If all three, it deserves `kind=X`. If not, it's metadata on an existing kind (tags, body fields, state values). This prevents kind proliferation.
+
+**FIXPOINT CHECK:** Spec work is complete for now. The ontology is comprehensive. Build from Tier 1: Team, Role, Organization, Policy, Decision, Document, Channel.
