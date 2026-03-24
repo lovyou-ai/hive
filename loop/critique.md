@@ -1,38 +1,21 @@
-# Critique — Iterations 182-183
+# Critique — Iteration 185
 
-## Derivation Chain
-- Gap: Code Graph not on /reference → built reference page (182)
-- Gap: No message reactions (Acknowledge op) → built reactions system (183)
-- Spec: Social layer needs 4 modes → wrote formal spec with Code Graph primitives
+## Derivation: PASS
+Scout → Board Phase 1 item 2 → reply-to is structural (used by Chat, Rooms, Forum) → small scope → high visibility.
 
-## Audit
+## Correctness: PASS
+- Column defaults to empty string — backward compatible
+- Correlated subquery resolves author + body at query time — no stale cache
+- Hidden input cleared after send — no accidental reply-to on next message
+- Old markdown-quote hack fully removed
 
-### Correctness: PASS
-- Reactions table has proper compound PK (node_id, user_id, emoji) — prevents duplicate reactions
-- Toggle semantics correct: click to add, click again to remove
-- Bulk reaction loading prevents N+1 queries on conversation load
-- HTMX swap targets use node-specific IDs (rxn-{nodeID}) — no cross-message interference
+## Identity: PASS
+- reply_to_id stores node ID, not text. Invariant 11.
 
-### Breakage: PASS
-- chatMessage/chatMessageCompact signatures changed (added spaceSlug, reactions params)
-- All call sites updated: conversation detail, polling handler, respond op HTMX response
-- Build succeeds, tests pass
+## Simplicity: PASS
+- One column, one form field, one correlated subquery. No new tables. No new endpoints.
 
-### Simplicity: PASS
-- Minimal schema (one table, one index)
-- Three store methods cover all access patterns
-- Quick-react buttons are inline HTMX — no JavaScript frameworks
-- Reaction badges reuse HTMX for toggle — one pattern for add and remove
-
-### Identity: PASS
-- Reactions stored by user_id (not name). Invariant 11 respected.
-- Current user highlighting uses containsStr(r.Users, currentUserID)
-- React op uses actorID from auth context
-
-### Tests: NOTE
-- No new test functions for reactions. Existing graph tests pass.
-- The reactions table + store methods should get handler-level tests. Flag for future test iteration.
+## Tests: NOTE
+- No new test for reply-to. Existing tests pass (no regression). Test debt acknowledged.
 
 ## Verdict: PASS
-
-Minor note: The quick-react emoji set (👍 ❤️ 🔥 👀 ✅ 😂) is hardcoded. In future, this could be configurable per space. Not blocking.

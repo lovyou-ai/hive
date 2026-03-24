@@ -1,33 +1,17 @@
-# Build Report — Iterations 182-183
+# Build Report — Iteration 185
 
-## Iteration 182: Code Graph on /reference
+## Reply-to Linkage
 
-**Gap:** Code Graph spec (65 primitives) not visible on lovyou.ai/reference.
-
-**Built:**
-- Copied codegraph-spec.md from eventgraph/docs to site/content/reference
-- Added embed + LoadCodeGraph() in content/primitives.go
-- Added CodeGraphPage template in views/reference.templ
-- Added GET /reference/code-graph route in main.go
-- Added Code Graph section to reference index (between Agent and Grammars)
-- Updated sitemap with /reference/code-graph
-
-## Iteration 183: Message Reactions
-
-**Gap:** No emoji reactions on chat messages. The Acknowledge grammar operation had no UI.
+**Gap:** Reply UI existed (button, preview bar) but faked it — prepended `> author: text` as markdown. No structural link.
 
 **Built:**
-- New `reactions` table (node_id, user_id, emoji) with compound PK
-- `ToggleReaction`, `GetNodeReactions`, `GetBulkReactions` store methods
-- New `react` op in handleOp with HTMX partial response
-- Bulk reaction loading in conversation detail + polling handlers
-- Hover action bar on messages with 6 quick-react buttons (👍 ❤️ 🔥 👀 ✅ 😂)
-- Reaction badge pills below messages (emoji + count, highlighted if you reacted)
-- Click any badge to toggle your reaction via HTMX
-- Works on both full and compact (grouped) message views
-
-## Also Completed This Session
-
-- **Deep competitive research**: Discord, Slack, Twitter, Reddit, Linear/Asana — specific UI patterns, interaction loops, features mapped to 15 grammar operations
-- **Social Layer Specification**: 4 modes (Chat, Rooms, Square, Forum) formally described with Code Graph primitives, 33 iterations planned, all 15 grammar operations covered
-- **Key finding**: Consent, Merge, and structured Proposals are the biggest whitespace — NO competitor implements them
+- `reply_to_id TEXT` column on nodes (ALTER TABLE, DEFAULT '')
+- `ReplyToID`, `ReplyToAuthor`, `ReplyToBody` on Node struct (resolved via correlated subquery)
+- `ReplyToID` on CreateNodeParams, written in INSERT
+- GetNode + ListNodes resolve reply-to author + body(80) inline
+- `respond` handler reads `reply_to_id` from form
+- JS `replyTo(msgID, author, text)` stores node ID in hidden `<input name="reply_to_id">`
+- Old `prependReply()` markdown-quote hack removed
+- `clearReplyAfterSend()` clears hidden input + reply bar after send
+- Reply reference renders above message body: left-border accent + author + truncated text
+- Backward compatible — existing messages have `reply_to_id = ''`, render normally
