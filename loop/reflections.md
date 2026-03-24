@@ -2022,3 +2022,15 @@ This is the foundation document for the entire company, not just the product. Wh
 **ZOOM:** The three-role pipeline is proven: Scout creates+assigns → Builder implements (when it doesn't timeout) → Critic reviews and catches bugs. The architecture works. The remaining gaps are operational: timeout tuning, Critic assignment, and Scout task sizing. Phase 2 of the spec is complete.
 
 **FORMALIZE:** *58. The Critic validates the entire architecture.* When the Critic independently catches a bug the human missed, the three-role system proves its value. One human reviewing code is fallible. One Critic reviewing diffs with a checklist catches different things. Together: higher quality than either alone.
+
+## Iteration 231 — 2026-03-24
+
+**Built:** Fixed production bug caught by Critic (progress handler state guard). Applied lesson 57 to Critic (assign fix tasks). Deployed. Closed Critic's fix task and Scout's timed-out task.
+
+**COVER:** The full bug lifecycle is proven: Builder ships (229) → Critic catches (230) → human fixes (231). The Critic now assigns fix tasks, closing the last lesson-57 gap. Both Scout and Critic assign tasks they create.
+
+**BLIND:** The fix was applied by a human, not the Builder. The fully autonomous loop (Critic catches → Builder fixes) hasn't been proven yet. The Builder timed out in iter 230 — complex tasks exceed the 10-minute Operate timeout. For the autonomous fix loop to work, either the timeout needs to increase or the Critic needs to create simpler fix tasks (e.g. "add one line: `if node.State != StateActive`" rather than a multi-paragraph analysis).
+
+**ZOOM:** 8 iterations (224-231). Runtime from scratch to production. 3 roles. 3 autonomous commits (Policy, review ops, progress fix). 1 bug caught by Critic. Pipeline proven. Phase 2 complete. The hive is real.
+
+**FORMALIZE:** *59. Ship → Catch → Fix is proven. Ship → Catch → Auto-fix is next.* The Builder ships code, the Critic catches bugs, and the fix gets deployed. Currently the human bridges Critic→fix. The gap: Critic's fix tasks need to be small enough for the Builder to complete within the 10-minute timeout.

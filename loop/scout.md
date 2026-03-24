@@ -1,17 +1,14 @@
-# Scout Report — Iteration 230
+# Scout Report — Iteration 231
 
 ## Gap Identified
 
-**Scout→Builder handoff is broken.** Scout creates tasks but doesn't assign them. Builder falls back to claiming random unassigned tasks from the board (lesson 57). One API call fixes this.
+**The Critic caught a real bug but the fix isn't deployed.** The progress handler allows any task state to move to review — state machine violation. The Critic created a fix task (39725226) but didn't assign it (same lesson 57 pattern).
 
-After the fix, run a clean pipeline where the Scout's task flows all the way through: Scout creates+assigns → Builder implements THAT task → Critic reviews THAT commit. This is the first fully autonomous cycle.
-
-## Plan
-
-1. After `CreateTask`, call `ClaimTask` to assign it to the agent
-2. Run `--pipeline` and verify the Builder works the Scout's exact task
-3. If successful: first fully autonomous Scout → Builder → Critic cycle
+Two fixes:
+1. Fix Critic to assign fix tasks it creates (same pattern as Scout)
+2. Fix the progress handler bug (production bug on lovyou.ai right now)
+3. Deploy the fix
 
 ## Priority
 
-**P0** — One-line fix that enables the fully autonomous pipeline.
+**P0** — Production bug. The progress handler is broken on lovyou.ai.

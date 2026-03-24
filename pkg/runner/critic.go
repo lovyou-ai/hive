@@ -123,6 +123,13 @@ func (r *Runner) reviewCommit(ctx context.Context, c commit) {
 		}
 		log.Printf("[critic] created fix task: %s", task.ID)
 
+		// Assign to our agent so the Builder picks it up.
+		if r.cfg.AgentID != "" {
+			if err := r.cfg.APIClient.ClaimTask(r.cfg.SpaceSlug, task.ID); err != nil {
+				log.Printf("[critic] assign fix task error (non-fatal): %v", err)
+			}
+		}
+
 	case "PASS":
 		log.Printf("[critic] PASS: %s", c.hash[:12])
 	}

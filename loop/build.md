@@ -1,54 +1,42 @@
-# Build Report — Iteration 230: Scout Assignment Fix + First Full Pipeline
+# Build Report — Iteration 231: Critic Bug Fix Deployed
 
 ## What This Iteration Does
 
-Fixes the Scout→Builder handoff (lesson 57): Scout now assigns tasks to the agent after creating them. Then runs the first fully autonomous pipeline cycle.
+Closes the loop on the Critic's REVISE from iter 230: fixes the progress handler state machine bug and applies lesson 57 to the Critic (assign fix tasks).
 
-## Code Change
+## Files Changed
 
-### `pkg/runner/scout.go` (+7 lines)
-After `CreateTask`, calls `ClaimTask` to assign the task to the agent. The Builder picks up assigned tasks first, so this ensures the Scout's task flows through.
+### Hive repo
+| File | What |
+|------|------|
+| `pkg/runner/critic.go` | +6 lines: Critic now assigns fix tasks to the agent after creation (same pattern as Scout). |
 
-## Pipeline E2E Result
+### Site repo (deployed)
+| File | What |
+|------|------|
+| `graph/handlers.go` | +4 lines: Added `node.State != StateActive` guard to progress handler. Tasks must be active to submit for review. |
+
+## The Bug (caught by Critic in iter 230)
+
+The `progress` handler moved tasks to review state without checking the current state. Any task — done, closed, open — could be moved to review, violating the state machine:
 
 ```
-[pipeline] ── scout ──
-[scout] creating task: [high] Complete review verdict structure
-[scout] assigned task to agent 36509418...      ← NEW: assignment works
-[scout] cost: $0.22
-
-[pipeline] ── builder ──
-[builder] working task 71711b5e: Complete review verdict structure  ← picked up Scout's task!
-[builder] Operate error: exit status 1 (10min timeout)
-
-[pipeline] ── critic ──
-[critic] reviewing af15f3ee: [hive:builder] Make Work and Social genuinely competitive
-[critic] verdict: REVISE                        ← Critic caught a bug!
-[critic] created fix task: 39725226
-[critic] cost: $0.19
-
-[pipeline] ── cycle complete ──
+open → review ← WRONG (should be: active → review only)
+done → review ← WRONG
 ```
 
-## What Worked
+Fix: `if node.State != StateActive { return 400 }`
 
-1. **Scout→Builder handoff** — Scout created and assigned task. Builder picked up THAT task. Handoff is fixed.
-2. **Critic caught a real bug** — The `progress` handler has no state precondition. Any task (even done/closed) can be moved to review state. This is a state machine violation. Critic created a fix task.
+## Full Bug Lifecycle
 
-## What Didn't
+1. **Iter 229:** Builder autonomously shipped review/progress ops
+2. **Iter 230:** Critic autonomously reviewed the commit, found missing state guard, returned REVISE, created fix task
+3. **Iter 231:** Human fixed the bug, deployed, closed the fix task
 
-1. **Builder timed out** (10min) on the review verdict task. The task was too complex for the default Operate timeout. The Builder needs longer timeouts for complex tasks, or the Scout needs to create simpler tasks.
-
-## Pipeline Cost
-
-| Phase | Time | Cost | Result |
-|-------|------|------|--------|
-| Scout | 1m45s | $0.22 | Created + assigned task |
-| Builder | 10m | $0.00 | Timed out (no cost reported) |
-| Critic | 1m11s | $0.19 | REVISE — found missing state guard |
-| **Total** | **~13min** | **$0.41** | Handoff proven, bug caught |
+The system works: Builder ships → Critic catches → fix deployed. Eventually: Builder ships → Critic catches → Builder fixes (fully autonomous).
 
 ## Build
 
-- `go build ./...` ✓
-- `go test ./...` ✓ (29 tests)
+- `go build ./...` ✓ (both repos)
+- `go test ./...` ✓
+- `flyctl deploy --remote-only` ✓ — state guard live on lovyou.ai
