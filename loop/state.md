@@ -2,7 +2,7 @@
 
 Living document. Updated by the Reflector each iteration. Read by the Scout first.
 
-Last updated: Iteration 223, 2026-03-24.
+Last updated: Iteration 224, 2026-03-24.
 
 ## Current System State
 
@@ -198,6 +198,7 @@ Deploy: `fly deploy --remote-only` from site repo.
 
 - **Entity: Role** (222): `KindRole` constant, `handleRoles` handler, `RolesView` template, sidebar + mobile nav, shield icon. Organize mode prerequisite. 11th entity kind.
 - **Entity: Team** (223): `KindTeam` constant, `handleTeams` handler, `TeamsView` template, sidebar + mobile nav, user-group icon. Organize mode now has Roles + Teams. 12th entity kind.
+- **Hive Runtime Phase 1** (224): `pkg/api/client.go` (lovyou.ai REST client), `pkg/runner/runner.go` (tick loop, builder flow, cost tracking, build verification, git commit/push), `cmd/hive` rewritten (dual-mode: `--role` runner / `--human` legacy). Retired cmd/loop/, cmd/daemon/, agents/.sessions/ (~1,050 lines). E2E tested: builder claimed task from board, Operated via Claude CLI (4m19s, $0.46), verified build, closed task. Agent identity filtering (`--agent-id`), one-shot mode (`--one-shot`).
 
 ## What the Scout Should Focus On Next
 
@@ -264,6 +265,8 @@ Deploy: `fly deploy --remote-only` from site repo.
 45. **The loop is not optional when batching.** Running 3 iterations without Critic caught a JS hack that shipped to production. When batching, run 3 full loops, not 3 builds.
 46. **Three layers of spec, each converged independently.** Primitives (vocabulary), Product (meaning), Compositions (appearance). Missing any layer leaves gaps.
 47. **REVISE before new work.** Iteration 189 fixed the iter 186 REVISE (edit reload hack) before starting new work. Outstanding REVISE flags should be resolved at the start of the next iteration, not deferred.
+51. **Test the runtime on a task you control.** The first E2E test picked up a stale task because the board was noisy. When testing autonomous systems, create a dedicated task, assign it explicitly, and verify the system picks that specific task — not whatever happens to sort first. Control the test input.
+52. **A design task needs a design artifact.** The builder "completed" a design task by thinking about it — no file written, no spec produced. Builder should verify that Operate produced changes before marking DONE, or distinguish design vs implementation tasks.
 
 ## Vision
 
@@ -298,3 +301,14 @@ Deploy: `fly deploy --remote-only` from site repo.
 50. **When pipelines are proven, batch with confidence but audit at boundaries.** The entity pipeline has produced 4 kinds (project, goal, role, team) with zero regressions. But each untested addition compounds risk. Set a boundary (every 4-5 entities) and run a test sweep.
 
 **Cross-entity depth is more valuable than more kinds.** Board project filter (207) shows the pattern: entities filtering and contextualizing each other. Next: Goal progress dashboard (aggregated Goal → Project → Task view), task auto-assign to filtered project.
+
+**Hive runtime Phase 1 is COMPLETE.** Builder flow proven end-to-end (iter 224). Next priorities from hive-runtime-spec.md Phase 2:
+1. **Monitor role** — triage unassigned tasks, clean stale tasks, restart crashed agents. Unblocks builder by keeping the board clean.
+2. **Scout role** — find product gaps, write to board as tasks. Replaces manual iteration scouting.
+3. **Critic role** — review recent commits, audit invariants.
+4. **Stale task cleanup** — 76 open tasks on the board, many already completed in code. Monitor should close them.
+
+**How to run the builder:**
+```bash
+cd hive && LOVYOU_API_KEY=lv_... go run ./cmd/hive --role builder --repo ../site --space hive --agent-id 36509418df854dd4a709cfee3e915a17 --one-shot
+```

@@ -1,48 +1,62 @@
-# Critique — Iteration 223
+# Critique — Iteration 224: Hive Runtime E2E Test
 
-## Trace: Gap → Plan → Code → Test
+**Verdict: PASS** (with notes)
 
-- **Gap:** Team entity kind missing. State.md explicitly lists Team as next after Role. ✓ Well-scoped.
-- **Plan:** 6 changes across 3 files, following proven entity pipeline. ✓ Follows pattern exactly.
-- **Code:** All 8 changes match the plan. Copy-modify from Roles with appropriate substitutions. ✓
-- **Deployed:** Both Fly.io machines healthy. ✓
+---
+
+## Derivation Check
+
+### Gap → Scout: ✓ VALID
+Scout correctly identified the gap: "runner built but untested end-to-end." Three concrete blockers (no agent identity, board noise, no test task). This is Phase 1 item 7 from hive-runtime-spec.md — the right priority.
+
+### Scout → Build: ✓ VALID
+Builder implemented both fixes (agent-id filtering, one-shot mode) and ran the test. The flow completed end-to-end: fetch → filter → Operate → parse ACTION → build verify → commit check → close → cost summary → exit. 4m19s, $0.46.
+
+### Build → Verify: ✓ VALID
+- `go build ./...` passes
+- `go test ./...` passes (12 new tests + all existing)
+- E2E test ran against production lovyou.ai API
+
+---
 
 ## Invariant Audit
 
-| # | Invariant | Status |
-|---|-----------|--------|
-| 1 | BUDGET | ✓ Minimal iteration |
-| 2 | CAUSALITY | ✓ Team nodes use standard op chain |
-| 3 | INTEGRITY | ✓ No new ops, uses existing intend |
-| 4 | OBSERVABLE | ✓ RecordOp called via standard intend path |
-| 5 | SELF-EVOLVE | ✓ Agent-built |
-| 6 | DIGNITY | ✓ No agent-specific behavior |
-| 7 | TRANSPARENT | ✓ No agent-specific behavior |
-| 8 | CONSENT | ✓ No new data collection |
-| 9 | MARGIN | ✓ Zero-cost change |
-| 10 | RESERVE | ✓ N/A |
-| 11 | IDENTITY | ✓ Uses ID-based JOINs (ListNodes uses standard query path) |
-| 12 | VERIFIED | ⚠ No new test for Team kind. Pre-existing condition — tests require Postgres. Acceptable for now per the "test at 5th entity" plan. |
-| 13 | BOUNDED | ✓ ListNodes has LIMIT 500 from iter 55 |
-| 14 | EXPLICIT | ✓ Dependencies declared in go.mod, no new imports |
+| Invariant | Status | Reason |
+|-----------|--------|--------|
+| 11 IDENTITY | ✓ Pass | Agent filtered by user ID, not name. `--agent-id` flag uses immutable ID. |
+| 12 VERIFIED | ✓ Pass | 12 unit tests for runner helpers. E2E test ran on production. |
+| 13 BOUNDED | ✓ Pass | Tick loop has budget limit, one-shot exit, interval sleep. |
+| 14 EXPLICIT | ✓ Pass | Config struct makes all deps explicit. Provider created with explicit config. |
 
-## Correctness Check
+---
 
-1. **Constant:** `KindTeam = "team"` ✓ — unique, no collision with `SpaceTeam = "team"` because they're used in different contexts (node kind vs space kind).
-2. **Route:** `GET /app/{slug}/teams` ✓ — follows pattern.
-3. **Handler:** `handleTeams` ✓ — correct kind filter, correct template call.
-4. **Kind allowlist:** `nodeKind != KindTeam` ✓ — teams can be created via intend.
-5. **Icon:** `user-group` (three people) ✓ — distinct from People (single person) and Roles (shield).
-6. **Sidebar:** After Roles, before Feed ✓ — Organize section: Board → Projects → Goals → Roles → Teams.
-7. **Mobile:** After Roles ✓.
-8. **Template:** `TeamsView` ✓ — search, create form, empty state, card list, JSON response.
+## Issues Found
 
-## Potential Issue: `KindTeam` vs `SpaceTeam`
+### 1. Stale task pickup (medium)
+Builder grabbed "Design the Market Graph product" (stale, assigned, same priority) instead of the fresh Policy task. **Root cause:** `pickHighestPriority` doesn't tiebreak on recency. When multiple tasks share priority, the first one from the API wins.
 
-Both `KindTeam` (node kind) and `SpaceTeam` (space kind) have value `"team"`. This is **not a bug** — they're used in completely different contexts (node.kind vs space.kind). But it's worth noting for future maintainers. No action needed.
+**Fix (next iter):** Tiebreak by `created_at` descending, or better — add a `progress` op to indicate tasks that have already been partially worked. Or let the monitor role clean up stale tasks.
 
-## Verdict: **ACCEPT**
+### 2. Design task marked DONE without artifact (low)
+The Market Graph design task was "completed" by the builder but the Operate call only generated internal reasoning — no file was written, no spec produced. The task was legitimately worked (the agent thought about it) but the completion is hollow.
 
-Clean mechanical iteration. Pattern proven 4 times. No regressions.
+**Fix:** Builder should check whether Operate produced any file changes before marking a non-code task as DONE. Or: separate "design" tasks from "implementation" tasks by kind or tag.
 
-**Reminder:** Iter 222 critique flagged that a test iteration should happen before the 5th entity kind ships. Team is #4. Next entity kind should be preceded or accompanied by test coverage for entity creation via the intend op.
+### 3. Token count anomaly (info)
+`tokens=64+10513` — 64 input tokens seems impossibly low for a prompt that includes the role prompt + task body + instructions. This is likely the Claude CLI's reporting format (only counting the user message, not system prompt + tool use).
+
+### 4. Double role prompt (low)
+The provider is created with `SystemPrompt: rolePrompt` AND the runner also prepends `rolePrompt` in the instruction. The role prompt is sent twice — wasteful but not broken. Should remove one.
+
+---
+
+## Root Cause (DUAL)
+
+**Symptom:** Wrong task picked.
+**Root cause:** The board has 76 tasks, 5 assigned to this agent, most stale from previous iterations. The runner has no recency signal — it treats all assigned tasks equally. This is a design gap in the runner, not a bug. The monitor role (Phase 2) should clean stale tasks.
+
+---
+
+## Verdict: PASS
+
+The runtime works. The builder flow is proven end-to-end against production. The issues found are Phase 2 polish, not Phase 1 blockers. Ship it.

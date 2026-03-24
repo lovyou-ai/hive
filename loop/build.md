@@ -1,38 +1,58 @@
-# Build Report — Iteration 223
+# Build Report — Iteration 224: Hive Runtime E2E Test
 
-## Gap
-Team entity kind missing. Fourth entity through the proven pipeline (after Project, Goal, Role). Completes Organize mode's minimum entity set.
+## What This Iteration Does
 
-## Changes
+Completes Phase 1 of hive-runtime-spec.md by adding agent identity filtering, one-shot mode, and running the first end-to-end test of the builder flow.
 
-| # | File | Change |
-|---|------|--------|
-| 1 | `graph/store.go` | Added `KindTeam = "team"` constant (line 52) |
-| 2 | `graph/handlers.go` | Added route: `GET /app/{slug}/teams` → `handleTeams` |
-| 3 | `graph/handlers.go` | Added `handleTeams` function (~33 lines, copy of handleRoles with KindTeam) |
-| 4 | `graph/handlers.go` | Added `KindTeam` to intend op kind allowlist |
-| 5 | `graph/views.templ` | Added `teamsIcon()` — group silhouette (Heroicons `user-group`) |
-| 6 | `graph/views.templ` | Added Teams to sidebar (after Roles, before Feed) |
-| 7 | `graph/views.templ` | Added Teams to mobile lens bar (after Roles) |
-| 8 | `graph/views.templ` | Added `TeamsView` template (~75 lines) — list, search, create form, empty state |
+## Changes (since iter 223)
 
-## Template details
+### New files (iter 223 → 224)
+| File | Lines | What |
+|------|-------|------|
+| `pkg/api/client.go` | 175 | lovyou.ai REST client — Bearer auth, GetTasks, PostOp, Claim, Complete, Comment |
+| `pkg/runner/runner.go` | 462 | Tick loop, builder flow, cost tracking, role model selection, build verification, git commit/push |
+| `pkg/runner/runner_test.go` | 110 | 12 tests — parseAction, pickHighestPriority, CostTracker, ModelForRole, extractSummary |
 
-- **Icon:** `user-group` from Heroicons — three people silhouette. Distinct from People (single person) and Roles (shield).
-- **Sidebar position:** Board → Projects → Goals → Roles → **Teams** → Feed. The Organize section is forming.
-- **Create form:** `op=intend`, `kind=team`. Title required, description optional.
-- **Empty state:** "No teams yet — Create teams to organize people into functional groups."
-- **JSON API:** `GET /app/{slug}/teams` with `Accept: application/json` returns `{"space": ..., "teams": [...]}`.
+### Modified files
+| File | What |
+|------|------|
+| `cmd/hive/main.go` | Dual-mode: `--role` (new runner) / `--human` (legacy). Added `--agent-id`, `--one-shot` flags |
 
-## Verification
+### Iteration 224 changes
+| File | What |
+|------|------|
+| `pkg/runner/runner.go` | Added `AgentID` + `OneShot` to Config. Builder filters by agent user ID. One-shot exit after task. |
+| `cmd/hive/main.go` | Added `--agent-id` and `--one-shot` flags, passed to runner. |
 
-- `templ generate` — success (13 updates)
-- `go.exe build -buildvcs=false ./...` — success, no errors
-- `go.exe test ./...` — all failures are pre-existing (no local Postgres; tests pass in CI)
-- Deployed to Fly.io — both machines healthy
+### Retired
+| Deleted | Lines removed |
+|---------|-------------|
+| `cmd/loop/` (main.go, fast.go) | ~760 |
+| `cmd/daemon/main.go` | ~296 |
+| `agents/.sessions/` | session files |
 
-## Lines changed
-~120 lines across 3 files. Zero schema changes. Zero new tables. Zero new ops.
+## End-to-End Test Result
 
-## What's next
-12th entity kind. State.md priority: Policy, Decision (Govern mode) next. Critique 222 flagged test iteration needed before 5th entity kind — Team is 4th, so one more before test debt.
+```
+$ LOVYOU_API_KEY=lv_... go run ./cmd/hive --role builder --repo ../site --space hive \
+    --agent-id 36509418df854dd4a709cfee3e915a17 --one-shot --budget 5
+
+[builder] runner started (repo=.../site, space=hive, interval=15s, budget=$5.00)
+[builder] working task 54c51491c770108fedaea48b86327cca: Design the Market Graph product
+  ⏳ working done (4m19s)
+[builder] Operate done (cost=$0.4568, tokens=64+10513)
+[builder] action: DONE
+[builder] no changes to commit
+[builder] task 54c51491c770108fedaea48b86327cca DONE
+[builder] one-shot complete
+[builder] cost summary: $0.4568 / $5.00 (calls=1, in=64, out=10513)
+```
+
+**Flow verified:** fetch → filter by agent ID → Operate → parse ACTION → build verify → commit check → close task → cost summary → exit.
+
+**Issue found:** Builder picked a stale design task instead of the Policy coding task (both high priority, design task came first). Need: priority-based ordering with recency tiebreak, or task tagging for "implementable" vs "design".
+
+## Build
+
+- `go.exe build -buildvcs=false ./...` ✓
+- `go.exe test ./...` ✓ (12 new + all existing pass)

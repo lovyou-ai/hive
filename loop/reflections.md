@@ -1936,3 +1936,17 @@ This is the foundation document for the entire company, not just the product. Wh
 **ZOOM:** 12 entity kinds exist. 6 remain from the unified spec (policy, decision, document, resource, case, event). The pipeline continues to be mechanical (~120 lines per entity, zero schema changes). But the Critique rightly flags: the 5th entity through this pipeline should be accompanied by test coverage. The test debt from entity creation is accumulating.
 
 **FORMALIZE:** *50. When pipelines are proven, batch with confidence but audit at boundaries.* The entity pipeline has produced 4 kinds (project, goal, role, team) with zero regressions. But each untested addition compounds risk. Set a boundary (every 4-5 entities) and run a test sweep.
+
+## Iteration 224 — 2026-03-24
+
+**Built:** Hive runtime Phase 1 complete. API client (`pkg/api/client.go`), runner with tick loop (`pkg/runner/runner.go`), builder flow, cost tracking, build verification, git commit/push. Agent identity filtering (`--agent-id`), one-shot mode (`--one-shot`). Retired cmd/loop/, cmd/daemon/, agents/.sessions/ (~1,050 lines removed). E2E test against production: builder claimed task, Operated via Claude CLI (4m19s, $0.46), parsed ACTION: DONE, verified build, closed task.
+
+**COVER:** The runtime is proven for the happy path: one agent, one task, one Operate call. What's not covered: multi-agent concurrent execution, crash recovery, stale task cleanup, task prioritization beyond priority field. The builder will naively grab any assigned high-priority task — stale design tasks compete with fresh implementation tasks.
+
+**BLIND:** The board has 76 stale tasks. Many were completed in code (iters 162-181) but never closed on the board. The runner doesn't know which tasks are stale vs fresh. Without a monitor role to triage and close stale tasks, the builder will waste Operate calls on hollow work. The design task it completed produced no artifacts — $0.46 spent on thinking that went nowhere.
+
+**ZOOM:** Phase 1 of hive-runtime-spec.md is complete (items 1-7). Phase 2 (Scout/Critic/Monitor roles) is next. The monitor role is the highest-value Phase 2 item — it unblocks the builder by cleaning the board. Without it, every builder invocation risks picking up stale work.
+
+**FORMALIZE:** *51. Test the runtime on a task you control.* The first E2E test picked up a stale task because the board was noisy. When testing autonomous systems, create a dedicated task, assign it explicitly, and verify the system picks that specific task — not whatever happens to sort first. Control the test input.
+
+*52. A design task needs a design artifact.* The builder "completed" a design task by thinking about it — no file written, no spec produced. The task was closed but the work evaporated. Builder should verify that Operate produced changes before marking DONE, or distinguish design vs implementation tasks.

@@ -1,4 +1,12 @@
-// Command hive runs the agent-first hive runtime.
+// Command hive runs hive agents.
+//
+// New mode (runner): one process per agent role, polls lovyou.ai.
+//
+//	go run ./cmd/hive --role builder --repo ../site --space hive
+//
+// Legacy mode (runtime): spawns all agents, coordinates via event graph.
+//
+//	go run ./cmd/hive --human Matt --idea "description"
 package main
 
 import (
@@ -7,8 +15,10 @@ import (
 	"crypto/sha256"
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -16,42 +26,140 @@ import (
 	"github.com/lovyou-ai/eventgraph/go/pkg/actor"
 	"github.com/lovyou-ai/eventgraph/go/pkg/actor/pgactor"
 	"github.com/lovyou-ai/eventgraph/go/pkg/event"
+	"github.com/lovyou-ai/eventgraph/go/pkg/intelligence"
 	"github.com/lovyou-ai/eventgraph/go/pkg/store"
 	"github.com/lovyou-ai/eventgraph/go/pkg/store/pgstore"
 	"github.com/lovyou-ai/eventgraph/go/pkg/types"
 
+	"github.com/lovyou-ai/hive/pkg/api"
 	"github.com/lovyou-ai/hive/pkg/hive"
+	"github.com/lovyou-ai/hive/pkg/runner"
 )
 
 func main() {
 	if err := run(); err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
 func run() error {
-	human := flag.String("human", "", "Human operator name (required)")
-	idea := flag.String("idea", "", "Seed idea for agents to work on")
-	storeDSN := flag.String("store", "", "Store DSN (postgres://... or empty for in-memory)")
-	autoApprove := flag.Bool("yes", false, "Auto-approve all authority requests")
-	repo := flag.String("repo", "", "Path to repo for Implementer's Operate (default: current dir)")
+	// Runner mode flags.
+	role := flag.String("role", "", "Agent role (builder, scout, critic, monitor). Enables runner mode.")
+	space := flag.String("space", "hive", "lovyou.ai space slug")
+	apiBase := flag.String("api", "https://lovyou.ai", "lovyou.ai API base URL")
+	budget := flag.Float64("budget", 10.0, "Daily budget in USD")
+	agentID := flag.String("agent-id", "", "Agent's lovyou.ai user ID (filters task assignment)")
+	oneShot := flag.Bool("one-shot", false, "Work one task then exit (for testing)")
+
+	// Shared flags.
+	repo := flag.String("repo", "", "Path to repo for Operate (default: current dir)")
+
+	// Legacy runtime mode flags.
+	human := flag.String("human", "", "Human operator name (legacy runtime mode)")
+	idea := flag.String("idea", "", "Seed idea for agents (legacy runtime mode)")
+	storeDSN := flag.String("store", "", "Store DSN (legacy runtime mode)")
+	autoApprove := flag.Bool("yes", false, "Auto-approve authority (legacy runtime mode)")
 	flag.Parse()
 
-	if *human == "" {
-		return fmt.Errorf("usage: hive --human name [--store postgres://...] --idea 'description' [--repo path] [--yes]")
+	if *role != "" {
+		return runRunner(*role, *space, *apiBase, *repo, *budget, *agentID, *oneShot)
+	}
+	if *human != "" {
+		return runLegacy(*human, *idea, *storeDSN, *autoApprove, *repo)
 	}
 
+	fmt.Fprintln(os.Stderr, "usage:")
+	fmt.Fprintln(os.Stderr, "  Runner mode:  hive --role builder --repo ../site [--space hive] [--budget 10]")
+	fmt.Fprintln(os.Stderr, "  Legacy mode:  hive --human Matt --idea 'description' [--store postgres://...]")
+	return fmt.Errorf("specify --role or --human")
+}
+
+// ─── Runner mode ─────────────────────────────────────────────────────
+
+func runRunner(role, space, apiBase, repoPath string, budget float64, agentID string, oneShot bool) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// Resolve store DSN: flag > DATABASE_URL env > in-memory.
-	dsn := *storeDSN
+	// Resolve API key.
+	apiKey := os.Getenv("LOVYOU_API_KEY")
+	if apiKey == "" {
+		return fmt.Errorf("LOVYOU_API_KEY required")
+	}
+
+	// Resolve repo path.
+	if repoPath == "" {
+		repoPath = "."
+	}
+	absRepo, err := filepath.Abs(repoPath)
+	if err != nil {
+		return fmt.Errorf("resolve repo: %w", err)
+	}
+
+	// Find hive directory (for loading role prompts).
+	hiveDir := findHiveDir()
+
+	// Create intelligence provider.
+	model := runner.ModelForRole(role)
+	provider, err := intelligence.New(intelligence.Config{
+		Provider:     "claude-cli",
+		Model:        model,
+		MaxBudgetUSD: budget,
+		SystemPrompt: runner.LoadRolePrompt(hiveDir, role),
+	})
+	if err != nil {
+		return fmt.Errorf("provider: %w", err)
+	}
+
+	// Create API client.
+	client := api.New(apiBase, apiKey)
+
+	// Load role prompt (also passed as instruction context, not just system prompt).
+	rolePrompt := runner.LoadRolePrompt(hiveDir, role)
+
+	// Create and run the runner.
+	r := runner.New(runner.Config{
+		Role:       role,
+		AgentID:    agentID,
+		SpaceSlug:  space,
+		RepoPath:   absRepo,
+		APIClient:  client,
+		Provider:   provider,
+		RolePrompt: rolePrompt,
+		BudgetUSD:  budget,
+		OneShot:    oneShot,
+	})
+
+	log.Printf("hive agent starting: role=%s model=%s space=%s repo=%s agent-id=%s one-shot=%v",
+		role, model, space, absRepo, agentID, oneShot)
+	return r.Run(ctx)
+}
+
+// findHiveDir returns the hive repo directory by walking up from cwd.
+func findHiveDir() string {
+	// Try cwd first.
+	cwd, _ := os.Getwd()
+	if _, err := os.Stat(filepath.Join(cwd, "agents")); err == nil {
+		return cwd
+	}
+	// Try parent (if running from cmd/hive).
+	parent := filepath.Dir(filepath.Dir(cwd))
+	if _, err := os.Stat(filepath.Join(parent, "agents")); err == nil {
+		return parent
+	}
+	return cwd
+}
+
+// ─── Legacy runtime mode ────────────────────────────────────────────
+
+func runLegacy(humanName, idea, dsn string, autoApprove bool, repoPath string) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	if dsn == "" {
 		dsn = os.Getenv("DATABASE_URL")
 	}
 
-	// Open shared pool for Postgres, or nil for in-memory.
 	var pool *pgxpool.Pool
 	if dsn != "" {
 		fmt.Fprintf(os.Stderr, "Postgres: %s\n", dsn)
@@ -74,59 +182,49 @@ func run() error {
 		return fmt.Errorf("actor store: %w", err)
 	}
 
-	// Register the human operator.
 	if pool != nil {
 		fmt.Fprintln(os.Stderr, "WARNING: CLI key derivation is insecure for persistent Postgres stores.")
 	}
-	humanID, err := registerHuman(actors, *human)
+	humanID, err := registerHuman(actors, humanName)
 	if err != nil {
 		return fmt.Errorf("register human: %w", err)
 	}
 
-	// Bootstrap the event graph if empty.
 	if err := bootstrapGraph(s, humanID); err != nil {
 		return fmt.Errorf("bootstrap graph: %w", err)
 	}
 
-	// Resolve repo path.
-	repoPath := *repo
 	if repoPath == "" {
 		repoPath = "."
 	}
 
-	// Create the hive runtime.
 	rt, err := hive.New(ctx, hive.Config{
 		Store:       s,
 		Actors:      actors,
 		HumanID:     humanID,
-		AutoApprove: *autoApprove,
+		AutoApprove: autoApprove,
 		RepoPath:    repoPath,
 	})
 	if err != nil {
 		return fmt.Errorf("runtime: %w", err)
 	}
 
-	// Register starter agents.
-	for _, def := range hive.StarterAgents(*human) {
+	for _, def := range hive.StarterAgents(humanName) {
 		if err := rt.Register(def); err != nil {
 			return fmt.Errorf("register %s: %w", def.Name, err)
 		}
 	}
 
-	// Run all agents.
-	if err := rt.Run(ctx, *idea); err != nil {
+	if err := rt.Run(ctx, idea); err != nil {
 		return fmt.Errorf("run: %w", err)
 	}
 
-	// Print summary.
 	count, _ := s.Count()
 	fmt.Fprintf(os.Stderr, "Events recorded: %d\n", count)
 	return nil
 }
 
-// ────────────────────────────────────────────────────────────────────
-// Store helpers (ported from previous main.go)
-// ────────────────────────────────────────────────────────────────────
+// ─── Store helpers ───────────────────────────────────────────────────
 
 func openStore(ctx context.Context, pool *pgxpool.Pool) (store.Store, error) {
 	if pool == nil {
@@ -169,7 +267,7 @@ func bootstrapGraph(s store.Store, humanID types.ActorID) error {
 		return fmt.Errorf("check head: %w", err)
 	}
 	if head.IsSome() {
-		return nil // already bootstrapped
+		return nil
 	}
 
 	fmt.Fprintln(os.Stderr, "Bootstrapping event graph...")
