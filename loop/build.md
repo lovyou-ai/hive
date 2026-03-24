@@ -1,21 +1,19 @@
-# Build Report — Iteration 211
+# Build Report — Iteration 212
 
-## Product Map
+## The Hive + EventGraph in the Product Map
 
-**Output:** `hive/loop/product-map.md`
+Added two missing product families:
 
-**Key findings:**
+**EventGraph (Foundation):** The substrate. 5 products — Core (event graph), Code Graph (66 primitives), Stores (Postgres), SDKs (multi-language), Trust Engine (reputation). Open source. Others can build their own ecosystems on it.
 
-1. **~56 distinct products** across 13 layer families. Each does one thing well. All share infrastructure.
+**The Hive (Layer 0):** The meta-product. 6 products — Agent Studio, The Loop, Knowledge System, Autonomy Ladder, Agent Market, Observatory.
 
-2. **14 shared infrastructure components** that every product uses: auth, identity, DMs, notifications, search, reactions, endorsements, follows, command palette, activity feed, file attachments, @mentions, keyboard shortcuts, markdown.
+**The compounding mechanism mapped explicitly:**
+- Each iteration produces: code, artifacts, lessons, specs, patterns, corrections
+- Each iteration consumes: all prior lessons, specs, patterns, corrections
+- Iteration N is better than iteration N-1 because of accumulated institutional knowledge
+- 6 properties of hive knowledge: structured, queryable, enforced, compounding, persistent, transparent
 
-3. **A product is a space configuration** — which entity kinds are active, which modes are visible, what the focused view looks like. NOT a separate codebase.
-
-4. **Navigation model:** 13-layer main menu → product family → specific product. Users drill into what they need.
-
-5. **Cross-cutting features (DMs, search, endorsements) are built once.** Every product gets them. This is the platform advantage — each product starts 60% done.
-
-6. **Build strategy:** First product per layer → second product per layer → open platform for hives to build more.
+**Updated totals:** ~67 products across 14 families + foundation.
 
 This iteration produced spec, not code.

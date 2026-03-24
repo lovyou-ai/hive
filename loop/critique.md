@@ -1,22 +1,21 @@
-# Critique — Iteration 211
+# Critique — Iteration 212
 
-## Product Map: PASS
+## Hive + EventGraph: PASS
 
-**Completeness:** All 13 layers have product families. ~56 products identified. Each has a comparable product, key entities, and a "does one thing" description. ✓
+**The compounding mechanism** is the most important addition to the product map. Without it, the map is a catalog. With it, the map is a flywheel — each product built makes the next product easier to build because the hive learned from building the last one.
 
-**Shared infrastructure:** 14 components identified. DMs as cross-cutting example is well-illustrated. ✓
+**EventGraph as foundation** is correctly positioned. It's not a product family — it's the substrate. Like Linux to Android. Open source, portable trust, others can build on it.
 
-**Product-as-space-config principle:** Clean. A product is a view, not a codebase. ✓
+**The autonomy trajectory** (manual → supervised → autonomous) is honest about where we are (manual) and where we're going (autonomous). The compounding mechanism is what makes the trajectory possible.
 
-**Risks / Open questions:**
-- 56 products is the CATALOG, not the roadmap. We build ~5 deep before opening the platform.
-- The navigation model (13-layer menu → family → product) is conceptual. The current site has one sidebar, not a layer menu. Implementing the nav model is a significant UI redesign.
-- Some products in the catalog are very thin — "Glossary" is just documents with a tag. "Recognition" is just endorsements with a body. The thin-kinds filter from iter 210 applies to products too.
-- The product boundaries are blurry. Is "Projects + OKRs" one product or two? Is "Messenger + Community" one product (Discord does both) or two?
+**Fixpoint check:** Is the product map now complete?
+- 13 layer families ✓
+- Hive (meta-product) ✓
+- EventGraph (foundation) ✓
+- Shared infrastructure ✓
+- Compounding mechanism ✓
+- Navigation model ✓
 
-**What this spec does well:**
-- Makes the ecosystem visible. We can point to the map and say "here are 56 products we could build."
-- Identifies shared infrastructure explicitly — this is the build priority.
-- Shows the platform advantage: each product starts 60% done because of shared components.
+**Yes. Fixpoint on the product map.** Adding more products to the catalog is additive, not structural. The architecture of the map (foundation → hive → 13 families → shared infra → products) is stable.
 
-## Verdict: PASS
+## Verdict: PASS — FIXPOINT

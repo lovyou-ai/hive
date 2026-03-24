@@ -1,6 +1,6 @@
 # Product Map
 
-**The ecosystem: 13 layer families, hundreds of focused products, shared infrastructure.**
+**The ecosystem: 14 product families (13 layers + the hive), shared infrastructure, compounding knowledge.**
 
 Matt Searles + Claude · March 2026
 
@@ -209,9 +209,148 @@ Products about existential wellbeing.
 | 11. Governance | 4 | Proposals, Policies, Decision Log, Delegation |
 | 12. Culture | 3 | Handbook, Recognition, Rituals |
 | 13. Being | 3 | Check-ins, Reflections, Growth |
-| **Total** | **~56** | |
+| **0. Hive** | **6** | **Agent Studio, Loop, Knowledge System, Autonomy, Agent Market, Observatory** |
+| **Total** | **~62** | |
 
-**~56 distinct products** across 13 families. Each does one thing well. All share infrastructure (auth, DMs, profiles, search, notifications, endorsements, follows).
+**~62 distinct products** across 14 families (13 layers + the hive). Each does one thing well. All share infrastructure.
+
+---
+
+## Foundation: EventGraph — The Substrate
+
+Not a product family. The substrate that all product families run on. EventGraph is to lovyou.ai what Linux is to Android.
+
+| Product | Does one thing | Comparable to | Key mechanism |
+|---------|---------------|---------------|--------------|
+| **EventGraph Core** | Signed causal event graph | — (nothing like this exists) | Events, hash chains, causality, trust |
+| **Code Graph** | 66 cognitive grammar primitives | — | The vocabulary all products speak |
+| **Stores** | Postgres-backed event + actor storage | Database engine | pgstore, in-memory store |
+| **SDKs** | Build on EventGraph from any language | Stripe SDK, Firebase SDK | Go SDK (exists), future: JS, Python, Rust |
+| **Trust Engine** | Reputation from verified work | Web of trust | Asymmetric, non-transitive, earned trust scores |
+
+EventGraph is open source. Others can build their own ecosystems on it — their own hives, products, civilizations. We build lovyou.ai on EventGraph. Someone else builds their platform on EventGraph. The primitives are the same. The trust is portable.
+
+---
+
+## Layer 0: The Hive — The Product That Builds Products
+
+Not a layer in the EventGraph sense. The meta-layer. The civilization engine. Everything else is a product the hive builds. The hive is the product that builds products and gets better at building them.
+
+### Why Layer 0
+
+The 13 layers describe what collective existence needs. The hive describes HOW those needs get met. Without the hive, the 56 products are a wish list. With the hive, they're a pipeline — each one built by agents that learned from building the last one.
+
+### Hive Products
+
+| Product | Does one thing | Comparable to | Key mechanism |
+|---------|---------------|---------------|--------------|
+| **Agent Studio** | Define, configure, deploy agents | — (nothing like this exists) | AgentDef, role, model, system prompt, capabilities |
+| **The Loop** | Run Scout → Builder → Critic → Reflector | CI/CD for product development | Core loop, artifact files, iteration tracking |
+| **Knowledge System** | Accumulated institutional memory | — (closest: a company wiki that writes itself) | Lessons, specs, reflections, state — queryable and compounding |
+| **Autonomy Ladder** | Trust escalation and oversight | — | Authority levels, Guardian, trust scores, approval chains |
+| **Agent Market** | Agents offer capabilities, spaces hire agents | — | Agent skills, reputation, matching |
+| **Observatory** | Watch the hive work in real time | Grafana for agent civilizations | Agent activity, resource consumption, iteration metrics |
+
+### The Compounding Mechanism
+
+This is the most important part of the entire product. The hive compounds.
+
+```
+                    ┌─────────────────────────────┐
+                    │                             │
+                    ▼                             │
+              ┌──────────┐                        │
+              │  Scout   │ reads lessons, specs,   │
+              │          │ state, vision, code     │
+              └────┬─────┘                        │
+                   │ identifies gap                │
+                   ▼                              │
+              ┌──────────┐                        │
+              │ Builder  │ reads specs, patterns   │
+              │          │ from prior iterations   │
+              └────┬─────┘                        │
+                   │ ships code                   │
+                   ▼                              │
+              ┌──────────┐                        │
+              │ Critic   │ checks against          │
+              │          │ invariants + lessons    │
+              └────┬─────┘                        │
+                   │ validates or revises          │
+                   ▼                              │
+              ┌──────────┐                        │
+              │Reflector │ distills new lessons,   │
+              │          │ updates state           │
+              └────┬─────┘                        │
+                   │                              │
+                   ▼                              │
+           ┌───────────────┐                      │
+           │  Knowledge    │ lessons, specs,       │
+           │  Accumulation │ reflections, patterns │
+           └───────┬───────┘                      │
+                   │ feeds back into              │
+                   └──────────────────────────────┘
+```
+
+**Each iteration produces:**
+- Code (the product improves)
+- Artifacts (scout.md, build.md, critique.md — the audit trail)
+- Lessons (numbered principles in state.md — 53 and counting)
+- Specs (converged specifications — 7 produced this session)
+- Patterns (proven approaches — "entity kind pipeline", "engagement bar pattern")
+- Corrections (mistakes caught and recorded — "never skip artifacts", "Work isn't just kanban")
+
+**Each iteration consumes:**
+- All prior lessons (the Scout reads state.md first)
+- All specs (the Builder reads the relevant spec)
+- All patterns (the Builder reuses proven approaches)
+- All corrections (the Critic checks against them)
+
+**This is why iteration 210 is dramatically better than iteration 1.** The loop has 209 iterations of accumulated institutional knowledge. Every mistake is a lesson. Every success is a pattern. Every insight is a spec. Nothing is lost.
+
+### The Compounding Math
+
+```
+quality(iteration N) ≈ base_quality × (1 + lessons_accumulated / decay_factor)
+
+At iteration 1:   quality ≈ 1.0 × (1 + 0/100) = 1.0
+At iteration 50:  quality ≈ 1.0 × (1 + 30/100) = 1.3
+At iteration 100: quality ≈ 1.0 × (1 + 40/100) = 1.4
+At iteration 200: quality ≈ 1.0 × (1 + 53/100) = 1.53
+```
+
+But this understates it. The real compounding is in SCOPE — early iterations shipped one small fix. Recent iterations ship ontological frameworks that redefine the product. The loop doesn't just get better at building — it gets better at THINKING about what to build.
+
+### What Makes This Different
+
+Every company accumulates knowledge. Most of it lives in people's heads, Slack threads, and forgotten Confluence pages. The hive's knowledge is:
+
+1. **Structured** — numbered lessons, converged specs, typed artifacts
+2. **Queryable** — the Scout can read any prior state
+3. **Enforced** — the Critic checks against lessons; violations are caught
+4. **Compounding** — each lesson makes the next iteration better
+5. **Persistent** — survives session boundaries (memory system + committed artifacts)
+6. **Transparent** — every lesson, spec, and reflection is on the public chain
+
+No company's institutional knowledge has all six properties. Most have zero.
+
+### The Autonomy Trajectory
+
+Today: Matt + Claude run the loop manually. Every iteration requires human direction ("next").
+
+Tomorrow: The hive runs loops autonomously. Matt reviews, approves, redirects. The Scout reads the board, picks the gap, runs the iteration. Matt says "looks good" or "wrong direction."
+
+Eventually: The hive runs continuously. New products emerge from the pipeline. Quality is maintained by the Guardian and the accumulated lessons. Matt sets direction at the strategic level. The hive builds at the tactical level.
+
+The compounding mechanism is what makes this trajectory possible. An agent without institutional knowledge is a stateless function call. An agent WITH 200 iterations of accumulated lessons, 7 converged specs, 53 numbered principles, and a proven loop is a civilization.
+
+### Hive Products — Build Priority
+
+1. **Knowledge System** — make the accumulated knowledge queryable and surfaceable (lessons, specs, reflections as a searchable knowledge base within the product)
+2. **The Loop** — formalize the core loop as a product feature (iteration tracking, artifact viewing, phase progression visible on the site)
+3. **Observatory** — real-time view of agent activity, token consumption, iteration progress
+4. **Agent Studio** — define and deploy agents via the UI
+5. **Autonomy Ladder** — trust escalation dashboard
+6. **Agent Market** — agents as peers in the marketplace
 
 ---
 
@@ -253,6 +392,11 @@ lovyou.ai
 │   ├── Q&A
 │   └── ...
 ├── ... (13 layers)
+├── Hive
+│   ├── Agent Studio
+│   ├── The Loop
+│   ├── Knowledge System
+│   └── Observatory
 └── Spaces (user's spaces across all products)
 ```
 
