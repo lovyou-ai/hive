@@ -292,21 +292,46 @@ Deploy: `fly deploy --remote-only` from site repo.
 
 ## What the Scout Should Focus On Next
 
-**PRIORITY: MULTI-REPO PROJECT MODEL.** The pipeline can only work one repo at a time via `--repo`. Tasks have no repo identity. The Architect creates subtasks without knowing which repo. This blocks scaling.
+## Scout Directive: Hive Dashboard — The Civilization Made Visible
 
-**Requirements:**
-- Repos are identified by URL + branch, NOT local file paths (multiple clients could have identical relative paths)
-- Project config maps repo NAMES to URLs + local paths: `{"lovyou-site": {"url": "github.com/lovyou-ai/site", "branch": "main", "path": "../site"}}`
-- Tasks reference repos by name: `[repo:lovyou-site]` in the task description
-- The Architect tags each subtask with the target repo name based on the plan
-- The pipeline resolves repo name → local path from the project config
-- The Builder checks: does this task's repo match my working directory? If not, skip cleanly.
-- For now: config can be a JSON file or Go map. Later: DB table (clients/projects/repos)
-- Never infer repo from file paths — that's a hack that breaks with multiple clients
+**Priority:** High  
+**Target repo:** `site` (lovyou.ai)  
+**Why now:** The pipeline ships autonomously at $0.83/feature. The constraint is no longer "can it work" — it's "who can see it working." The agent posts iteration summaries to the feed. The runner tracks cost per task. The graph has all the data. There is no surface that makes this visible. Build it.
 
-**Build this in the hive repo (pkg/runner/). This is hive infrastructure.**
+**Background:** lovyou.ai/hive should be the live window into the civilization. Not inside a space — a top-level public page. The hive as a spectator sport. When someone asks "what is lovyou.ai?", you show them this page. When a potential client asks "can your agents really build things autonomously?", you show them this page.
 
-**Previous directive (completed):**
+**Tasks to create (all tagged `repo:site`):**
+
+### Task 1: `/hive` public route and layout
+Create `GET /hive` handler and `HiveView` template in the site repo. Public, no auth required. Layout: full-width, dark, consistent with Ember Minimalism. Three panels: Pipeline Status (top), Recent Autonomous Commits (left), Cost Dashboard (right). Add "Hive" link to main nav (desktop header + mobile nav). Add a "Watch it build →" call-to-action on the landing page (`/`).
+
+### Task 2: Pipeline role status panel
+Query the `nodes` table for the hive agent user (kind='post', author_id = hive agent's user_id, ordered by created_at desc, LIMIT 20). Extract the three pipeline roles — Scout, Builder, Critic — from post bodies (they contain `[hive:builder]`, `[hive:scout]`, `[hive:critic]` prefixes). Display each role as a card: role name, icon (telescope/hammer/shield), last active timestamp, last task title. Show "active" (green pulse) if last activity < 30 minutes ago, "idle" otherwise.
+
+### Task 3: Recent autonomous commits feed
+Surface the last 10 pipeline iteration posts from the hive agent's feed activity. Each entry shows: what was built (title from post body), cost ($X.XX from post body if present), duration (Xm if present), timestamp. Use the existing `ListNodes` with author_id filter for the hive agent. Link each entry to its full post. Style as a scrollable commit-log list — monospace font for the cost/duration stats, serif for the title.
+
+### Task 4: Cumulative cost ticker
+Below the commit feed: running total cost across all autonomous iterations. Parse dollar amounts from hive agent post bodies (pattern: `\$\d+\.\d+`). Sum them. Display as: "Total autonomous spend: $X.XX across N features." Add a small breakdown: avg cost/feature, total features shipped. This makes the economics of the civilization legible.
+
+### Task 5: Test coverage
+Add handler test for `GET /hive` (200, no auth, correct template rendered). Add store-level test for the hive agent activity query (returns posts filtered by agent author_id, ordered by recency).
+
+**Acceptance criteria:**
+- `lovyou.ai/hive` loads without auth
+- Shows all three pipeline roles with last-active status
+- Shows at least the last 5 autonomous commits with titles
+- Shows cumulative cost ticker
+- Linked from the main nav and landing page
+- All 5 tasks have passing tests before Builder marks DONE
+
+**What NOT to build in this cluster:**
+- Real-time WebSocket or SSE (polling is fine for now)
+- Per-agent detailed logs or event drill-down
+- Admin controls or pause/resume pipeline buttons
+
+**The Scout's job:** Read the current site repo structure (handlers, templates, router) to confirm the hive agent's user_id is accessible, then create these 5 tasks on the board assigned to the Builder. If the hive agent's user_id is not stored in a retrievable config, flag this as a blocker and create a prerequisite task to add `HIVE_AGENT_ID` to the site's environment config.
+
 ## Directive — Iteration 234+: Knowledge Product — Wire the Three Layers
 
 **Why this now:**

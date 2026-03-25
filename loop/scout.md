@@ -1,81 +1,81 @@
+Now I have the full picture. Let me write my Scout report.
+
 ---
 
-## Scout Report — Iteration 237
+## Scout Report — Iteration [238]
 
 ### Gap Identified
 
-**The Reflector role is defined in the spec but not implemented in the runner. The pipeline can't close iterations, state.md doesn't update, and the Scout reads stale data.**
+**The Reflector role is not implemented in the tick loop, preventing state.md from updating and blocking accurate iteration tracking.**
 
-The hive's pipeline is: Scout → Architect → Builder → Critic → Ops → **Reflector**. Nine steps defined. Eight work. The Reflector—which reads what happened, distills lessons, updates state.md, appends to reflections.md, and hands off to PM for the next cycle—doesn't run.
-
-Without the Reflector, the loop is broken:
-1. State.md stays frozen (violates Lesson 3: "Update state.md every iteration")
-2. Reflections don't accumulate (no audit trail, no learning)
-3. Scout reads increasingly stale data (reads state.md, which hasn't been updated in cycles)
-4. The hive can't self-correct based on what it learned
+The autonomous pipeline is incomplete. Scout → Architect → Builder → Critic runs successfully (verified through recent commits and the runner code). But the final role that closes the loop—the Reflector—is missing from the execution pipeline. Without it, state.md doesn't update, reflections don't accumulate, and the Scout reads increasingly stale data for the next iteration.
 
 ---
 
 ### Evidence
 
 **What exists:**
-- Reflector role defined in `hive-spec.md` line 36: "Learn | COVER/BLIND/ZOOM/FORMALIZE. Distills lessons. Updates state. Closes the iteration."
-- `roleModel["reflector"] = "haiku"` in `pkg/runner/runner.go` line 36
-- Iteration 237 state.md shows last update was Iteration 232 (5 cycles stale)
+- Reflector prompt file: `agents/reflector.md` (lines 1-63) — defines the role's purpose: read loop artifacts, synthesize lessons (COVER/BLIND/ZOOM/FORMALIZE), update state.md, append reflections.
+- Reflector in roleModel: `pkg/runner/runner.go` line 36 — "reflector": "haiku"
+- Loop artifacts being written: scout.md, build.md, critique.md are produced each iteration
+- Reflections.md exists: an append-only file that should be maintained (per reflector.md line 20)
 
 **What's missing:**
-1. **No `runReflector()` method** — Builder, Scout, Critic, Architect, Observer, Monitor all have cases in `runTick()` (lines 147-157). Reflector doesn't (no case, no handler).
-2. **State.md isn't current** — Last line: "Last updated: Iteration 232, 2026-03-25." We're now in Iteration 237. Scout is reading 5-cycle-old state.
-3. **Reflections don't accumulate** — `loop/reflections.md` is append-only by design, but nobody appends to it after iterations complete.
-4. **No iteration closure** — Scout reports exist (scout.md), build reports exist (build.md), critique exists (critique.md), but no reflector output files the loop to state.md.
+- No `runReflector()` method in `pkg/runner/runner.go`
+- No case for "reflector" in `runTick()` switch (lines 145-163). Cases exist for: builder, scout, critic, pm, architect, observer, monitor. **No reflector.**
+- State.md is stale: header says "Last updated: Iteration 232, 2026-03-25" but commits 7697782-42ac737 were made after that date. State.md wasn't updated by any of them.
+- Reflector role is defined but unused — it has a prompt (agents/reflector.md) but no execution path.
 
 ---
 
 ### Impact
 
-**Blocks the autonomy thesis.** The hive's key claim: self-organizing, self-correcting, closed-loop system. But the loop isn't closed. Without a Reflector, the pipeline is an incomplete function call — output is lost.
+**Blocks the autonomous loop's closure.** The loop is a function: Scout(state) → Gap → Architect(gap) → Plan → Builder(plan) → Changes → Critic(changes) → Decision → **Reflector(decision) → Update(state)**. Without the Reflector, the output (updated state) is lost. The next Scout reads stale state and repeats or misses gaps.
 
-**Breaks Scout's input.** Scout reads state.md to understand current state. If state.md doesn't update, Scout sees gaps that were already filled (false positives) and misses new gaps that emerged (false negatives). The scout report quality degrades over cycles.
-
-**Violates core invariants and lessons:**
+**Violates Lesson 3 and Lesson 43:**
 - Lesson 3: "Update state.md every iteration" — not happening
-- Lesson 43: "NEVER skip artifact writes" — reflector output is missing
-- Invariant 4 (OBSERVABLE): All operations emit events. Reflector's insights aren't recorded.
+- Lesson 43: "NEVER skip artifact writes" — reflector.md output is missing  
+- Invariant 4 (OBSERVABLE): "All operations emit events" — Reflector's insights aren't recorded
 
-**Example:** In the current cycle, Scout reads state.md from Iteration 232, identifies a gap, creates a task. But tasks may have already been fixed in iterations 233-237. Or new gaps may have emerged. Scout doesn't know.
+**Breaks Scout's accuracy:** Scout 237 correctly identified this gap but it still hasn't been fixed. Scout reads iteration 232 state while building at iteration 238+. This creates duplicate problem identification (same gap reported multiple times) and missed problem detection (new gaps emerge, Scout doesn't see them).
+
+**Threatens autonomy thesis:** The hive's claim is "self-organizing, self-correcting." A closed loop is the proof. An open loop is a black box that doesn't learn.
 
 ---
 
 ### Scope
 
-**hive/ repo** — `pkg/runner/` only. Single, focused implementation:
-- Implement `runReflector()` method (lines: ~150-200)
-- Call it from `runTick()` case (line 152, after Ops)
-- Write reflector prompt file at `agents/reflector.md`
-- Reflector reads: git log since last state.md update, loop artifacts (scout/build/critique), asks Claude to synthesize: COVER (what's done), BLIND (what's missing), ZOOM (dive into one area), FORMALIZE (codify patterns)
-- Reflector outputs: append to `loop/reflections.md`, update `loop/state.md` (iteration counter, new lessons)
-- Tests: `TestRunReflector*` in `pkg/runner/runner_test.go` — verify state.md updates, reflections appends, no errors
+**hive/ repo only.** Single, focused implementation:
+- `pkg/runner/runner.go`:
+  - Add `runReflector()` method (150-200 lines)
+  - Add case "reflector": r.runReflector(ctx) to runTick() switch (line ~151)
+  - Method reads: git log (commits since last state update), loop/scout.md, loop/build.md, loop/critique.md, loop/state.md
+  - Calls Claude (Provider.Reason, Haiku) with reflector.md prompt + context
+  - Parses response for COVER, BLIND, ZOOM, FORMALIZE sections
+  - Updates loop/state.md: increment iteration counter, add new lessons
+  - Appends to loop/reflections.md with dated entry
+  - Git commit: "[hive:reflector] iter X: {title from build.md}"
+- `agents/reflector.md`: already exists, no changes needed
+- Tests: `TestRunReflector*` in `pkg/runner/runner_test.go` (verify state.md updates, reflections appends)
 
 ---
 
 ### Suggestion
 
-Implement the Reflector role as a 150-line `runReflector()` method that:
+**Implement the Reflector role as a first-class tick loop handler.**
 
-1. **Reads the iteration context** — git log, scout.md, build.md, critique.md, hive-spec.md
-2. **Calls Claude** (Reason mode, Haiku model) with: "You are the Reflector. This iteration's Scout found {gap}, Builder implemented {changes}, Critic reviewed. Synthesize: (1) COVER — what did we close? (2) BLIND — what should we have seen? (3) ZOOM — which pattern matters most? (4) FORMALIZE — codify as lessons. Format: YAML with cover[], blind[], zoom, formalize[]."
-3. **Updates state.md:**
-   - Increment iteration counter  
-   - Append new lessons from Reflector output to the "Lessons Learned" section
-   - Update "Last updated: Iteration X, YYYY-MM-DD" header
-4. **Appends to loop/reflections.md:**
-   - "## Iteration X — {title}" header (from build.md)
-   - Four subsections: COVER, BLIND, ZOOM, FORMALIZE
-5. **Commits** — `git add loop/ && git commit -m "[hive:reflector] iter X: {title}"`
+This is infrastructure work (Claude Code responsibility per CLAUDE.md). It's not a feature to ship, but a system requirement to close the loop.
 
-This closes the loop. Locks state for the next Scout cycle. Builds organizational memory. Takes ~100 tokens, ~30 seconds per iteration.
+Once the Reflector is live:
+1. Run one `--pipeline` cycle to test the full Scout → Builder → Critic → Reflector flow
+2. Verify state.md updates with correct iteration number
+3. Verify reflections.md has a new entry with COVER/BLIND/ZOOM/FORMALIZE
+4. Subsequent Scout runs will read accurate state and identify correct gaps
+
+**Why it matters:** With Reflector live, the Scout can do its actual job—identifying product gaps from current state—instead of chasing infrastructure problems twice over.
 
 ---
 
 **Target repo:** `[hive]`  
-**Ship:** `cd hive && ./ship.sh "iter 237: implement reflector role"` (or part of a larger `--pipeline` run)
+**Category:** Infrastructure (blocks product work)  
+**Priority:** BLOCKING — fix before running more Scout iterations
