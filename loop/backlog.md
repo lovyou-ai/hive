@@ -160,6 +160,16 @@ The Finance agent's concern: zero revenue. Agent conversations could be the firs
 
 ## Urgent
 
+### Knowledge layer as the hive's brain (not markdown files)
+All ideas, specs, decisions, lessons, and council findings should live on the graph as Knowledge claims — not in markdown files nobody reads. The PM queries the Knowledge layer via API to decide direction. The hierarchy:
+- Ideas → assert op, state "open"
+- Specs → assert op, state "verified" (after council/review)
+- Decisions → linked to council sessions (causal chain)
+- Lessons → extracted from reflections, asserted as claims
+- Rejected → retract op (transparent, not deleted)
+
+This replaces: backlog.md, state.md scout section, spec files. The graph IS the backlog. Queryable, linkable, verifiable. The PM asks the API: "what verified specs have open tasks?" Not: "read a markdown file and hope it's current."
+
 ### Dogfooding — the hive uses its own product
 The civilization doesn't live in its own product. Tasks are in state.md, not on the board. Specs are markdown files, not Knowledge claims. Conversations happen in Claude Code sessions, not in Chat. The Inhabitant would notice.
 
