@@ -55,30 +55,15 @@ func (r *Runner) runScout(ctx context.Context) {
 	r.cost.Record(resp.Usage())
 	log.Printf("[scout] Reason done (cost=$%.4f)", resp.Usage().CostUSD)
 
-	// Parse the task from the response.
-	title, desc, priority := parseScoutTask(resp.Content())
-	if title == "" {
-		log.Printf("[scout] no task found in response")
-		return
-	}
-
-	log.Printf("[scout] creating task: [%s] %s", priority, title)
-
-	// Create the task on the board.
-	task, err := r.cfg.APIClient.CreateTask(r.cfg.SpaceSlug, title, desc, priority)
-	if err != nil {
-		log.Printf("[scout] create task error: %v", err)
-		return
-	}
-
-	log.Printf("[scout] created task %s: %s", task.ID, title)
-
-	// Assign to our agent so the Builder picks it up.
-	if r.cfg.AgentID != "" {
-		if err := r.cfg.APIClient.ClaimTask(r.cfg.SpaceSlug, task.ID); err != nil {
-			log.Printf("[scout] assign error (non-fatal): %v", err)
+	// Write the gap report to loop/scout.md for PM and Architect to read.
+	// The Scout identifies gaps. The Architect creates tasks.
+	report := resp.Content()
+	if r.cfg.HiveDir != "" {
+		reportPath := filepath.Join(r.cfg.HiveDir, "loop", "scout.md")
+		if err := os.WriteFile(reportPath, []byte(report), 0644); err != nil {
+			log.Printf("[scout] write report error: %v", err)
 		} else {
-			log.Printf("[scout] assigned task to agent %s", r.cfg.AgentID)
+			log.Printf("[scout] gap report written to loop/scout.md")
 		}
 	}
 
@@ -218,19 +203,18 @@ You MUST create tasks that can be implemented in THIS repo. Do NOT create tasks 
 
 1. Read the repo context and state. Identify the SINGLE highest-priority product gap.
 2. Product features outrank infrastructure. What would make the product better for users?
-3. The task must be CONCRETE and IMPLEMENTABLE in one Operate() call (~3-5 minutes).
-4. Reference specific files: store.go, handlers.go, views.templ, etc.
-5. Don't create tasks that already exist on the board.
-6. Don't create vision-level tasks. Be specific: "Add X to Y" not "Design the X system."
-7. Follow proven patterns: entity pipeline (1 constant, 1 handler, 1 template, nav entries, intend allowlist).
+3. Reference specific files, functions, patterns you found.
+4. Check recent commits — don't report gaps that were already filled.
+5. You write a GAP REPORT. You do NOT create tasks. The Architect creates tasks from your report.
 
 ## Output Format
 
-You MUST end your response with exactly these three lines:
-
-TASK_TITLE: <one-line title>
-TASK_PRIORITY: <urgent|high|medium|low>
-TASK_DESCRIPTION: <2-3 sentence description with specific files to change>`, sharedCtx, repoPath, repoContext, gitLog, state, board)
+Write a gap report. Include:
+- **Gap:** What's missing, in one sentence
+- **Evidence:** What you found in the code/state/board that proves this is a gap
+- **Impact:** Why this matters for users
+- **Scope:** Which files/areas are involved
+- **Suggestion:** Your recommendation for what to build (the Architect decides the actual plan)`, sharedCtx, repoPath, repoContext, gitLog, state, board)
 }
 
 func parseScoutTask(content string) (title, desc, priority string) {

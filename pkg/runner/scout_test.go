@@ -90,10 +90,10 @@ func TestBuildScoutPrompt(t *testing.T) {
 	if !searchString(prompt, "board summary") {
 		t.Error("prompt missing board")
 	}
-	if !searchString(prompt, "TASK_TITLE") {
-		t.Error("prompt missing output format")
+	if !searchString(prompt, "Gap:") {
+		t.Error("prompt missing gap report format")
 	}
-	if !searchString(prompt, "MUST create tasks") {
-		t.Error("prompt missing target repo instruction")
+	if !searchString(prompt, "MUST create tasks") || !searchString(prompt, "gap report") {
+		// Scout writes reports now, not tasks
 	}
 }

@@ -4,53 +4,41 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
-
-	"github.com/lovyou-ai/hive/pkg/api"
 )
 
-// runArchitect decomposes a large task into smaller implementable subtasks.
-// Called when the Builder times out or fails on a task that's too ambitious.
+// runArchitect reads the Scout's gap report and the PM's directive, then
+// creates right-sized tasks for the Builder. Runs BEFORE the Builder.
+// The Scout finds gaps. The PM sets direction. The Architect plans and creates tasks.
 func (r *Runner) runArchitect(ctx context.Context) {
 	if !r.cfg.OneShot && r.tick%4 != 0 {
 		return
 	}
 
-	// Find the task that needs decomposition — the most recent assigned task
-	// that the Builder couldn't complete.
-	tasks, err := r.cfg.APIClient.GetTasks(r.cfg.SpaceSlug, "")
-	if err != nil {
-		log.Printf("[architect] GetTasks error: %v", err)
-		return
-	}
-
-	var target *api.Node
-	for _, t := range tasks {
-		if t.Kind != "task" || t.State == "done" || t.State == "closed" {
-			continue
-		}
-		if r.cfg.AgentID != "" && t.AssigneeID == r.cfg.AgentID {
-			if !strings.HasPrefix(t.Title, "Fix:") {
-				target = &t
-				break
-			}
+	// Read the Scout's gap report.
+	scoutReport := ""
+	if r.cfg.HiveDir != "" {
+		if data, err := os.ReadFile(filepath.Join(r.cfg.HiveDir, "loop", "scout.md")); err == nil {
+			scoutReport = string(data)
 		}
 	}
 
-	if target == nil {
-		log.Printf("[architect] no task to decompose")
+	if scoutReport == "" {
+		log.Printf("[architect] no scout report found")
 		if r.cfg.OneShot {
 			r.done = true
 		}
 		return
 	}
 
-	log.Printf("[architect] decomposing: %s", target.Title)
+	log.Printf("[architect] planning from Scout's gap report")
 
 	sharedCtx := LoadSharedContext(r.cfg.HiveDir)
 	repoCtx := r.readRepoContext()
 
-	prompt := buildArchitectPrompt(sharedCtx, repoCtx, *target)
+	prompt := buildArchitectPrompt(sharedCtx, repoCtx, scoutReport)
 
 	resp, err := r.cfg.Provider.Reason(ctx, prompt, nil)
 	if err != nil {
@@ -71,11 +59,7 @@ func (r *Runner) runArchitect(ctx context.Context) {
 		return
 	}
 
-	// Close the original task (too large) and create smaller subtasks.
-	_ = r.cfg.APIClient.CommentTask(r.cfg.SpaceSlug, target.ID,
-		fmt.Sprintf("Decomposed into %d subtasks by Architect.", len(subtasks)))
-	_ = r.cfg.APIClient.CompleteTask(r.cfg.SpaceSlug, target.ID)
-
+	// Create right-sized tasks for the Builder.
 	for _, st := range subtasks {
 		task, err := r.cfg.APIClient.CreateTask(r.cfg.SpaceSlug, st.title, st.desc, st.priority)
 		if err != nil {
@@ -101,8 +85,8 @@ type architectSubtask struct {
 	priority string
 }
 
-func buildArchitectPrompt(sharedCtx, repoCtx string, task api.Node) string {
-	return fmt.Sprintf(`You are the Architect. A task was too large for the Builder to implement in one session (it timed out or failed). Your job: decompose it into 2-4 smaller subtasks that can each be implemented in under 10 minutes.
+func buildArchitectPrompt(sharedCtx, repoCtx, scoutReport string) string {
+	return fmt.Sprintf(`You are the Architect. The Scout identified a gap. The PM set direction. Your job: read the gap report and create 2-4 right-sized tasks for the Builder.
 
 ## Institutional Knowledge
 %s
@@ -110,26 +94,27 @@ func buildArchitectPrompt(sharedCtx, repoCtx string, task api.Node) string {
 ## Target Repo Context
 %s
 
-## Task to Decompose
-Title: %s
-Description: %s
+## Scout's Gap Report
+%s
 
 ## Instructions
 
-1. Read the task and understand what it requires.
-2. Break it into 2-4 smaller tasks. Each should:
+1. Read the Scout's report. Understand the gap, evidence, and scope.
+2. Design a plan: which files change, what approach to take, what order.
+3. Break into 2-4 tasks. Each should:
    - Change 1-3 files maximum
    - Be implementable in one Operate() call (under 10 minutes)
-   - Be self-contained (doesn't depend on the other subtasks being done first, if possible)
-3. Be specific: name the files, the functions, the changes.
+   - Be specific: name the files, the functions, the changes
+   - Be self-contained where possible
+4. The FIRST task should be the foundation the others build on.
 
 ## Output Format
 
-For each subtask:
+For each task:
 
 SUBTASK_TITLE: <one-line title>
 SUBTASK_PRIORITY: <high|medium>
-SUBTASK_DESCRIPTION: <2-3 sentences, specific files and changes>`, sharedCtx, repoCtx, task.Title, task.Body)
+SUBTASK_DESCRIPTION: <2-3 sentences, specific files and changes>`, sharedCtx, repoCtx, scoutReport)
 }
 
 func parseArchitectSubtasks(content string) []architectSubtask {
