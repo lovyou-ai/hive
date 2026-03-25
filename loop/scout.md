@@ -1,7 +1,3 @@
-I've identified the highest-priority gap in the hive. Let me present the scout report:
-
----
-
 # Scout Report — Iteration 236
 
 ## Gap Identified
