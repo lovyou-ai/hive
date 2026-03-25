@@ -85,6 +85,34 @@ The vision: each department gets a space. Each space has agents who learn that d
 ### Specs as graph events
 Specs should be events on the event graph — signed, causal, attributable. When a spec is created, it links to the council or conversation that motivated it. When a task implements part of a spec, it links back. Full provenance.
 
+### Primitives as plugin system
+The 201 primitives already have the plugin interface: input (subscriptions), process (Process function), output (mutations). The tick engine runs them. But this isn't exposed.
+
+**The insight:** Grammar ops are VERBS (intend, endorse, review). Primitives are PROCESSING — what happens when the verb fires. The verb stays the same. The processing is pluggable.
+
+```
+Event: "endorse" on a post
+  → Default primitive: increment counter, notify author
+  → Reputation primitive: recompute author's reputation score
+  → Payment primitive: trigger a micropayment (endorse = tip)
+  → Recommendation primitive: update feed ranking model
+  → Federation primitive: propagate endorsement via EGIP
+```
+
+Each primitive is a plugin. Subscribe to event types, receive events, produce mutations. The graph is the bus. The grammar is the language. The primitives are the processing nodes.
+
+**Agents ARE primitives.** An agent subscribed to `work.task.assigned` is a primitive whose Process function calls an LLM. Input: task event. Processing: Claude reasons about it. Output: mutations (subtasks created, messages posted, task completed). The agent is just the most complex primitive.
+
+**What this enables:**
+- Anyone writes a primitive (Go, Rust, Python, WASM, webhook)
+- Primitives compose: endorse → reputation → payment → notification chain
+- The graph describes WHAT happened. The primitives describe WHAT IT MEANS.
+- A marketplace of primitives (like OpenClaw's ClaWHub but for graph processing)
+- Domain-specific primitives: Lovatts gets puzzle-generation primitives, art-pipeline primitives
+- The 201 primitives from the ontology become the standard library. User primitives extend it.
+
+**Implementation:** MCP is the bridge. Each primitive is an MCP server. The tick engine calls tools. Or: primitives register as event subscribers via the graph's bus, receive events via webhook/gRPC/MCP, return mutations.
+
 ### Agent pub/sub on the event graph
 Agents should subscribe to event types they care about. The Critic subscribes to `hive.builder.committed`. The Guardian subscribes to `*`. The Philosopher subscribes to `council.*`. Currently: agents are invoked by the pipeline. Future: agents react to events.
 
