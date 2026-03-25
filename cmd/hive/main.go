@@ -216,23 +216,22 @@ func runPipeline(space, apiBase, repoPath string, budget float64, agentID string
 
 	// Smart pipeline: assess the board, then run the right sequence.
 	//
-	// 1. Check the board for fix tasks (Critic REVISE)
-	// 2. If fix tasks exist: skip Scout, run Builder on fixes, then Critic
-	// 3. If no fix tasks: run Scout → Builder → Critic
-	// 4. Builder commits locally (no push)
-	// 5. Push after the cycle completes
+	// 1. Check for fix tasks → Builder fixes, Critic reviews
+	// 2. Check for assigned tasks → Scout skip, Builder works, Critic reviews
+	// 3. No work at all → PM decides next direction, then Scout → Builder → Critic
 	//
-	// This ensures: REVISE gets fixed before new work. Critic reviews before push.
+	// This ensures: fixes first, then existing work, then new direction.
 
-	// Check for fix tasks.
 	hasFixes := false
+	hasWork := false
 	tasks, err := client.GetTasks(space, "")
 	if err == nil {
 		for _, t := range tasks {
-			if t.Kind == "task" && t.State != "done" && t.State != "closed" {
-				if t.AssigneeID == agentID && strings.HasPrefix(t.Title, "Fix:") {
+			if t.Kind == "task" && t.State != "done" && t.State != "closed" && t.AssigneeID == agentID {
+				if strings.HasPrefix(t.Title, "Fix:") {
 					hasFixes = true
-					break
+				} else {
+					hasWork = true
 				}
 			}
 		}
@@ -240,10 +239,14 @@ func runPipeline(space, apiBase, repoPath string, budget float64, agentID string
 
 	var roles []string
 	if hasFixes {
-		log.Printf("[pipeline] fix tasks found — skipping Scout, working fixes first")
+		log.Printf("[pipeline] fix tasks found — working fixes first")
+		roles = []string{"builder", "critic"}
+	} else if hasWork {
+		log.Printf("[pipeline] assigned tasks found — working them")
 		roles = []string{"builder", "critic"}
 	} else {
-		roles = []string{"scout", "builder", "critic"}
+		log.Printf("[pipeline] no work — PM decides direction, then Scout → Builder → Critic")
+		roles = []string{"pm", "scout", "builder", "critic"}
 	}
 
 	for _, role := range roles {
