@@ -292,6 +292,21 @@ Deploy: `fly deploy --remote-only` from site repo.
 
 ## What the Scout Should Focus On Next
 
+**PRIORITY: MULTI-REPO PROJECT MODEL.** The pipeline can only work one repo at a time via `--repo`. Tasks have no repo identity. The Architect creates subtasks without knowing which repo. This blocks scaling.
+
+**Requirements:**
+- Repos are identified by URL + branch, NOT local file paths (multiple clients could have identical relative paths)
+- Project config maps repo NAMES to URLs + local paths: `{"lovyou-site": {"url": "github.com/lovyou-ai/site", "branch": "main", "path": "../site"}}`
+- Tasks reference repos by name: `[repo:lovyou-site]` in the task description
+- The Architect tags each subtask with the target repo name based on the plan
+- The pipeline resolves repo name → local path from the project config
+- The Builder checks: does this task's repo match my working directory? If not, skip cleanly.
+- For now: config can be a JSON file or Go map. Later: DB table (clients/projects/repos)
+- Never infer repo from file paths — that's a hack that breaks with multiple clients
+
+**Build this in the hive repo (pkg/runner/). This is hive infrastructure.**
+
+**Previous directive (completed):**
 ## Directive — Iteration 234+: Knowledge Product — Wire the Three Layers
 
 **Why this now:**
