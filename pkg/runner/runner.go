@@ -157,6 +157,8 @@ func (r *Runner) runTick(ctx context.Context) {
 		r.runObserver(ctx)
 	case "monitor":
 		r.runMonitor(ctx)
+	case "reflector":
+		r.runReflector(ctx)
 	default:
 		log.Printf("[%s] tick %d: no handler for role", r.cfg.Role, r.tick)
 	}

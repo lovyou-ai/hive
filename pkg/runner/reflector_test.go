@@ -1,9 +1,29 @@
 package runner
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/lovyou-ai/eventgraph/go/pkg/decision"
+	"github.com/lovyou-ai/eventgraph/go/pkg/event"
+	"github.com/lovyou-ai/eventgraph/go/pkg/types"
 )
+
+// mockProvider is a test double for intelligence.Provider.
+type mockProvider struct {
+	response string
+}
+
+func (m *mockProvider) Reason(_ context.Context, _ string, _ []event.Event) (decision.Response, error) {
+	score, _ := types.NewScore(0.9)
+	return decision.NewResponse(m.response, score, decision.TokenUsage{}), nil
+}
+
+func (m *mockProvider) Name() string  { return "mock" }
+func (m *mockProvider) Model() string { return "mock-model" }
 
 func TestParseReflectorOutput(t *testing.T) {
 	t.Run("bold markdown sections", func(t *testing.T) {
@@ -137,7 +157,11 @@ func TestFormatReflectionEntry(t *testing.T) {
 
 	// Must open with a date heading.
 	if !strings.HasPrefix(entry, "## 2026-03-26") {
-		t.Errorf("entry should start with '## 2026-03-26', got: %q", entry[:min(30, len(entry))])
+		preview := entry
+		if len(preview) > 30 {
+			preview = preview[:30]
+		}
+		t.Errorf("entry should start with '## 2026-03-26', got: %q", preview)
 	}
 
 	// Must contain all four labeled sections.
@@ -167,9 +191,163 @@ func TestFormatReflectionEntry(t *testing.T) {
 	}
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
+// ─── TestRunReflector* — behavioral tests ────────────────────────────────────
+
+// makeHiveDir creates a minimal hive directory structure with state.md and
+// optional loop artifacts. Returns the path to the temp dir.
+func makeHiveDir(t *testing.T, stateContent string, artifacts map[string]string) string {
+	t.Helper()
+	dir := t.TempDir()
+	loopDir := filepath.Join(dir, "loop")
+	if err := os.MkdirAll(loopDir, 0755); err != nil {
+		t.Fatalf("mkdir loop: %v", err)
 	}
-	return b
+	if err := os.WriteFile(filepath.Join(loopDir, "state.md"), []byte(stateContent), 0644); err != nil {
+		t.Fatalf("write state.md: %v", err)
+	}
+	for name, content := range artifacts {
+		if err := os.WriteFile(filepath.Join(loopDir, name), []byte(content), 0644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	return dir
+}
+
+func TestRunReflectorAppendsToReflections(t *testing.T) {
+	stateContent := "# Loop State\n\nLast updated: Iteration 10, 2026-03-25.\n"
+	artifacts := map[string]string{
+		"scout.md":   "## Scout\nGap: missing reflector",
+		"build.md":   "## Build\nAdded runReflector()",
+		"critique.md": "VERDICT: PASS",
+	}
+	hiveDir := makeHiveDir(t, stateContent, artifacts)
+
+	llmResponse := `**COVER:** Implemented runReflector closing the loop.
+
+**BLIND:** No integration test for full pipeline run.
+
+**ZOOM:** Infrastructure iteration — closed the open loop.
+
+**FORMALIZE:** Lesson 57: The loop only learns when it writes back.`
+
+	r := &Runner{
+		cfg: Config{
+			HiveDir: hiveDir,
+			OneShot: true,
+			Provider: &mockProvider{response: llmResponse},
+		},
+		tick: 1,
+	}
+
+	r.runReflector(context.Background())
+
+	// reflections.md must exist and contain the four sections.
+	data, err := os.ReadFile(filepath.Join(hiveDir, "loop", "reflections.md"))
+	if err != nil {
+		t.Fatalf("reflections.md not created: %v", err)
+	}
+	content := string(data)
+	for _, want := range []string{"**COVER:**", "**BLIND:**", "**ZOOM:**", "**FORMALIZE:**"} {
+		if !strings.Contains(content, want) {
+			t.Errorf("reflections.md missing %s", want)
+		}
+	}
+	if !strings.Contains(content, "Implemented runReflector") {
+		t.Error("reflections.md missing COVER content")
+	}
+}
+
+func TestRunReflectorAdvancesStateIteration(t *testing.T) {
+	stateContent := "# Loop State\n\nLast updated: Iteration 232, 2026-03-25.\n\nRest of state."
+	hiveDir := makeHiveDir(t, stateContent, nil)
+
+	r := &Runner{
+		cfg: Config{
+			HiveDir: hiveDir,
+			OneShot: true,
+			Provider: &mockProvider{response: "**COVER:** x\n**BLIND:** y\n**ZOOM:** z\n**FORMALIZE:** No new lesson."},
+		},
+		tick: 1,
+	}
+
+	r.runReflector(context.Background())
+
+	data, err := os.ReadFile(filepath.Join(hiveDir, "loop", "state.md"))
+	if err != nil {
+		t.Fatalf("state.md read error: %v", err)
+	}
+	content := string(data)
+	if strings.Contains(content, "Iteration 232,") {
+		t.Error("state.md still has old iteration 232 — counter not incremented")
+	}
+	if !strings.Contains(content, "Iteration 233,") {
+		t.Errorf("state.md does not contain 'Iteration 233,' — got:\n%s", content)
+	}
+}
+
+func TestRunReflectorMissingArtifactsNoError(t *testing.T) {
+	// No scout.md, build.md, or critique.md — only state.md.
+	stateContent := "# Loop State\n\nLast updated: Iteration 1, 2026-03-01.\n"
+	hiveDir := makeHiveDir(t, stateContent, nil)
+
+	r := &Runner{
+		cfg: Config{
+			HiveDir: hiveDir,
+			OneShot: true,
+			Provider: &mockProvider{response: "**COVER:** nothing\n**BLIND:** n/a\n**ZOOM:** n/a\n**FORMALIZE:** No new lesson."},
+		},
+		tick: 1,
+	}
+
+	// Must not panic.
+	r.runReflector(context.Background())
+
+	// state.md should still be updated.
+	data, _ := os.ReadFile(filepath.Join(hiveDir, "loop", "state.md"))
+	if !strings.Contains(string(data), "Iteration 2,") {
+		t.Error("state.md iteration not advanced even when artifacts are missing")
+	}
+}
+
+func TestIncrementIterationLine(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		date    string
+		wantN   int
+		wantSub string
+	}{
+		{
+			name:    "normal increment",
+			content: "# State\n\nLast updated: Iteration 232, 2026-03-25.\n\nMore content.",
+			date:    "2026-03-26",
+			wantN:   233,
+			wantSub: "Last updated: Iteration 233, 2026-03-26.",
+		},
+		{
+			name:    "from zero",
+			content: "Last updated: Iteration 0, 2026-01-01.\n",
+			date:    "2026-01-02",
+			wantN:   1,
+			wantSub: "Last updated: Iteration 1, 2026-01-02.",
+		},
+		{
+			name:    "no match — content unchanged",
+			content: "No iteration line here.",
+			date:    "2026-03-26",
+			wantN:   0,
+			wantSub: "No iteration line here.",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, n := incrementIterationLine(tt.content, tt.date)
+			if n != tt.wantN {
+				t.Errorf("n = %d, want %d", n, tt.wantN)
+			}
+			if !strings.Contains(got, tt.wantSub) {
+				t.Errorf("result missing %q\ngot: %s", tt.wantSub, got)
+			}
+		})
+	}
 }
