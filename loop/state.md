@@ -292,6 +292,18 @@ Deploy: `fly deploy --remote-only` from site repo.
 
 ## What the Scout Should Focus On Next
 
+**PRIORITY: MULTI-REPO PIPELINE.** The pipeline requires manual `--repo` switching. Tasks have no target repo. The Architect creates subtasks without knowing which repo they belong to. This wastes cycles and blocks scaling.
+
+**What to build (hive repo — pkg/runner/):**
+1. Add repo-path field to task board entries (use description prefix like `[repo:site]` or `[repo:hive]`)
+2. Architect tags each subtask with `[repo:X]` based on which files the plan mentions
+3. Pipeline reads the tag, sets Builder working directory accordingly — or skips if wrong repo
+4. Project config: map repo names to local paths (hardcode 5 lovyou repos for now: site=../site, hive=., eventgraph=../eventgraph, agent=../agent, work=../work)
+5. Builder pre-check: if task has `[repo:X]` and current repo doesn't match, skip cleanly
+
+**Test:** Architect creates subtasks for both site and hive. Pipeline routes correctly without human switching.
+
+**Previous directive (completed):**
 ## Directive — Iter 236+: Complete the Knowledge Product
 
 **Priority: HIGH (task 3 remaining).**
