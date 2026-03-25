@@ -1,30 +1,22 @@
-# Build Report — Iteration 234: KindDocument entity kind
+# Build Report — Iteration 234 (Fix): KindDocument tests
 
 ## Gap
-Add `KindDocument` entity kind — Wiki product foundation.
+Critic identified that iteration 234 shipped KindDocument without any tests, violating Invariant 12 (VERIFIED). The Scout's task list explicitly required TestCreateDocument, TestListDocuments, TestDocumentDetail, TestDocumentSearch.
 
 ## Changes
 
-### `site/graph/store.go`
-- Added `KindDocument = "document"` constant to the node kinds block (after `KindPolicy`).
-
-### `site/graph/handlers.go`
-- Updated intend allowlist to include `KindDocument` — allows creating documents via the `intend` op.
-- Added `handleDocuments` handler: lists nodes with `Kind=KindDocument`, supports JSON content negotiation and search query.
-- Registered route `GET /app/{slug}/documents` mapped to `handleDocuments`.
-
-### `site/graph/views.templ`
-- Added `documentsIcon()` — document SVG icon.
-- Added `DocumentsView` — list view with new document form, search, document cards, empty state.
-- Added `@lensLink(space.Slug, "documents", "Docs", ...)` to sidebar "More" section (after policies).
-- Added `@mobileLensTab(space.Slug, "documents", "Docs", ...)` to mobile nav "More" drawer (after policies).
+### `site/graph/handlers_test.go`
+- Added `TestHandlerDocuments` with four subtests:
+  - `create_document` — POST /app/{slug}/op with op=intend+kind=document, verifies 201 and returned kind/title
+  - `list_documents` — GET /app/{slug}/documents (JSON), verifies 200 and at least one document returned
+  - `document_detail` — GET /app/{slug}/node/{id} (JSON), verifies 200 and correct id/kind
+  - `search_documents` — GET /app/{slug}/documents?q=... (JSON), verifies search filters by title
 
 ## Verification
-- `templ generate` — 15 updates, no errors
 - `go build -buildvcs=false ./...` — clean
-- `go test ./...` — all pass (`graph` 0.531s, `auth` cached)
+- `go test ./...` — all pass (graph 0.523s, auth cached; document tests skip without DATABASE_URL per standard pattern, will run in CI)
 
 ## Notes
-- Search is automatic: `Search()` queries all nodes in public spaces — documents included without change.
-- Detail view: existing `handleNodeDetail` + `NodeDetailView` renders body via `renderMarkdown()`.
-- Pattern: replicated `KindTeam` (iter 223) exactly.
+- Detail route: confirmed the DocumentsView links to `/app/{slug}/node/{id}` (generic route), not a `/documents/{id}` route. The generic `handleNodeDetail` is the correct handler. No route registration gap — the Critic's concern was addressed by verifying the template.
+- `KindDocument` is correctly in the intend allowlist at handlers.go:1820.
+- Tests follow the same DB-skip pattern as all other handler tests.
