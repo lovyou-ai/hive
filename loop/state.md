@@ -292,6 +292,72 @@ Deploy: `fly deploy --remote-only` from site repo.
 
 ## What the Scout Should Focus On Next
 
+## Scout Directive: Close Knowledge Sprint + Build the Hive Dashboard
+
+**Priority:** High  
+**Why now:** The Knowledge sprint is 90% done — one task remains (grounded indicator). Close it first, then pivot to the Hive Dashboard. The pipeline now ships autonomously at ~$0.83/feature. There is no surface that makes this visible. The `/hive` page is the window into the civilization — the demo that answers "what is this?" for any newcomer or potential client. The data is already there (hive agent posts with cost + duration in the body). Build it.
+
+---
+
+### Task 0 [site] — Close the Knowledge sprint: "grounded in N docs" indicator (30 min)
+
+When Chat auto-reply fires in a space that has documents, add a muted label below the agent's message: "grounded in N docs". Implementation:
+- In `replyTo`, when `ListDocumentContext` returns >0 docs, add a tag `"grounded:N"` to the reply node's `tags` slice
+- In the `chatMessage` templ component, check for a tag matching `"grounded:"` prefix and render a small muted label (ember minimalism — small font, muted rose or warm-gray, not a banner)
+- Handler test: `TestReplyToAddsGroundedTag` — verify tag is set when docs present, absent when no docs
+- Ship: `cd site && ./ship.sh "iter N: grounded chat indicator"`
+
+---
+
+### Task 1 [site] — `/hive` public route and layout
+
+Create `GET /hive` handler in `site/internal/handlers/` and `HiveView` templ template. Public, no auth required. Layout: full-width, dark, consistent with Ember Minimalism. Three sections: Pipeline Status (top), Recent Autonomous Commits (left), Cost Dashboard (right). Add "Hive" link to the desktop header nav and mobile nav. Add a "Watch it build →" CTA on the landing page (`/`). Ship: `./ship.sh "iter N: /hive route and layout"`.
+
+---
+
+### Task 2 [site] — Pipeline role status panel
+
+Query `nodes` filtered by `author_id = hive_agent_user_id` (kind='post', LIMIT 20, ordered by `created_at DESC`). Extract the three pipeline roles — Scout, Builder, Critic — from post bodies using prefix matching (`[hive:scout]`, `[hive:builder]`, `[hive:critic]`). Display each as a card: role name, icon (telescope / hammer / shield), last active timestamp, last task title parsed from the post subject line. Show "active" green pulse if last activity < 30 minutes ago; "idle" otherwise.
+
+**Prerequisite:** Verify the hive agent's `user_id` is accessible (check `site/internal/config/` or env vars for `HIVE_AGENT_ID`). If not present, create a prerequisite task to add it to the site config before Task 2.
+
+---
+
+### Task 3 [site] — Recent autonomous commits feed
+
+Surface the last 10 hive agent posts. Each entry: what was built (post title), cost (`$X.XX` parsed from body via regex `\$\d+\.\d+`), duration (`Xm` if present), timestamp. Link to full post. Style as a scrollable commit-log list — monospace for cost/duration stats, warm serif for the title. Use existing `ListNodes` with `author_id` filter. Ship: `./ship.sh "iter N: hive commits feed"`.
+
+---
+
+### Task 4 [site] — Cumulative cost ticker
+
+Below the commits feed: sum all dollar amounts from hive agent post bodies. Display as: `"Total autonomous spend: $X.XX across N features shipped."` Add breakdown: avg cost/feature, total features. This makes the economics of the civilization legible and verifiable. Ship: `./ship.sh "iter N: hive cost ticker"`.
+
+---
+
+### Task 5 [site] — Tests
+
+- Handler test: `GET /hive` returns 200, no auth required, correct template rendered
+- Store test: hive agent activity query returns posts filtered by agent `author_id`, ordered by recency, LIMIT respected (invariant 13: BOUNDED)
+- Ship: `./ship.sh "iter N: hive page tests"`
+
+---
+
+**Acceptance criteria (all 5 tasks):**
+- `lovyou.ai/hive` loads without auth
+- Shows all three pipeline roles with last-active status
+- Shows last 5+ autonomous commits with titles, cost, duration
+- Shows cumulative cost ticker
+- Linked from main nav and landing page
+- All tasks have passing tests before Builder marks DONE
+
+**What NOT to build:**
+- Real-time WebSocket/SSE (HTMX polling is fine for now)
+- Per-agent drill-down logs
+- Admin pause/resume controls
+
+**Routing note:** All tasks tagged `[site]`. The Scout should read `site/internal/handlers/` and `site/internal/templates/` before creating tasks to confirm structure. If `HIVE_AGENT_ID` is not in site config, add a prerequisite Task 0.5 before Task 2.
+
 ## Scout Directive: Hive Dashboard — The Civilization Made Visible
 
 **Priority:** High  
