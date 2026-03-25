@@ -54,6 +54,30 @@ The hive runs on a VM. Client provides: repo URL, deploy target (Fly/Vercel/AWS)
 - Client dashboard showing: what's been modernized, what's in progress, what's untouched
 - Gradual handoff (old app → new app, with both running in parallel during transition)
 
+**The bigger picture: hive as company operating system.** Lovatts isn't one project — it's an entire organization. Each department has different needs:
+- Content/Publishing: puzzle generators, IP management, content scheduling, syndication
+- Art: PostScript generators, print layouts, asset pipelines
+- And every other department Matt hasn't directly served yet
+
+The vision: each department gets a space. Each space has agents who learn that department's domain through conversation. A person in the art department says "I need to resize all the crossword grids for the new newspaper format" and the agent understands PostScript, knows the asset directory, and either does it or creates a task.
+
+**This maps to our architecture exactly:**
+- Spaces = departments (Content, Art, Finance, HR, etc.)
+- Agent personas = domain specialists (trained on department-specific knowledge)
+- Memory = accumulated business knowledge per department
+- Knowledge layer = business rules, domain expertise, institutional knowledge
+- Governance = company decision-making processes
+- Roles/Teams = actual org structure
+
+**The entity kinds aren't abstract anymore.** Department, Role, Team, Policy, Decision — these exist because a real company has them. The ontology IS the company.
+
+**What this requires beyond basic company-in-a-box:**
+- Per-department agent memory (the content agent knows puzzle formats, the art agent knows PostScript)
+- Domain onboarding (agent reads existing codebase + databases + documentation + conversations with humans to build understanding)
+- Non-technical interface (department staff aren't developers — they talk in domain language)
+- Report generation (agents query databases and produce business reports, not just code)
+- The council per company (department agents + company-wide agents deliberate together)
+
 ---
 
 ## Architectural ideas
