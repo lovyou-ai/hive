@@ -159,6 +159,18 @@ Council every 10 iterations, or when the Scout can't find gaps, or on Director d
 ### REVISE enforcement gate
 Before Scout creates new work, check for open fix tasks. Fix before build. Currently: fix tasks pile up ignored.
 
+### Project-aware hive (multi-repo workspace)
+The hive shouldn't need `--repo` per run. It should know its project: which repos exist, where they are, what they contain, how they relate. The top-level CLAUDE.md already describes this.
+
+**What changes:**
+- Project config: a `project.json` or section in CLAUDE.md that lists repos, paths, what each contains
+- Scout creates tasks at the project level, tags with target repo (inferred from files mentioned)
+- Pipeline reads the project config, routes tasks to the right repo
+- Cross-repo awareness: "this site feature needs a new store method" → site task. "This MCP server needs a new tool" → hive task. "This event type needs a new content struct" → eventgraph task.
+- Build verification spans repos: if the site depends on eventgraph, check both build after changes
+
+**Why:** The hive manages a PROJECT, not a repo. Five repos, one workspace. The `replace` directives in go.mod already encode the dependency graph. The hive should read those and understand the architecture.
+
 ### Deploy-on-merge (not deploy-per-cycle)
 Batch commits, deploy once. The current approach of deploying after every cycle causes Fly machine collisions. Accumulate commits, deploy on a schedule or trigger.
 
