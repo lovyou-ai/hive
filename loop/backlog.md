@@ -43,6 +43,17 @@ The hive runs on a VM. Client provides: repo URL, deploy target (Fly/Vercel/AWS)
 
 **The wedge:** Small dev teams who want an AI colleague but don't want to set up the infrastructure. "Give us your repo. We'll build your features while you sleep." The Growth agent's suggestion: one team, one space, one agent. This scales it.
 
+**First client: Lovatts.** A suite of dozens (possibly hundreds) of apps + several databases, many ~20 years old. The hive's first real engagement: rebuild and maintain a legacy enterprise portfolio. This is the company-in-a-box proof. If the hive can modernize 20-year-old apps autonomously — read legacy code, understand the domain, plan migrations, build replacements, maintain both during transition — that's the most compelling demo possible. Not a greenfield toy project. A real enterprise with real technical debt and real users.
+
+**What this needs beyond the basic company-in-a-box:**
+- Legacy code analysis (read old codebases, map dependencies, understand domain logic)
+- Migration planning (what to rebuild first, how to maintain continuity)
+- Database schema understanding + migration tooling
+- Multi-app coordination (apps depend on each other, shared databases)
+- Domain knowledge accumulation (the hive learns Lovatts' business over time via agent memory)
+- Client dashboard showing: what's been modernized, what's in progress, what's untouched
+- Gradual handoff (old app → new app, with both running in parallel during transition)
+
 ---
 
 ## Architectural ideas
