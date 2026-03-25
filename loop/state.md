@@ -317,23 +317,19 @@ Without documents: no Wiki product, no Handbook (Layer 12), no Lessons product, 
 Target repo: `site`. Pattern: follow `KindRole` (iter 222) and `KindTeam` (iter 223) exactly.
 
 Implementation:
-1. `site/internal/store/store.go` — add `KindDocument = "document"` constant alongside existing kind constants
-2. `site/internal/store/store.go` — add `"document"` to the `intend` op allowlist (grep `KindRole` to find it)
-3. `site/db/schema.sql` — no schema change needed (nodes table is kind-agnostic)
-4. `site/internal/handlers/documents.go` — `handleDocuments(w, r)` for list view, `handleDocumentDetail(w, r)` for detail; follow `handlers/roles.go` pattern
-5. `site/internal/templates/documents.templ` — `DocumentsView` and `DocumentDetailView`; the detail view must render `Body` as markdown (it already has a markdown component — reuse it)
-6. `site/internal/handlers/router.go` — register routes `/app/{slug}/documents` and `/app/{slug}/documents/{id}`
-7. `site/internal/templates/sidebar.templ` — add Documents link with file/doc icon (between Knowledge and Governance is appropriate)
-8. `site/internal/templates/mobile_nav.templ` — add Documents to mobile nav (same pattern as other kinds)
-9. `site/internal/handlers/search.go` — ensure `KindDocument` is included in search results (grep for where node kinds are filtered in search)
+1. `site/graph/store.go` — add `KindDocument = "document"` constant alongside existing kind constants
+2. `site/graph/store.go` — add `"document"` to the `intend` op allowlist (grep `KindRole` to find it)
+3. No schema change needed (nodes table is kind-agnostic)
+4. `site/graph/handlers.go` — `handleDocuments(w, r)` for list view; detail uses generic `handleNodeDetail`
+5. `site/graph/views.templ` — `DocumentsView`; detail renders `Body` as markdown via generic `NodeDetailView`
+6. `site/graph/handlers.go` — register route `/app/{slug}/documents` in router
+7. `site/graph/views.templ` — sidebar and mobile nav: add Documents link (file/doc icon)
+8. Search inclusion: `Search()` in `site/graph/store.go` is kind-agnostic; no filter to update
 
 **[high] Tests for document handler**
 
-After the entity is shipped, add to `site/internal/handlers/handlers_test.go`:
-- TestCreateDocument
-- TestListDocuments
-- TestDocumentDetail
-- TestDocumentSearch
+After the entity is shipped, add to `site/graph/handlers_test.go`:
+- TestHandlerDocuments/create, list, detail, search subtests
 
 Invariant 12 (VERIFIED): no entity ships without test coverage.
 
@@ -346,7 +342,7 @@ The entity kind pipeline pattern is:
 constant → allowlist entry → handler (list + detail) → template (list + detail) → route registration → sidebar link → mobile nav → search inclusion
 ```
 
-The Builder has done this 4 times. Grep for `KindTeam` in site/ to see the most recent clean example. The document detail view should show the `Body` field rendered as markdown — the `renderMarkdown` or equivalent helper already exists; grep for it.
+The Builder has done this multiple times. Grep for `KindDocument` in `site/graph/` to see the current implementation. The document detail view renders `Body` as markdown via the generic `NodeDetailView` (line ~4287 of `site/graph/views.templ`). All handlers live in `site/graph/handlers.go`, all templates in `site/graph/views.templ`, and all tests in `site/graph/handlers_test.go`. The `site/internal/` path does not exist — the actual package is `site/graph/`.
 
 **After shipping:** run `cd site && ./ship.sh "iter 234: Document entity kind — Wiki product foundation"`.
 
