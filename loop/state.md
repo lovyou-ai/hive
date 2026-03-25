@@ -292,25 +292,77 @@ Deploy: `fly deploy --remote-only` from site repo.
 
 ## What the Scout Should Focus On Next
 
-**LOVYOU_API_KEY:** `lv_b7fb22cde43a8a65289f77ee6dc9aa195184bf6129160f62691e59d8d6ccc8dd`
+## Current Directive — Iteration 234+
 
-**Mind tools:**
-- `cmd/reply` — one-shot, identity from API key
-- `cmd/post` — publishes iteration summaries
+**Status as of iter 233:**
+- Pipeline proven: Scout → Builder → Critic, $0.83/feature, 6 min (iters 224-232)
+- Agent Memory Phase 4 shipped: `agent_memories` table, `RememberForPersona`/`RecallForPersona`, memory injection into `buildSystemPrompt`
+- 13/13 product layers done (minimum viable)
+- **Stale section below cleared** — Monitor, Scout, Critic roles are DONE
 
-**The entity kind pipeline is proven.** Each new kind = 1 constant, 1 handler, 1 template. Priority order for remaining kinds: Policy, Decision (Govern mode) → Document (Learn mode) → Resource (Allocate mode) → Organization (meta-container). Team shipped in iter 223 (12th entity kind). **Test iteration recommended before 5th pipeline entity (next entity kind).**
+---
 
-50. **When pipelines are proven, batch with confidence but audit at boundaries.** The entity pipeline has produced 4 kinds (project, goal, role, team) with zero regressions. But each untested addition compounds risk. Set a boundary (every 4-5 entities) and run a test sweep.
+### The Gap
 
-**Cross-entity depth is more valuable than more kinds.** Board project filter (207) shows the pattern: entities filtering and contextualizing each other. Next: Goal progress dashboard (aggregated Goal → Project → Task view), task auto-assign to filtered project.
+Documents don't exist. Claims (`assert/challenge`) are on the Knowledge layer but claims are ephemeral arguments — not persistent structured knowledge. Every team needs documents. The Knowledge layer without documents is a courtroom without case files.
 
-**Hive runtime Phase 1 is COMPLETE.** Builder flow proven end-to-end (iter 224). Next priorities from hive-runtime-spec.md Phase 2:
-1. **Monitor role** — triage unassigned tasks, clean stale tasks, restart crashed agents. Unblocks builder by keeping the board clean.
-2. **Scout role** — find product gaps, write to board as tasks. Replaces manual iteration scouting.
-3. **Critic role** — review recent commits, audit invariants.
-4. **Stale task cleanup** — 76 open tasks on the board, many already completed in code. Monitor should close them.
+Without documents: no Wiki product, no Handbook (Layer 12), no Lessons product, no way to put specs on the graph (the backlog item "Knowledge layer as hive's brain" is blocked on this). The entity kind pipeline has proven the pattern four times (project, goal, role, team). Document is next.
+
+---
+
+### Tasks to Create
+
+**[high] Add `KindDocument` entity — Document entity kind, handler, template, sidebar**
+
+Target repo: `site`. Pattern: follow `KindRole` (iter 222) and `KindTeam` (iter 223) exactly.
+
+Implementation:
+1. `site/internal/store/store.go` — add `KindDocument = "document"` constant alongside existing kind constants
+2. `site/internal/store/store.go` — add `"document"` to the `intend` op allowlist (grep `KindRole` to find it)
+3. `site/db/schema.sql` — no schema change needed (nodes table is kind-agnostic)
+4. `site/internal/handlers/documents.go` — `handleDocuments(w, r)` for list view, `handleDocumentDetail(w, r)` for detail; follow `handlers/roles.go` pattern
+5. `site/internal/templates/documents.templ` — `DocumentsView` and `DocumentDetailView`; the detail view must render `Body` as markdown (it already has a markdown component — reuse it)
+6. `site/internal/handlers/router.go` — register routes `/app/{slug}/documents` and `/app/{slug}/documents/{id}`
+7. `site/internal/templates/sidebar.templ` — add Documents link with file/doc icon (between Knowledge and Governance is appropriate)
+8. `site/internal/templates/mobile_nav.templ` — add Documents to mobile nav (same pattern as other kinds)
+9. `site/internal/handlers/search.go` — ensure `KindDocument` is included in search results (grep for where node kinds are filtered in search)
+
+**[high] Tests for document handler**
+
+After the entity is shipped, add to `site/internal/handlers/handlers_test.go`:
+- TestCreateDocument
+- TestListDocuments
+- TestDocumentDetail
+- TestDocumentSearch
+
+Invariant 12 (VERIFIED): no entity ships without test coverage.
+
+---
+
+### Context for the Builder
+
+The entity kind pipeline pattern is:
+```
+constant → allowlist entry → handler (list + detail) → template (list + detail) → route registration → sidebar link → mobile nav → search inclusion
+```
+
+The Builder has done this 4 times. Grep for `KindTeam` in site/ to see the most recent clean example. The document detail view should show the `Body` field rendered as markdown — the `renderMarkdown` or equivalent helper already exists; grep for it.
+
+**After shipping:** run `cd site && ./ship.sh "iter 234: Document entity kind — Wiki product foundation"`.
+
+---
+
+### Why This, Not Something Else
+
+The board has 72 open tasks (0 assigned) — most are vague Scout-generated product ideas ("Dispute Resolution Platform", "Open Source AI Agent Framework"). These are backlog entries, not implementable tasks. The Scout should clear or archive these and replace them with concrete tasks like the ones above.
+
+Document > other options because:
+- It directly unblocks "Knowledge layer as hive brain" (specs on the graph instead of markdown files)
+- It's the foundation for 4 products: Wiki, Handbook, Lessons, Glossary
+- One entity kind, one iteration, zero architectural changes
+- The Builder can verify it by running the site and creating a document
 
 **How to run the builder:**
 ```bash
-cd hive && LOVYOU_API_KEY=lv_... go run ./cmd/hive --role builder --repo ../site --space hive --agent-id 36509418df854dd4a709cfee3e915a17 --one-shot
+cd hive && LOVYOU_API_KEY=lv_b7fb22cde43a8a65289f77ee6dc9aa195184bf6129160f62691e59d8d6ccc8dd go run ./cmd/hive --role builder --repo ../site --space hive --agent-id 36509418df854dd4a709cfee3e915a17 --one-shot
 ```
