@@ -210,100 +210,44 @@ Deploy: `fly deploy --remote-only` from site repo.
 
 ## What the Scout Should Focus On Next
 
-**PRIORITY: COMPLETE THE CORE LOOP.** The pipeline has 4 of 8 roles. The full loop from CLAUDE.md is PM → Scout → Architect → Builder → Tester → Critic → Ops → Reflector. Missing roles:
+## Agent Memory — Phase 4
 
-1. **Architect** (pkg/runner/architect.go) — runs after Scout, before Builder. Reads the Scout's task, reads the codebase, writes a plan (which files to change, how). The Builder follows the plan. Prevents the Builder from making architectural decisions inside Operate.
+**Why this now:** Phases 1-3 of the agent personas sprint are complete. Agents have identities, a discovery page, and Mind routes conversations to persona prompts. But every conversation starts fresh — the agent has no memory of you. This is the gap that makes agent relationships feel hollow. Phase 4 closes it.
 
-2. **Tester** (pkg/runner/tester.go) — runs after Builder, before Critic. Writes tests for what the Builder built. Uses Operate() to read changed files and write test functions. Enforces invariant 12 (VERIFIED).
+**Target repo:** site (current pipeline target — no `--repo` change needed)
 
-3. **Ops** (pkg/runner/ops.go) — runs after Critic PASS. Deploys to production. Runs health checks. Currently deploy is manual or batched.
+**What to build:**
 
-4. **Reflector** (pkg/runner/reflector.go) — runs at the end of each cycle. Reads what happened, appends to reflections.md, updates state.md iteration number, extracts lessons. Currently done manually.
+### Task 1: agent_memories table
+In `site/graph/store.go` and `site/graph/schema.sql`:
+- Add table: `agent_memories(id UUID, persona TEXT, kind TEXT, content TEXT, source_id TEXT, importance INT, created_at TIMESTAMPTZ)`
+- kinds: `fact` (user told me), `preference` (user prefers), `context` (what we were working on), `relationship` (how the user relates to this space)
+- Add `Store.RememberForPersona(ctx, persona, kind, content, sourceID string, importance int) error`
+- Add `Store.RecallForPersona(ctx, persona string, limit int) ([]AgentMemory, error)`
+- Auto-create table on startup with `CREATE TABLE IF NOT EXISTS`
 
-Also: 72 stale tasks on the board need cleaning. The Monitor role should triage and close them.
+### Task 2: Memory injection into Mind
+In `site/graph/mind.go`, function `buildSystemPrompt()`:
+- Call `RecallForPersona(persona, 5)` — top 5 memories by importance
+- If memories exist, prepend to system prompt: `"## What you remember about this user:\n- [memory content]\n..."`
+- Persona is already resolved by this point — reuse the resolved persona name
 
-**Implement these in pkg/runner/ following the existing pattern (scout.go, critic.go, pm.go). Each role: tick dispatch in runner.go, prompt in agents/{role}.md, one-shot support, Reason() or Operate() as appropriate.**
+### Task 3: Memory extraction after reply
+In `site/graph/mind.go`, after a successful agent reply:
+- Call `Reason()` on the exchange with a short extraction prompt: "In one sentence each, what facts/preferences did the user reveal in this exchange? Return as JSON array of {kind, content, importance(1-5)}."
+- Store each result via `RememberForPersona()`
+- Max 3 memories extracted per exchange (BOUNDED invariant)
 
-**PHILOSOPHY: CLEAN AS YOU GO.** If something is broken, fix it before building new things. REVISE tasks take priority over new features. Repeated errors (like wrong-repo tasks) should be fixed immediately, not repeated. The hive should leave things better than it found them.
+### Task 4: Test
+Add to `site/graph/store_test.go`:
+- `TestRememberAndRecall` — store 3 memories for a persona, recall top 2 by importance, verify order
+- `TestMemoryInjection` — verify `buildSystemPrompt` includes memory content when memories exist
 
-**REPO AWARENESS: The Builder operates on whichever repo `--repo` points to for THIS pipeline run. Currently targeting the site repo. Tasks that require changes to other repos (hive, eventgraph, agent, work) should be tagged with the target repo so they can be routed to a separate pipeline run. Do NOT create tasks the current pipeline run can't implement — if the current target is `site/`, create site tasks. Hive infrastructure tasks are valid work but need a hive-targeted run.**
+**Verification:** After shipping, start a conversation with an agent, share your name and a preference. End the conversation. Start a new conversation with the same agent. The agent should reference the prior exchange.
 
-**COUNCIL DIRECTIVE: MAKE AGENTS DM-ABLE.** The civilization's 50 agents should be contactable on lovyou.ai. Any user can start a conversation with the Philosopher, the Dissenter, the Steward, etc. This is the differentiator no competitor has.
+**Accept/Release:** Don't build memory editing UI, memory search, or cross-persona memory sharing — those are Phase 6+. Ship the minimum that proves persistence.
 
-**How it works technically:**
-- The Mind already auto-replies when an agent is a conversation participant
-- `buildSystemPrompt()` in `graph/mind.go` line 380 builds the system prompt from `mindSoul`
-- To support agent personas: check the conversation title for a role name (e.g. "Chat with Philosopher"), load the corresponding role prompt from a roles table or config, and use THAT as the system prompt instead of the generic mindSoul
-- The agent picker already exists on the conversation creation form (agents dropdown)
-- New: add an "Agents" page that lists available agents with descriptions and a "Chat" button for each
-- New: when a conversation has a role-tagged agent participant, Mind uses that role's prompt
-
-**Implementation steps:**
-1. Add a `roles` config or table mapping role names to system prompts (could be as simple as a map[string]string loaded from agents/*.md files, or stored in mind_state)
-2. Update `buildSystemPrompt` to check conversation title/tags for a role, load its prompt
-3. Add `/app/{slug}/agents` route listing available agent personas with descriptions + "Chat" button
-4. The "Chat" button creates a conversation with the agent + sets the role in the title/tags
-
-**Previous directive (completed):** User-first sprint shipped 17 features.
-
-**SPECS TO IMPLEMENT (read loop/agent-chat-spec.md and loop/agent-capability-spec.md for full details):**
-
-**Phase 1 — Persona storage + Mind routing:**
-1. Create `agent_personas` table (id, name, display, description, category, prompt, model, active)
-2. Seed from agents/*.md files at startup (upsert on boot)
-3. Update `buildSystemPrompt` in graph/mind.go to check `role:` tag on conversation, load persona prompt instead of generic mindSoul
-4. Store role tag in conversation tags when created via agent chat
-
-**Phase 2 — Agents page + chat creation:**
-1. GET /agents route — global page listing all active personas grouped by category (Care, Governance, Knowledge, Product, Outward, Resource)
-2. POST /agents/{name}/chat — creates conversation with role tag, redirects to chat
-3. Persona cards: name, one-line description, category badge, "Chat" button
-
-**Phase 3 — MCP Graph Server (HIVE REPO — needs `--repo ../hive` pipeline run):**
-1. cmd/mcp-graph/main.go — MCP server wrapping lovyou.ai REST API
-2. Core tools: graph.respond, graph.intend, graph.search, graph.getBoard, graph.getNode
-3. Wire into Mind via --mcp-config
-4. **Target: hive repo, not site repo. Run pipeline with `--repo ../hive`**
-
-**Phase 4 — Agent memory (SITE REPO — can be built):**
-1. agent_memories table in site/graph/store.go (persona, kind, content, source_id, importance)
-2. Store.RememberForPersona() and Store.RecallForPersona() methods
-3. Inject relevant memories into Mind's buildSystemPrompt
-4. Test: agent references a previous conversation
-
-**Phase 5 — Conversation UX (SITE REPO — can be built):**
-1. Global contact list showing agents + humans you've talked to
-2. Conversation summaries (auto-generated after conversation goes idle)
-3. Multiple conversations with same agent listed together
-4. Cross-conversation search
-
-**Each phase is 1-3 pipeline iterations. Start with Phase 1 — it's a 15-line change in mind.go + a new table + a seed script.**
-
-**What was already shipped (iters 233-235):**
-- Landing page rewritten: "Your team has an AI colleague" (not "One graph, many lenses")
-- Welcome page for new users: create-space form instead of redirect to /discover
-- Sidebar simplified: 4 core links (Board, Chat, Feed, People) + "More" toggle (was 15 links)
-
-**The Newcomer's complaints (direct from council — use these as task seeds):**
-- "I have 8 seconds and you've given me a philosophy lecture"
-- "What does the button do? No — what button? Where is the button?"
-- "The funnel assumes I already want to be here"
-- "13 layers and 15 operations — those are homework. Nobody wants homework."
-
-**Remaining user-first priorities (from council consensus):**
-1. Task creation form should pre-suggest assigning to the agent
-2. After assigning a task, immediate visible feedback (thinking indicator)
-3. Empty states should guide, not just say "nothing here"
-4. Mobile nav needs the same simplification as sidebar
-5. The "aha moment" — first time the agent responds — must be fast and visible
-6. Each lens needs a one-sentence explanation of what it's for
-7. Onboarding should end with the user having accomplished something, not just created a container
-
-**Growth agent's wedge:** "A small dev team using Board + Chat + Build with an agent peer. One space, one team, one agent."
-
-**Storyteller's one-line pitch:** "A place where humans and AI take care of each other — and build whatever they need together."
-
-**The test:** Would a stranger who lands on lovyou.ai stay for 60 seconds? Currently: probably not. Target: yes.
+**Invariants:** BOUNDED (max 5 recalled, max 3 extracted), VERIFIED (2 new test functions), IDENTITY (memories keyed on persona name, not ID — persona names are stable slugs here, acceptable).
 
 ## Lessons Learned
 
