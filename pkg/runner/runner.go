@@ -151,6 +151,8 @@ func (r *Runner) runTick(ctx context.Context) {
 		r.runCritic(ctx)
 	case "pm":
 		r.runPM(ctx)
+	case "architect":
+		r.runArchitect(ctx)
 	case "observer":
 		r.runObserver(ctx)
 	case "monitor":

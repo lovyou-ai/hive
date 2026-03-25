@@ -285,6 +285,21 @@ func runPipeline(space, apiBase, repoPath string, budget float64, agentID string
 
 		if err := r.Run(ctx); err != nil {
 			log.Printf("[pipeline] %s error: %v", role, err)
+
+			// If Builder failed (timeout, error), spawn Architect to decompose.
+			if role == "builder" {
+				log.Printf("[pipeline] Builder failed — spawning Architect to decompose task")
+				archProvider, _ := intelligence.New(intelligence.Config{
+					Provider: "claude-cli", Model: "sonnet", MaxBudgetUSD: budget,
+				})
+				arch := runner.New(runner.Config{
+					Role: "architect", AgentID: agentID, SpaceSlug: space,
+					RepoPath: absRepo, HiveDir: hiveDir, APIClient: client,
+					Provider: archProvider, RolePrompt: runner.LoadRolePrompt(hiveDir, "architect"),
+					BudgetUSD: budget, OneShot: true,
+				})
+				_ = arch.Run(ctx)
+			}
 		}
 	}
 
