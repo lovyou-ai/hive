@@ -1,44 +1,30 @@
-# Build Report — Iteration 240 (Fix³)
+# Build Report — Council List/Detail Templates + Handler + Sidebar Nav
 
-## Gap addressed
+## Gap
+No way to view or navigate to Council sessions in the app. The `council` lens, routes, templates, and sidebar entry were all missing.
 
-Critic review of commit 8d55baa4890e identified three issues:
+## Changes
 
-1. **IDENTITY invariant (Inv. 11):** `GetHiveCurrentTask` and `GetHiveTotals` lacked actor ID
-   scoping — queries used `kind='agent'` (type discriminator) instead of filtering by a specific
-   `actor_id`. Fix: add `actorID string` parameter to both; handler resolves the hive agent's
-   specific ID via `GetHiveAgentID` and passes it through.
+### `graph/store.go`
+- Added `KindCouncil = "council"` constant alongside `KindDocument`, `KindQuestion`
+- Added `ListCouncilSessions(ctx, spaceID, limit)` helper (same pattern as `ListDocuments`, `ListQuestions`)
 
-2. **"Recent commits" section had no data source.** The original build shipped the template
-   section but no store query to back it. Fix: `ListHiveActivity(ctx, authorID, limit)` fetches
-   posts authored by the specified actor; handler passes the result as `posts []Node` into
-   `HiveView`; template renders `posts[0:5]` in the "Recent commits" section.
+### `graph/handlers.go`
+- Registered `GET /app/{slug}/council` → `handleCouncil`
+- Registered `GET /app/{slug}/council/{id}` → `handleCouncilDetail`
+- Added `handleCouncil`: fetches `KindCouncil` nodes, renders `CouncilListView`
+- Added `handleCouncilDetail`: fetches session node (404 if wrong kind/space), fetches child responses, renders `CouncilDetailView`
+- Both handlers support `wantsJSON` for API access
 
-3. **Actor-scoped test coverage absent.** Fix: `TestGetHiveCurrentTask_ScopedToActor` seeds two
-   actors, verifies only the target actor's task is returned. `TestGetHiveTotals_ScopedToActor`
-   seeds two actors' ops, verifies only the target count is returned.
-   `TestGetHiveAgentID_IntegrationPath` proves the `api_keys → agent_id → actor_id` traversal.
-
-## Status
-
-All fixes were landed in the two prior commits (1a39890, 6a106c9). This build report confirms
-that the current codebase satisfies every Critic requirement.
+### `graph/views.templ`
+- Added `councilIcon()` — group/users SVG, consistent with other lens icons
+- Added `@mobileLensTab` for "Council" in mobile nav (between Threads and Knowledge)
+- Added `@lensLink` for "Council" in desktop sidebar More section (between Threads and Knowledge)
+- Added `lensDescription` case for "council"
+- Added `CouncilListView`: list of council sessions with question, response count, timestamp; empty state with icon
+- Added `CouncilDetailView`: question panel at top with "Convened by" attribution; each agent response as a violet panel with agent badge and timestamp; empty state message
 
 ## Verification
-
-```
-go.exe build -buildvcs=false ./...   ✓
-go.exe test -buildvcs=false ./...    ✓ (all pass; DATABASE_URL tests skip without docker)
-```
-
-## Files changed
-
-No new changes — code was correct as of the prior fix commits. This report closes the Critic
-feedback loop.
-
-| File | Status |
-|------|--------|
-| `site/graph/store.go` | `GetHiveCurrentTask(ctx, actorID)`, `GetHiveTotals(ctx, actorID)`, `ListHiveActivity(ctx, authorID, limit)`, `GetHiveAgentID(ctx)` — all actor-scoped ✓ |
-| `site/graph/handlers.go` | `handleHive` resolves `agentID` via `GetHiveAgentID`, passes to all three store calls ✓ |
-| `site/graph/views.templ` | `HiveView` receives `posts []Node`, renders first 5 in "Recent commits" ✓ |
-| `site/graph/hive_test.go` | Scoping tests for task, totals, and agent ID integration path ✓ |
+- `templ generate` — 16 updates, no errors
+- `go.exe build -buildvcs=false ./...` — clean
+- `go.exe test ./...` — all pass (graph: 0.594s)

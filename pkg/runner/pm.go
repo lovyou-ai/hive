@@ -25,8 +25,9 @@ func (r *Runner) runPM(ctx context.Context) {
 	boardSummary := r.boardSummary()
 	completedWork := r.completedTasksSummary()
 	sharedCtx := LoadSharedContext(r.cfg.HiveDir)
+	currentDirective := r.readScoutSection()
 
-	prompt := buildPMPrompt(sharedCtx, backlog, recentCommits, boardSummary, completedWork)
+	prompt := buildPMPrompt(sharedCtx, backlog, recentCommits, boardSummary, completedWork, currentDirective)
 
 	resp, err := r.cfg.Provider.Reason(ctx, prompt, nil)
 	if err != nil {
@@ -115,27 +116,30 @@ func (r *Runner) updateScoutDirective(directive string) error {
 
 	s := string(data)
 	marker := "## What the Scout Should Focus On Next"
-	idx := strings.Index(s, marker)
-	if idx < 0 {
-		return fmt.Errorf("scout section not found in state.md")
+
+	// Remove ALL existing scout sections (there may be duplicates from prior runs).
+	for {
+		idx := strings.Index(s, marker)
+		if idx < 0 {
+			break
+		}
+		rest := s[idx+len(marker):]
+		endIdx := strings.Index(rest, "\n## ")
+		if endIdx >= 0 {
+			s = s[:idx] + rest[endIdx+1:] // +1 to consume the \n
+		} else {
+			s = strings.TrimRight(s[:idx], "\n")
+		}
 	}
 
-	// Find end of scout section.
-	rest := s[idx+len(marker):]
-	endIdx := strings.Index(rest, "\n## ")
-	var after string
-	if endIdx >= 0 {
-		after = rest[endIdx:]
-	}
+	// Append the single new scout section.
+	newSection := fmt.Sprintf("\n\n%s\n\n%s\n", marker, directive)
+	s = strings.TrimRight(s, "\n") + newSection
 
-	// Write new scout section.
-	newSection := fmt.Sprintf("%s\n\n%s\n", marker, directive)
-	newContent := s[:idx] + newSection + after
-
-	return os.WriteFile(path, []byte(newContent), 0644)
+	return os.WriteFile(path, []byte(s), 0644)
 }
 
-func buildPMPrompt(sharedCtx, backlog, recentCommits, board, completedWork string) string {
+func buildPMPrompt(sharedCtx, backlog, recentCommits, board, completedWork, currentDirective string) string {
 	return fmt.Sprintf(`You are the PM. You decide WHAT the hive should build next.
 
 ## Institutional Knowledge
@@ -153,6 +157,12 @@ func buildPMPrompt(sharedCtx, backlog, recentCommits, board, completedWork strin
 ## COMPLETED WORK (what is ALREADY DONE — do NOT recreate these)
 %s
 
+## Current Scout Directive (DO NOT REPEAT)
+This is what the Scout is already working on or was last directed to do.
+Do NOT issue a directive that repeats or overlaps with this work:
+
+%s
+
 ## Your Task
 
 The Scout has exhausted its current directive. It needs a new one.
@@ -160,8 +170,9 @@ The Scout has exhausted its current directive. It needs a new one.
 1. Read the backlog. Read what was recently built. Identify what's MOST IMPORTANT to build next.
 2. Consider: what would make the biggest difference for real users?
 3. Don't repeat what was already built (check recent commits).
-4. Pick ONE direction with 3-5 specific implementable tasks.
-5. Write a directive the Scout can follow — specific files, specific changes.
+4. Don't repeat the current Scout directive above.
+5. Pick ONE direction with 3-5 specific implementable tasks.
+6. Write a directive the Scout can follow — specific files, specific changes.
 
 ## Output Format
 
@@ -171,7 +182,7 @@ DIRECTIVE_START
 [Your directive here — include specific tasks the Scout should create,
 which repo they target, and why this is the priority now.
 Write it as if you're updating state.md directly.]
-DIRECTIVE_END`, sharedCtx, backlog, recentCommits, board, completedWork)
+DIRECTIVE_END`, sharedCtx, backlog, recentCommits, board, completedWork, currentDirective)
 }
 
 func parsePMDirective(content string) string {

@@ -227,12 +227,18 @@ func runPipeline(space, apiBase, repoPath string, budget float64, agentID string
 	tasks, err := client.GetTasks(space, "")
 	if err == nil {
 		for _, t := range tasks {
-			if t.Kind == "task" && t.State != "done" && t.State != "closed" && t.AssigneeID == agentID {
-				if strings.HasPrefix(t.Title, "Fix:") {
-					hasFixes = true
-				} else {
-					hasWork = true
-				}
+			if t.Kind != "task" || t.State == "done" || t.State == "closed" {
+				continue
+			}
+			// When agent-id is set, only count tasks assigned to this agent.
+			// When agent-id is empty, count ALL open tasks as potential work.
+			if agentID != "" && t.AssigneeID != agentID {
+				continue
+			}
+			if strings.HasPrefix(t.Title, "Fix:") {
+				hasFixes = true
+			} else {
+				hasWork = true
 			}
 		}
 	}

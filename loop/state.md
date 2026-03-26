@@ -2,7 +2,7 @@
 
 Living document. Updated by the Reflector each iteration. Read by the Scout first.
 
-Last updated: Iteration 239, 2026-03-26.
+Last updated: Iteration 250, 2026-03-26.
 
 ## Current System State
 
@@ -291,6 +291,170 @@ Deploy: `fly deploy --remote-only` from site repo.
 - `social-product-spec.md` — Social product positioning
 
 ## What the Scout Should Focus On Next
+
+**Active work (6 open tasks on board):** Space Invitations (3 tasks) + Council (3 tasks). Builder should complete these first.
+
+**Next priority after current tasks clear: Hive Knowledge Graph — MCP Knowledge Server**
+
+The hive's agents work in the dark. They get a flat context string and can't look anything up. The design is in `hive/docs/knowledge-graph-migration.md`. Phase 1: build `cmd/mcp-knowledge/` — an MCP server that indexes ALL knowledge sources (reference/primitives, blog, loop artifacts, API tasks/documents, agent prompts) and presents them as a navigable hierarchical tree. Agents call MCP tools (`knowledge.topics`, `knowledge.drill`, `knowledge.search`, `knowledge.primitives`) to explore instead of getting truncated file dumps. **Target repo: `hive`.**
+
+Key insight: the 201 primitives and 13 grammars from /reference should be accessible to every agent. The blog posts that explain WHY primitives exist should be searchable. The PM should be able to query "what primitives map to invitations?" and get Layer 2 Exchange (Offer, Acceptance, Agreement). No agent currently has this capability.
+
+Read `hive/docs/knowledge-graph-migration.md` for the full design including memory types (declarative, procedural, episodic, semantic), the tree structure, MCP tool signatures, and the 3-phase implementation plan.
+
+## Completed Directives
+
+### Knowledge Product (DONE)
+Documents, Q&A, agent auto-answer — shipped.
+
+**Why now:** Agent memory (iter 233), grounded chat (iters 88, a82), agent personas (iter 18c), and hive dashboard (iter 240) are shipped. The agent stack is functionally complete. The next high-leverage unlock is making agents genuinely useful for knowledge work — not just chat, but structured Q&A grounded in a space's documents. This is Layer 6 depth and directly differentiates lovyou.ai from "AI chat with a doc attachment."
+
+**Target repo:** `site`
+
+**Gap:** Knowledge spaces exist but have no document management, no Q&A entity kind, and no agent-powered auto-answer. The `assert/challenge/verify/retract` ops are there but knowledge workers need: documents to ground answers, questions as first-class entities, and agents that answer automatically.
+
+**Tasks for the Scout to create (in order):**
+
+1. **Document entity kind** (`KindDocument`)
+   - Add `KindDocument` constant to `site/internal/graph/kinds.go`
+   - Add `document` to the `intend` op allowlist (same pattern as task/post/thread)
+   - Add `DocumentsView` template in `site/internal/templates/` — list view with title, body preview, author, created date
+   - Add `handleDocuments` handler in `site/internal/handlers/` wired to `/app/{slug}/documents`
+   - Add "Documents" to Knowledge lens sidebar nav
+   - Documents are the ground truth corpus for agent answers
+
+2. **Question entity kind with auto-answer** (`KindQuestion`)
+   - Add `KindQuestion` constant; add `ask` op (creates a question node)
+   - Add `QuestionsView` template — list with question title, answer body, status (unanswered/answered), agent badge on answered
+   - Add `handleQuestions` handler wired to `/app/{slug}/questions`
+   - Modify `site/internal/mind/mind.go` (or equivalent auto-reply trigger): when a Question node is created in any space, trigger Mind the same way task assignment does — call Claude with the space's documents as context, post the answer as a respond op on the question node
+   - This closes the loop: user asks → agent answers grounded in documents
+
+3. **Knowledge lens reorganization**
+   - Update the Knowledge lens sidebar to show three sections: Documents, Q&A, Claims
+   - Each section links to its respective view
+   - Claims remain (assert/challenge/verify/retract already works)
+
+4. **Knowledge space preset**
+   - When creating a space, add a "Knowledge Base" template option that pre-enables Documents + Q&A + Claims lenses
+   - Small UX change in space creation form (`site/internal/templates/space_create.templ` or equivalent)
+
+**Verification the Scout must confirm before marking DONE:**
+- A document can be created in a Knowledge space and appears in the Documents list
+- A question can be asked and Mind auto-answers it (check the auto-reply trigger path in `site/internal/handlers/` or `site/internal/mind/`)
+- The auto-answer is grounded in the space's documents (verify Mind prompt construction includes document bodies)
+- At least one test covers the question auto-answer trigger path
+
+**Files to read first:**
+- `site/internal/graph/kinds.go` — entity kind constants
+- `site/internal/mind/` — auto-reply trigger logic (how task assignment triggers Mind)
+- `site/internal/handlers/knowledge.go` — existing Knowledge handler
+- `site/internal/templates/knowledge*.templ` — existing Knowledge templates
+
+**Why this beats alternatives:**
+- Hive-as-a-service (Lovatts) requires VM orchestration — 10+ iterations of infrastructure before any user value
+- More UX polish — diminishing returns on a solid UI
+- Social layer additions — Phase 1-3 already complete; marginal value of Phase 4
+- Knowledge Q&A with agent answers is a **complete, shippable user story in 4 iterations** that demonstrates the platform's core differentiator: agents that participate in collective knowledge creation
+
+## Current Directive — Iteration 242+
+
+**Priority: Close the autonomous self-direction loop**
+
+The PM role was added (iter 241 infra commit) to read completed tasks. But it doesn't write a new directive back to `loop/state.md`. This means the Scout in the autonomous pipeline still reads a human-maintained directive — which is now stale (iter 241 targeted the grounded indicator; the hive builder already shipped it). The loop isn't self-directing.
+
+**Target repo:** `hive` (pkg/runner/)
+
+**The gap:** PM reads completed board tasks → does nothing with them → Scout reads stale state.md directive → creates tasks for already-shipped features. Fix: PM synthesizes a new directive from completed task history + git log + current state, then writes it to state.md's directive section.
+
+**Tasks for the Scout to create:**
+
+1. **PM writes directive** (`pkg/runner/pm.go`): After reading completed tasks, call `Reason()` (haiku) with: completed task titles, recent git log (last 10 commits), current state.md directive. Output: a fresh 3-5 sentence directive identifying the next unbuilt gap. Write it to `loop/state.md` under `## Current Directive`. Overwrite on each PM cycle.
+
+2. **Add `## Current Directive` section to state.md** (`loop/state.md`): A dedicated section PM owns. Scout reads this section explicitly (not the whole file). Clear separation: PM writes directives, Reflector writes lessons, Reflector appends reflections. Scout targets this section.
+
+3. **Scout reads `## Current Directive` section** (`pkg/runner/scout.go`): Update Scout prompt to read the `## Current Directive` section from state.md specifically (not the whole 300-line file). This makes the Scout's directive fresh each cycle.
+
+4. **Test: PM directive generation** (`pkg/runner/pm_test.go`): Mock completed tasks + git log → verify PM produces a non-empty directive that doesn't repeat already-completed work. One test: if completed tasks include "grounded indicator", new directive must not mention it.
+
+**Why this is highest priority:**
+
+Lesson 60: "The constraint is no longer 'can it work' but 'what should it build next.'" The autonomous pipeline ships at $0.83/feature in 6 minutes. But it's only as good as its directive. Right now, a human PM (this conversation) is the bottleneck — we write the directive manually. Closing this loop makes the pipeline fully autonomous. That's the precondition for "company in a box" and the Lovatts engagement.
+
+**Ship as:** `iter 242: PM writes directive to state.md`
+
+## Directive — Iteration 241+: Knowledge Product — Wire the Three Layers
+
+**Priority: High.**
+The agent stack is now complete: agent memory (Phase 4), document grounding, persona routing. The platform's most differentiated capability — AI answers grounded in your space's documents, claims with evidence trails — exists as infrastructure but has no user-facing product surface. This directive builds it.
+
+**What done looks like:** A user creates a Knowledge space, sees Docs + Q&A + Claims as a unified lens, asks a question and receives an agent answer grounded in the space's documents, and can verify or challenge any claim with evidence. This is a product people would pay for and describe to others.
+
+---
+
+### Task 1 [site] — Knowledge sidebar navigation
+
+When a space contains any `KindDocument`, `KindQuestion`, or assert/challenge activity, the sidebar shows three sub-tabs under the Knowledge lens: **Docs**, **Q&A**, **Claims**. Currently each entity kind is siloed. Wire them together under one lens with tab navigation. The Knowledge lens URL becomes `/app/{slug}/knowledge` with `?tab=docs|qa|claims`. Default tab: `docs` if documents exist, else `qa`.
+
+Files: `site/graph/handlers.go` (route logic), `site/graph/views.templ` (Knowledge lens nav).
+
+---
+
+### Task 2 [site] — Document list view
+
+Route: `/app/{slug}/knowledge?tab=docs`
+
+List all `KindDocument` nodes in the space: title, excerpt (first 200 chars of body), last edited by (agent or human with badge), relative timestamp. "New document" button creates a node and redirects to the detail/edit view. Sort by `updated_at DESC`. Empty state: "No documents yet — add the first one."
+
+Files: `site/graph/store.go` (add `ListDocuments(ctx, spaceID) []Node` with LIMIT 100), `site/graph/views.templ`.
+
+Test: one handler test in `handlers_test.go` — GET `/app/{slug}/knowledge?tab=docs` returns 200 with document rows.
+
+---
+
+### Task 3 [site] — Q&A list view with agent answers
+
+Route: `/app/{slug}/knowledge?tab=qa`
+
+List all `KindQuestion` nodes: question title, first 200 chars of agent answer (body of the `respond` op if one exists), "Answered" / "Awaiting answer" status badge. Unanswered questions are visually distinct (dimmed, pulsing dot). "Ask a question" button creates a `KindQuestion` node via `intend` op with `kind=question` and triggers Mind auto-answer (see Task 4).
+
+Files: `site/graph/store.go` (add `ListQuestions(ctx, spaceID)` that JOINs respond ops to get answer status — LIMIT 100), `site/graph/views.templ`.
+
+Test: one handler test — GET `/app/{slug}/knowledge?tab=qa` returns 200 with question rows.
+
+---
+
+### Task 4 [site] — Mind auto-answers new questions
+
+When a `KindQuestion` node is created (via `intend` op with `kind=question`), the server-side Mind event handler fires — same event-driven pattern as the existing auto-reply on conversations (`graph/handlers.go` → `triggerMindReply`). Mind receives: the question text + the space's recent documents (first 3 documents injected as context, same grounding mechanism as chat). The answer is posted as a `respond` op on the question node body.
+
+This closes the Knowledge → Agent → Answer loop that Memory Phase 4 enabled. The Q&A tab in Task 3 will immediately show answers appearing after question creation.
+
+Files: `site/graph/handlers.go` (extend mind trigger to handle `intend` ops with `kind=question`), `site/graph/mind.go` (or equivalent).
+
+Test: extend existing mind handler test — after creating a `KindQuestion` node, verify a `respond` op exists on that node.
+
+---
+
+### Task 5 [site] — Knowledge space creation preset
+
+In the new-space creation dialog (`/app/new`), add a "Knowledge Base" preset alongside existing types. When selected: pre-fills a name suggestion, adds a `preset=knowledge` tag, and after creation lands on `/app/{slug}/knowledge?tab=docs` instead of the Board. This makes "start a knowledge base" a first-class user journey.
+
+Files: `site/graph/views.templ` (new-space form), `site/graph/handlers.go` (redirect on preset tag).
+
+---
+
+### Implementation notes
+
+- Code lives in `site/graph/` — NOT `site/internal/handlers/`
+- No new tables, no new ops (use existing `intend`, `respond`)
+- All store queries require `LIMIT` (invariant 13 BOUNDED)
+- Use `actor_id` not agent name for identity checks (invariant 11 IDENTITY)
+- Each task ships with at least one test (invariant 12 VERIFIED)
+
+**Target repo:** `site`
+**Deploy:** `cd site && ./ship.sh "iter 241: Knowledge product — docs, Q&A, agent answers"`
+**Invariants to check:** VERIFIED (tests on each new handler), BOUNDED (LIMIT 100 on all list queries), IDENTITY (actor_id not name).
 
 ## Directive — Iteration 240+: Hive Dashboard — Make `/hive` Real
 
