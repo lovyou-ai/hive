@@ -2,7 +2,7 @@
 
 Living document. Updated by the Reflector each iteration. Read by the Scout first.
 
-Last updated: Iteration 320, 2026-03-27.
+Last updated: Iteration 321, 2026-03-27.
 
 ## Current System State
 
@@ -316,8 +316,6 @@ Documents, Q&A, agent auto-answer — shipped (iters 241+).
 - Knowledge lens sidebar with Docs / Q&A / Claims sub-tabs
 - Handler and store tests for each new route
 
-
-## What the Scout Should Focus On Next
 
 ## What the Scout Should Focus On Next
 

@@ -169,6 +169,36 @@ func TestPipelineTreeFixTaskerCalledOnDirectError(t *testing.T) {
 	}
 }
 
+// TestPipelineTreeTesterFailureWritesExactlyOneDiagnostic verifies that when
+// the tester phase writes its own diagnostic and returns an error, Execute does
+// not append a second diagnostic — total count must be exactly 1.
+func TestPipelineTreeTesterFailureWritesExactlyOneDiagnostic(t *testing.T) {
+	hiveDir := makeHiveDir(t, "# State\n", nil)
+
+	pt := &PipelineTree{
+		cfg: Config{HiveDir: hiveDir},
+		phases: []Phase{
+			{
+				Name: "tester",
+				Run: func(_ context.Context) error {
+					_ = appendDiagnostic(hiveDir, PhaseEvent{
+						Phase:   "tester",
+						Outcome: "test_failure",
+						Error:   "tests failed",
+					})
+					return fmt.Errorf("tests failed")
+				},
+			},
+		},
+	}
+
+	_ = pt.Execute(context.Background())
+
+	if got := countDiagnostics(hiveDir); got != 1 {
+		t.Errorf("diagnostic count: got %d, want 1 (duplicate written)", got)
+	}
+}
+
 // TestNewPipelineTreeHasSixPhases verifies that NewPipelineTree wires exactly
 // six phases: scout, architect, builder, tester, critic, reflector — in that order.
 func TestNewPipelineTreeHasSixPhases(t *testing.T) {

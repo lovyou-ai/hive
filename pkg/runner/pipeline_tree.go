@@ -75,11 +75,13 @@ func (pt *PipelineTree) Execute(ctx context.Context) error {
 		prevCount := pt.diagnosticCount()
 		err := phase.Run(ctx)
 		if err != nil {
-			_ = appendDiagnostic(pt.cfg.HiveDir, PhaseEvent{
-				Phase:   phase.Name,
-				Outcome: "failure",
-				Error:   err.Error(),
-			})
+			if pt.diagnosticCount() <= prevCount {
+				_ = appendDiagnostic(pt.cfg.HiveDir, PhaseEvent{
+					Phase:   phase.Name,
+					Outcome: "failure",
+					Error:   err.Error(),
+				})
+			}
 			pt.callFixTasker(ctx, phase.Name)
 			return fmt.Errorf("phase %s failed: %w", phase.Name, err)
 		}

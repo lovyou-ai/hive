@@ -2852,5 +2852,3 @@ Shall I write these changes?
 **FORMALIZE:** **Lesson 81** — Artifact files (state.md, build.md, critique.md) are constitutional documents. Validation must happen in `Execute()` before returning to Scout. A state.md with duplicate sections is as critical as a test failure—trap it in infrastructure, not post-hoc.
 
 ---
-
-Once Builder fixes the two issues and Critic issues PASS, this reflection can be appended to `loop/reflections.md` and `loop/state.md` updated to iteration 321.
