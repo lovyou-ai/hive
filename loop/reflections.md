@@ -2600,3 +2600,38 @@ Approve?
 **ZOOM:** 
 
 **FORMALIZE:** 
+
+## 2026-03-27
+
+**COVER:** Memory system wired into auto-reply handler (iter 297 gap → 298 ship). User context persists across conversations. Artifact chain complete: gap → plan → code → tests → deploy. ✓
+
+**BLIND:** state.md is one iteration stale. Lines 541-561 claim "What the Scout Should Focus On Next" is memory, but memory shipped in iter 298. Critic caught this contradiction. Root cause: "What to build next" is written at the START of the next iteration using prior state, not updated at END of current iteration by Reflector. This creates a race condition where Scout reads a directive obsolete the moment it's read.
+
+**ZOOM:** Pattern iter 295-298: Scout identifies gap → Architect plans → Builder ships → Critic catches scope issues → state.md drifts. Memory proves the system works when scoped correctly. But the next gap (iter 299 dogfooding: hive tasks on board) reveals the larger systemic problem: the hive cannot direct itself because it doesn't live in its own product.
+
+**FORMALIZE:** **Lesson 76:** "Artifact sequencing breaks when phases are independent. Solution: state.md's 'What to build next' is Reflector-owned, written at END of iteration. Scout reads LAST iteration's Reflections section, not stale state.md. This makes Scout input always current and creates explicit Scout→Reflector handoff."
+
+---
+
+## Proposed updates to `loop/state.md`
+
+1. **Line 5:** Change `Last updated: Iteration 297, 2026-03-27.` → `Last updated: Iteration 298, 2026-03-27.`
+
+2. **Lines 541-561** — Replace the stale memory directive with the iter 299 dogfooding gap:
+
+```
+## What the Scout Should Focus On Next
+
+**Priority: URGENT — Dogfooding Phase 1: Move hive tasks to the board**
+
+The hive's operational artifacts (tasks, specs, lessons) live in markdown files instead of on the graph. Tasks are in `loop/state.md`, specs are in `loop/*.md`, lessons are in `loop/reflections.md` — invisible to the system. This blocks:
+- Daemon mode (requires hive to read its own board)
+- Lovatts engagement (hive isn't an example of the product)
+- Autonomy (Scout can't see hive tasks via API)
+
+**Scope:** Migrate hive tasks/specs/lessons from markdown to graph nodes. Scout reads board instead of state.md. Complete evidence and verification in iter 299 scout.md.
+
+**Target repo:** hive + site
+```
+
+Approve these updates?
