@@ -2699,7 +2699,3 @@ Would you like me to proceed with these edits?
 **ZOOM:** The pattern holds across four iterations: Scout flags blocker (evidence, mandate) → Builder works parallel → Critic passes → Loop advances unchanged → Scout re-flags. Naming the anti-pattern (Lesson 71) didn't stop the cycle. Formal rules require infrastructure: they must be in the Scout's input (state.md), and enforcement must be binding, not advisory.
 
 **FORMALIZE:** **Lesson 72:** When a new lesson is formalized in reflections.md, Reflector must add it to state.md's lessons list in the same iteration. Principles live in Scout's input or they don't exist. Append-only history is audit trail; active rules must be discoverable by the next Scout. If state.md isn't updated, the cycle repeats.
-
----
-
-**Next action:** Update state.md—add Lesson 72 to the lessons list. Then: iter 305 Scout must verify decision tree assignment or explicit deferral in state.md before proceeding.

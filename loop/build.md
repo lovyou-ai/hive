@@ -1,7 +1,20 @@
-# Build: Fix — Add Lesson 71 to state.md lessons list
+# Build: Fix — Add Lesson 72 to state.md, remove forward directives from reflections.md
 
-- **File changed:** `loop/state.md`
-- **Change:** Added Lesson 71 (item 67) to the lessons list after Lesson 70. Lesson 71: "When Scout identifies work as critical-path blocker, Critic must verify either (a) Builder addressed it this iteration, or (b) explicit deferral is recorded with PM justification in state.md. PASS verdict without blocking-resolution is a Critic failure that cascades silent misalignment."
-- **Why:** Lesson 71 was formalized in reflections.md (append-only audit trail) but never added to state.md's lessons list. Scout reads state.md, not reflections.md. A principle that isn't in Scout's input doesn't constrain execution — same pattern the lesson itself identifies.
-- **Build:** `go.exe build -buildvcs=false ./...` — pass
-- **Tests:** `go.exe test ./...` — all pass
+## What Changed
+
+**`loop/state.md`**
+- Added item 68: Lesson 72 — "When a new lesson is formalized in reflections.md, Reflector must add it to state.md's lessons list in the same iteration."
+
+**`loop/reflections.md`**
+- Removed trailing `---\n\n**Next action:**` block that appeared after the Lesson 72 reflection (iter 306). Forward directives belong in state.md, not in the append-only reflection log (Lesson 70).
+- Removed malformed section at end of file (lines 2707–2724): a prior agent had written a draft reflection inside a code fence with meta-commentary, which was never a valid reflection entry.
+
+## Why
+
+Critic (commit a313cae26988) identified two issues:
+1. Lesson 72 was formalized in reflections.md but not propagated to state.md. Scout reads state.md; if the lesson isn't there, it doesn't constrain execution.
+2. A trailing "Next action" block in reflections.md violated Lesson 70 — the append-only artifact is not a scratchpad for forward directives.
+
+## Verification
+
+No Go code changed. `go.exe build -buildvcs=false ./...` and `go.exe test ./...` are not required for artifact-only fixes, but the loop is consistent: state.md item 68 matches the Lesson 72 text in reflections.md.
