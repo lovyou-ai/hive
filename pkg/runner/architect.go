@@ -83,6 +83,10 @@ func (r *Runner) runArchitect(ctx context.Context) {
 
 	// Create right-sized tasks for the Builder.
 	for _, st := range subtasks {
+		if st.title == "" {
+			log.Printf("[architect] skipping subtask with empty title")
+			continue
+		}
 		task, err := r.cfg.APIClient.CreateTask(r.cfg.SpaceSlug, st.title, st.desc, st.priority)
 		if err != nil {
 			log.Printf("[architect] create subtask error: %v", err)
@@ -164,11 +168,35 @@ SUBTASK_PRIORITY: <high|medium>
 SUBTASK_DESCRIPTION: <2-3 sentences, specific files and changes>`, sharedCtx, repoCtx, scoutReport)
 }
 
+// normalizeArchitectResponse strips markdown code fences from LLM output
+// so the parsers see clean content regardless of how the model wrapped it.
+func normalizeArchitectResponse(content string) string {
+	content = strings.TrimSpace(content)
+	// Strip opening fence line: ```json, ```text, or plain ```
+	if strings.HasPrefix(content, "```") {
+		nl := strings.IndexByte(content, '\n')
+		if nl >= 0 {
+			content = strings.TrimSpace(content[nl+1:])
+		}
+	}
+	// Strip closing fence
+	if strings.HasSuffix(content, "```") {
+		content = strings.TrimSpace(content[:len(content)-3])
+	}
+	return content
+}
+
 func parseArchitectSubtasks(content string) []architectSubtask {
+	content = normalizeArchitectResponse(content)
 	// Try strict format first.
 	tasks := parseSubtasksStrict(content)
 	if len(tasks) > 0 {
 		return tasks
+	}
+	// If strict markers are present but strict parsing returned nothing, log it
+	// so we can diagnose the format mismatch rather than silently falling through.
+	if strings.Contains(content, "SUBTASK_TITLE:") {
+		log.Printf("[architect] strict format markers present but strict parse returned 0 tasks — falling back to markdown")
 	}
 	// Fall back to markdown parsing (numbered lists, bold titles, etc.).
 	return parseSubtasksMarkdown(content)

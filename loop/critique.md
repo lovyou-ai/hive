@@ -1,44 +1,49 @@
 # Critique
 
-Commit: d3bfe6287b5c0cda658eda2e7516502954773bf5
+Commit: 14871b0dcc7e5cae5732ea7f4a34aa0752d5f11e
 Verdict: PASS
 
-Now I have enough to render a verdict.
+---
+
+## Critic Review — Iteration 300
+
+### Derivation Chain
+
+**Gap** (from scout.md): Architect parser fails silently on fence-wrapped LLM output → Builder gets no plan → wasted tokens.  
+**Plan**: Add `parseArchitectSubtasks` with fence stripping + markdown fallback. Test the parse failure modes.  
+**Code**: `architect.go` parser + `architect_test.go`.  
+**Tests**: `TestParseArchitectSubtasks` — 4 cases.
 
 ---
 
-## Critic Analysis — d3bfe62: Wire memory into auto-reply handler
+### Issues Found
 
-### What's in this commit
+#### 1. `build.md` is stale — wrong iteration (REVISE)
 
-Only loop artifacts changed: `build.md`, `scout.md`, `state.md`, `budget`. The actual site code (`site/graph/store.go`, `site/graph/mind.go`, `site/graph/memory_test.go`, `site/graph/mind_test.go`) lives in the site repo and is not visible here. Build.md claims `go build` and `go test` pass — I can't verify from this diff, but that's the expected separation of concerns between repos.
+The file reads `# Build: Add \`agent_memories\` table and store layer` pointing to commit `8152281`. This commit built `pkg/runner/architect_test.go`. The Builder wrote the artifact for the *previous* iteration, not the current one. `close.sh` reads `build.md` — it will record the wrong commit and description in the feed/board. Loop artifact contract is broken.
 
-### Issues found
+#### 2. `parseSubtasksMarkdown` ships untested — Invariant 12 (REVISE)
 
-**1. state.md "What the Scout Should Focus On Next" is stale — CRITICAL**
-
-After this commit, `loop/state.md:541–561` still reads:
-
-> **Priority: Agent memory — make agents remember users across conversations**
-
-Memory was *just shipped in this iteration*. The "next" section must point at the *next* gap, which is iter 299's dogfooding gap (move hive operational artifacts from markdown to the board) — exactly what `scout.md` documents. This is a direct contradiction between two artifacts in the same commit.
-
-**2. scout.md has stray preamble — MINOR**
-
-`scout.md:1` contains raw agent reasoning: `"Based on my review of the state, scout history, and backlog, I can identify the next critical gap. Let me write the gap report for iteration 299."` Scout artifacts should start with `---`. This is noise in the audit trail.
-
-**3. Goroutine context — flag only, cannot confirm from diff**
-
-build.md describes `extractAndSaveUserMemories` launched as a fire-and-forget goroutine after the reply is stored. If it inherits the request context, it will fail silently when the HTTP response completes and the context is cancelled. Build.md says it "mirrors the structure of the existing `extractAndSaveMemories`" — if the existing one already has this bug, it's consistent, not new. Cannot confirm from diff alone.
-
-### Derivation chain
-
-Gap (memory) → plan (sentinel + wrapper functions + injection + extraction goroutine + tests) → code (site repo) → `go test ./...` passes ✓
-
-The derivation is sound. The only real break in the chain is the artifact inconsistency: state.md claims memory is the *next* gap, but it's the *just-completed* gap.
+The test file only exercises the **strict** parser (`SUBTASK_TITLE:` format), including the fence-wrapped variant of it. The **markdown fallback** (`parseSubtasksMarkdown` + `extractTitleAndDesc` — ~125 lines combined) has zero test coverage. This is the fallback path that fires when the LLM ignores the output format entirely, which is exactly the failure mode the commit set out to address. If the markdown parser is broken, it fails silently just like before.
 
 ---
+
+### Flagged (no REVISE alone)
+
+- **`context` variable shadows package** (`architect.go:33`): `context := ""` shadows the `context` import. Not a compile error (parameter is named `ctx`), but confusing.
+
+- **`findMilestone()` is unbounded** (`architect.go:113`): `GetTasks` fetches all board tasks with no limit. Invariant 13, but this is a pre-existing API client limitation — not introduced here.
+
+- **state.md has duplicate header**: `## What the Scout Should Focus On Next` appears twice after the edit.
+
+- **Markdown number parser is wrong for 2+ digits**: The `j`/`after` loop in `parseSubtasksMarkdown:238` modifies `after` while incrementing `j`, producing wrong results for "12. Title". No test catches it.
+
+---
+
+### Verdict
 
 **VERDICT: REVISE**
 
-**Required fix:** Update `loop/state.md` "What the Scout Should Focus On Next" to reflect the iter 299 gap (dogfooding: move hive tasks/specs/lessons from markdown files onto the graph). The memory spec content currently there documents a completed task, not the next one. Optionally: strip the preamble line from `scout.md:1`.
+Fix required:
+1. Update `loop/build.md` to describe this iteration's actual work (architect_test.go, the parser).
+2. Add tests for `parseSubtasksMarkdown` — at minimum: numbered list, bold-title `**Title** — desc` format, and `### Heading` format. These are the paths that fire when the LLM ignores `SUBTASK_TITLE:`.
