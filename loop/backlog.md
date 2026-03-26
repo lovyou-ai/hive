@@ -98,6 +98,26 @@ The Go pipeline (`pkg/runner/`) uses NONE of this. It's a for-loop with log outp
 
 **This is the highest-leverage architectural work.** Everything else — features, polish, new products — is built on sand until the pipeline runs on its own substrate.
 
+### DIRECTOR MANDATE: Engine before paint
+
+The PM keeps choosing user-facing features (dashboards, memory UI, invitations) over this foundational work. This is a direct override from the Director.
+
+**Evidence of waste the PM cannot see:**
+- Architect parser failed silently 8+ times → $0.50/cycle wasted on no-ops
+- PM directed "agent memory" which was already built → entire cycle rediscovering existing work
+- PM directed hive-repo tasks to site-repo pipeline → Builder ESCALATE'd into void
+- PM created duplicate test-fix directives for already-resolved issues → 3 wasted cycles
+- PM cannot measure its own failure rate because failures vanish into logs
+
+**The PM optimizes for visible output (features shipped) because it cannot measure invisible waste.** This is exactly what the decision tree fixes — every failure becomes a traceable event with cost attribution. The PM will naturally prioritize the engine once it can see what the engine's absence costs.
+
+**Priority order (non-negotiable):**
+1. Decision tree integration (`eventgraph/go/pkg/decision/` → pipeline)
+2. MCP knowledge server (agents can search, no more amnesia)
+3. Autorun remote (daemon on Fly machine)
+
+Do NOT create feature tasks (site UI, new entity kinds, social features) until step 1 is in progress. The hive's current failure mode is building features on a broken foundation. Fix the foundation first.
+
 ---
 
 ## Architectural ideas
