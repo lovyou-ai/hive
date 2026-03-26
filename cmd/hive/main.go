@@ -271,6 +271,15 @@ func runPipeline(space, apiBase, repoPath string, budget float64, agentID string
 
 	activeRepo := absRepo // default repo; may be overridden by PM directive
 
+	// Always check state.md for target repo — even when tasks exist.
+	// The PM wrote "Target repo: X" in a prior cycle; use it.
+	if len(repoMap) > 0 {
+		if resolved := resolveTargetRepo(hiveDir, repoMap); resolved != "" {
+			activeRepo = resolved
+			log.Printf("[pipeline] target repo from directive: %s", filepath.Base(activeRepo))
+		}
+	}
+
 	for _, role := range roles {
 		select {
 		case <-ctx.Done():
