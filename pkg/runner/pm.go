@@ -51,7 +51,18 @@ func (r *Runner) runPM(ctx context.Context) {
 
 	log.Printf("[pm] new directive: %s", truncateLog(directive, 100))
 
-	// Update state.md with the new directive.
+	// Create milestone on the board so the Architect can decompose from it.
+	title := extractDirectiveTitle(directive)
+	if title != "" {
+		_, err := r.cfg.APIClient.CreateTask(r.cfg.SpaceSlug, title, directive, "high")
+		if err != nil {
+			log.Printf("[pm] create milestone error: %v", err)
+		} else {
+			log.Printf("[pm] milestone created on board: %s", title)
+		}
+	}
+
+	// Also update state.md (for Scout context and target repo resolution).
 	if err := r.updateScoutDirective(directive); err != nil {
 		log.Printf("[pm] update state.md error: %v", err)
 	} else {
@@ -210,6 +221,27 @@ func parsePMDirective(content string) string {
 	}
 	directive := strings.TrimSpace(content[start+len("DIRECTIVE_START") : end])
 	return directive
+}
+
+// extractDirectiveTitle pulls a short title from the directive for the board milestone.
+// Looks for "**Priority: X**" or first bold text, falls back to first line.
+func extractDirectiveTitle(directive string) string {
+	for _, line := range strings.Split(directive, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		// Strip markdown bold markers.
+		title := strings.ReplaceAll(line, "**", "")
+		title = strings.TrimPrefix(title, "Priority: ")
+		title = strings.TrimPrefix(title, "Priority — ")
+		// Truncate to reasonable task title length.
+		if len(title) > 100 {
+			title = title[:100]
+		}
+		return title
+	}
+	return ""
 }
 
 func truncateLog(s string, maxLen int) string {

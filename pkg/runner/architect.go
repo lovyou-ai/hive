@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/lovyou-ai/hive/pkg/api"
 )
 
 // runArchitect reads the Scout's gap report and the PM's directive, then
@@ -17,7 +19,10 @@ func (r *Runner) runArchitect(ctx context.Context) {
 		return
 	}
 
-	// Read the Scout's gap report.
+	// Find the PM's milestone on the board — an open high-priority task
+	// with a body that looks like a directive (created by PM this cycle).
+	// Fall back to Scout's gap report file if no milestone exists.
+	milestone := r.findMilestone()
 	scoutReport := ""
 	if r.cfg.HiveDir != "" {
 		if data, err := os.ReadFile(filepath.Join(r.cfg.HiveDir, "loop", "scout.md")); err == nil {
@@ -25,20 +30,25 @@ func (r *Runner) runArchitect(ctx context.Context) {
 		}
 	}
 
-	if scoutReport == "" {
-		log.Printf("[architect] no scout report found")
+	context := ""
+	if milestone != nil {
+		context = fmt.Sprintf("## PM Milestone (from board)\nTitle: %s\n\n%s", milestone.Title, milestone.Body)
+		log.Printf("[architect] decomposing milestone: %s", milestone.Title)
+	} else if scoutReport != "" {
+		context = scoutReport
+		log.Printf("[architect] planning from Scout's gap report")
+	} else {
+		log.Printf("[architect] no milestone or scout report found")
 		if r.cfg.OneShot {
 			r.done = true
 		}
 		return
 	}
 
-	log.Printf("[architect] planning from Scout's gap report")
-
 	sharedCtx := LoadSharedContext(r.cfg.HiveDir)
 	repoCtx := r.readRepoContext()
 
-	prompt := buildArchitectPrompt(sharedCtx, repoCtx, scoutReport)
+	prompt := buildArchitectPrompt(sharedCtx, repoCtx, context)
 
 	resp, err := r.cfg.Provider.Reason(ctx, prompt, nil)
 	if err != nil {
@@ -54,6 +64,12 @@ func (r *Runner) runArchitect(ctx context.Context) {
 	subtasks := parseArchitectSubtasks(resp.Content())
 	if len(subtasks) == 0 {
 		log.Printf("[architect] no subtasks found in plan")
+		// Complete the milestone so PM doesn't re-create it.
+		if milestone != nil {
+			_ = r.cfg.APIClient.CommentTask(r.cfg.SpaceSlug, milestone.ID,
+				"Architect could not decompose this milestone into subtasks.")
+			_ = r.cfg.APIClient.CompleteTask(r.cfg.SpaceSlug, milestone.ID)
+		}
 		if r.cfg.OneShot {
 			r.done = true
 		}
@@ -75,9 +91,34 @@ func (r *Runner) runArchitect(ctx context.Context) {
 
 	log.Printf("[architect] decomposed into %d subtasks", len(subtasks))
 
+	// Complete the milestone — it's been decomposed into subtasks.
+	if milestone != nil {
+		_ = r.cfg.APIClient.CompleteTask(r.cfg.SpaceSlug, milestone.ID)
+		log.Printf("[architect] milestone completed: %s", milestone.Title)
+	}
+
 	if r.cfg.OneShot {
 		r.done = true
 	}
+}
+
+// findMilestone looks for an open high-priority task on the board that was
+// created by the PM (has a directive-style body). Returns nil if not found.
+func (r *Runner) findMilestone() *api.Node {
+	tasks, err := r.cfg.APIClient.GetTasks(r.cfg.SpaceSlug, "")
+	if err != nil {
+		return nil
+	}
+	for _, t := range tasks {
+		if t.Kind != "task" || t.State == "done" || t.State == "closed" {
+			continue
+		}
+		// Milestones are high-priority tasks with substantial bodies (PM directives).
+		if t.Priority == "high" && len(t.Body) > 200 {
+			return &t
+		}
+	}
+	return nil
 }
 
 type architectSubtask struct {
