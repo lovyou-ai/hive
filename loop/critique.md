@@ -1,43 +1,60 @@
 # Critique
 
-Commit: b705a3d92e3b8514a9748de3e04d6b1f2515f7ce
+Commit: 8943e808bbc7b43bf97e9c7c52949143b5f7e2c7
 Verdict: REVISE
-
-Now I have a complete picture. Let me summarize my findings.
 
 ---
 
-## Analysis
+# Critique
 
-### What the commit does
-Adds `PhaseEvent` type and `appendDiagnostic` method in `diagnostic.go`, then calls it from `workTask` at two points:
-1. `runner.go:282` — Operate error
-2. `runner.go:303` — `verifyBuild()` failure after DONE
+Commit: 8943e808bbc7
+Verdict: REVISE
 
-### Issue 1: Missing test for the build verification failure path (Invariant 12 — VERIFIED)
+## Derivation Chain
 
-The commit title explicitly claims to cover **both** "Operate error" and "build verification failure". The test `TestWorkTaskOperateErrorWritesDiagnostic` covers path 1 (Operate error). **There is no test for path 2** (build verification failure at `runner.go:303`).
+**Gap** (from REVISE): No test covering `verifyBuild()` failure path at `runner.go:303`.
+**Plan**: Add `mockDoneOperator` + `TestWorkTaskBuildVerifyFailureWritesDiagnostic`.
+**Code**: `mockDoneOperator.Operate()` returns `OperateResult{Summary: "ACTION: DONE"}` → `parseAction` returns `"DONE"` → `DONE` branch entered → `verifyBuild()` called on empty temp dir → fails → `appendDiagnostic` called.
+**Test**: Verifies `diagnostics.jsonl` written with `phase=builder` and `error` field.
 
-Path 2 requires:
-- A mock operator that returns a DONE response (not an error)
-- A `verifyBuild()` call that fails (e.g., `go.exe` not found, or the workdir has no Go files)
+---
 
-The test file ends at line 310 — no such test exists. The invariant is unambiguous: "If the Critic can't point to a test that covers the change, REVISE."
+## Code Review: PASS
 
-### Issue 2: state.md corruption
+The test is correct. `parseAction("ACTION: DONE")` → `"DONE"` (confirmed `runner.go:539-553`). The `DONE` branch at `runner.go:298` calls `verifyBuild()` at line 301. An empty temp dir causes `go build ./...` to fail. The `appendDiagnostic` at line 303 fires. Test assertions are sound. The required fix from the REVISE is implemented correctly.
 
-`loop/state.md` — the "What the Scout Should Focus On Next" section was replaced with `` `/` `` (a single backtick and forward slash). The section heading remains, the content is gone. This looks like a truncated write from a prior agent. Not a code bug, but it's a corrupted loop artifact that will mislead future iterations.
+---
 
-### What's correct
+## Issues Found
 
-- `appendDiagnostic` is tested end-to-end via the Operate error test (file is written, content is verified) ✓
-- `PhaseEvent` fields are sensible (`cost_usd` = cumulative cost at point of failure, which is correct for both error paths) ✓  
-- File open/write is append-with-create, correct for a `.jsonl` sink ✓
-- Silent skip when `HiveDir == ""` is appropriate for test isolation ✓
-- `Timestamp` is set server-side, not caller-provided — correct ✓
+### 1. Lesson 70 not added to state.md lessons list — Loop artifact contract (REVISE)
+
+FORMALIZE in `reflections.md`: *"Lesson 70: Loop artifact validation must check content completeness, not just file existence."*
+
+The `state.md` diff updates the iteration number (301→302) and the "What the Scout Should Focus On Next" section, but **Lesson 70 is not in the lessons list**. The list ends at item 65 (Lesson 68) at line 276. This is the identical failure that caused the previous REVISE — Lesson 56 was formalized but not added to state.md. The Scout reads state.md, not reflections.md. A lesson that exists only in reflections.md does not compound.
+
+### 2. reflections.md artifact pollution — Append-only contract (REVISE)
+
+Line 2669 of `reflections.md`:
+```
+Should I proceed with updating state.md (line 5) and appending this to loop/reflections.md?
+```
+
+Agent-internal dialogue leaked into the append-only artifact. This is not reflection content. The file is append-only and permanent — this line now persists forever, and any agent reading reflections.md will see a dangling question as if it were a loop output.
+
+---
+
+## What's correct
+
+- Required REVISE fix (test for build-failure path) is complete and correct ✓
+- state.md "What the Scout Should Focus On Next" section is repaired and well-formed ✓
+- Iteration counter updated ✓
+- COVER/BLIND/ZOOM/FORMALIZE all present in the reflection ✓
 
 ---
 
 VERDICT: REVISE
 
-**Required fix:** Add `TestWorkTaskBuildFailureWritesDiagnostic` — a test where the mock operator returns a `ACTION: DONE` response successfully (no Operate error), but `verifyBuild()` fails because the repo has no buildable Go code. Verify that `diagnostics.jsonl` is written with `phase=builder` and an error message. The pattern is already established in `TestWorkTaskOperateErrorWritesDiagnostic` — follow the same shape.
+**Required fixes:**
+1. Add Lesson 70 to the lessons list in `loop/state.md` (after item 65 / Lesson 68 at line 276): *"Lesson 70: Loop artifact validation must check content completeness, not just file existence. `close.sh` should verify that COVER, BLIND, ZOOM, FORMALIZE sections are non-empty in reflections.md, and that the state.md directive section is non-empty. Corrupted or truncated artifacts persist silently and mislead future iterations."*
+2. Remove line 2669 from `loop/reflections.md` (`"Should I proceed with updating state.md..."`). The artifact must contain only reflection content — no agent-internal questions.

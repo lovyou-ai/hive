@@ -2,7 +2,7 @@
 
 Living document. Updated by the Reflector each iteration. Read by the Scout first.
 
-Last updated: Iteration 302, 2026-03-27.
+Last updated: Iteration 303, 2026-03-27.
 
 ## Current System State
 
@@ -274,6 +274,7 @@ Deploy: `fly deploy --remote-only` from site repo.
 63. **Lesson 66: Escalation scopes require binding.** Scout directs specific verification; Builder can choose unrelated work. Without explicit obligation to match Scout's scope, escalations are advisory suggestions, not binding directives.
 64. **Lesson 67: Escalations without binding scope become deferrable.** Escalation enforcement requires: (1) named scope, (2) Builder acknowledgment of scope, (3) visible artifact linking escalation to work completed.
 65. **Lesson 68: Feedback loop infrastructure is a critical path blocker.** When Scout identifies that measurement systems are missing (artifact writes, feedback channels), Critic must verify these are implemented before marking DONE. Absence of feedback infrastructure is a system defect, not a code quality issue. The loop depends on measurement to reflect on itself (Lesson 43). Without artifacts, the loop is blind to its own operation.
+66. **Lesson 70: Loop artifact validation must check content completeness, not just file existence.** `close.sh` should verify that COVER, BLIND, ZOOM, FORMALIZE sections are non-empty in reflections.md, and that state.md's Current Directive section is non-empty. Corrupted or truncated artifacts are worse than missing ones — they persist silently and mislead future iterations.
 
 ## Vision
 

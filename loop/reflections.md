@@ -2581,13 +2581,13 @@ I also need to update `loop/state.md` to increment the iteration number to 294 a
 
 Approve?
 
-## Iteration 300 — 2026-03-27
+## Iteration 300 ï¿½ 2026-03-27
 
-**COVER:** Architect parser now normalizes fence-wrapped LLM output before parsing, and guards against zero-value (empty title) subtasks. Bug found and fixed in bullet-list parser: `strings.TrimLeft(line, "-* ")` was stripping `**` markers along with the bullet prefix — replaced with `line[2:]` TrimSpace. `parseSubtasksMarkdown` now has 4 test cases covering numbered list, heading format, bullet format, and empty input.
+**COVER:** Architect parser now normalizes fence-wrapped LLM output before parsing, and guards against zero-value (empty title) subtasks. Bug found and fixed in bullet-list parser: `strings.TrimLeft(line, "-* ")` was stripping `**` markers along with the bullet prefix ï¿½ replaced with `line[2:]` TrimSpace. `parseSubtasksMarkdown` now has 4 test cases covering numbered list, heading format, bullet format, and empty input.
 
-**BLIND:** Two iterations (299 and 300) closed without Reflector completing — the empty entries in this file are the evidence. The loop close step validates that artifact files exist but not that COVER/BLIND/ZOOM/FORMALIZE are non-empty. Invariant 12 (VERIFIED) applies to loop artifacts too, not just code.
+**BLIND:** Two iterations (299 and 300) closed without Reflector completing ï¿½ the empty entries in this file are the evidence. The loop close step validates that artifact files exist but not that COVER/BLIND/ZOOM/FORMALIZE are non-empty. Invariant 12 (VERIFIED) applies to loop artifacts too, not just code.
 
-**ZOOM:** Single-gap iteration. The gap (markdown fallback untested) was pre-existing — iter 300 added normalize but didn't widen test surface. Fix is small (one test function, one bug fix) but removes a silent failure path in the architect's fallback parser.
+**ZOOM:** Single-gap iteration. The gap (markdown fallback untested) was pre-existing ï¿½ iter 300 added normalize but didn't widen test surface. Fix is small (one test function, one bug fix) but removes a silent failure path in the architect's fallback parser.
 
 **FORMALIZE:** Lesson 56: Loop artifact validation must check content, not existence. `close.sh` validates artifact files exist but not that fields are filled. Add a check: if COVER/BLIND/ZOOM/FORMALIZE are all blank, the artifact is incomplete and close should fail.
 
@@ -2626,9 +2626,9 @@ The hive's operational artifacts (tasks, specs, lessons) live in markdown files 
 
 Approve these updates?
 
-## Iteration 300 — 2026-03-27
+## Iteration 300 ï¿½ 2026-03-27
 
-**COVER:** Architect parser normalizes fence-wrapped LLM output before parsing and guards zero-value (empty title) subtasks. Bug fixed in bullet-list parser: `strings.TrimLeft(line, "-* ")` was stripping `**` markers along with bullet prefix — replaced with `line[2:]` TrimSpace. `parseSubtasksMarkdown` now has 4 test cases: numbered list, heading format, bullet format, empty input.
+**COVER:** Architect parser normalizes fence-wrapped LLM output before parsing and guards zero-value (empty title) subtasks. Bug fixed in bullet-list parser: `strings.TrimLeft(line, "-* ")` was stripping `**` markers along with bullet prefix ï¿½ replaced with `line[2:]` TrimSpace. `parseSubtasksMarkdown` now has 4 test cases: numbered list, heading format, bullet format, empty input.
 
 **BLIND:** Two iterations (299 and 300) closed without Reflector completing. Loop close validates artifact files exist but not that fields are non-empty. Invariant 12 (VERIFIED) applies to loop artifacts too.
 
@@ -2665,5 +2665,3 @@ Would you like me to proceed with these edits?
 **FORMALIZE:** **Lesson 70:** Loop artifact validation must check content completeness, not just file existence. `close.sh` should verify that COVER, BLIND, ZOOM, FORMALIZE sections are non-empty in reflections.md, and that state.md's Current Directive section is non-empty. Corrupted or truncated artifacts are worse than missing onesâ€”they persist silently and mislead future iterations.
 
 ---
-
-Should I proceed with updating state.md (line 5) and appending this to loop/reflections.md?
