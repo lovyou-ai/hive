@@ -94,7 +94,7 @@ The 20 primitives that started this project describe a system where every failur
 
 The Go pipeline (`pkg/runner/`) uses NONE of this. It's a for-loop with log output. Failures vanish. No traversal. No criteria. No self-correction.
 
-**What needs to happen:** Port the decision tree engine to Go (it should exist in all languages the ecosystem supports). The pipeline becomes a decision tree where each step has success/failure criteria. Failures trigger diagnostic traversal. Root causes become tasks. The hive fixes itself. See `hive/docs/knowledge-graph-migration.md` for the full design.
+**What needs to happen:** The decision tree engine ALREADY EXISTS IN GO: `eventgraph/go/pkg/decision/` (tree.go, evaluate.go, evolve.go + tests). No porting needed. The pipeline becomes a decision tree where each step has success/failure criteria. Failures trigger diagnostic traversal. Root causes become tasks. The hive fixes itself. See `hive/docs/knowledge-graph-migration.md` for the full design.
 
 **This is the highest-leverage architectural work.** Everything else — features, polish, new products — is built on sand until the pipeline runs on its own substrate.
 
