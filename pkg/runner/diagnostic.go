@@ -40,6 +40,23 @@ func appendDiagnostic(hiveDir string, e PhaseEvent) error {
 	return err
 }
 
+// countDiagnostics counts newline-terminated lines in
+// {hiveDir}/loop/diagnostics.jsonl. Returns 0 if the file doesn't exist.
+func countDiagnostics(hiveDir string) int {
+	path := filepath.Join(hiveDir, "loop", "diagnostics.jsonl")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	count := 0
+	for _, b := range data {
+		if b == '\n' {
+			count++
+		}
+	}
+	return count
+}
+
 // appendDiagnostic appends a PhaseEvent to loop/diagnostics.jsonl.
 // Silently skips if HiveDir is empty.
 func (r *Runner) appendDiagnostic(e PhaseEvent) {

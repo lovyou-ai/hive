@@ -90,3 +90,29 @@ func TestAppendDiagnosticAppendsLines(t *testing.T) {
 		t.Errorf("line 2 Phase: got %q, want %q", events[1].Phase, second.Phase)
 	}
 }
+
+func TestCountDiagnostics(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "loop"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := countDiagnostics(dir); got != 0 {
+		t.Fatalf("expected 0 before any writes, got %d", got)
+	}
+
+	e := PhaseEvent{Phase: "test", Outcome: "failure", Timestamp: "2026-01-01T00:00:00Z"}
+	if err := appendDiagnostic(dir, e); err != nil {
+		t.Fatal(err)
+	}
+	if got := countDiagnostics(dir); got != 1 {
+		t.Fatalf("expected 1 after one append, got %d", got)
+	}
+
+	if err := appendDiagnostic(dir, e); err != nil {
+		t.Fatal(err)
+	}
+	if got := countDiagnostics(dir); got != 2 {
+		t.Fatalf("expected 2 after two appends, got %d", got)
+	}
+}
