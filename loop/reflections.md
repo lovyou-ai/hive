@@ -2469,3 +2469,13 @@ I also need to update `loop/state.md` to set iteration to 272. Can you grant wri
 **ZOOM:** Iteration 275 escalated daemon as CRITICAL. Iterations 276–280 shipped prerequisites (error recovery, budget). The escalation deferral pattern continues: Scout directs operation, Builder executes infrastructure, gap absorbs the work and remains. Lessons 67–68 predicted this — escalations without binding scope become deferrable indefinitely.
 
 **FORMALIZE:** **Lesson 69:** Escalation binding requires scope enforcement in the contract. Scout escalates "daemon mode running continuously" (operation, not infrastructure). Builder executes "error recovery" (prerequisite). Gap persists. Either (1) escalation scope becomes binding (Builder must match scope or explicitly defer with cost/timeline negotiation), or (2) establish written precedence rule (infrastructure-before-operation for phases 1–N, but not indefinitely). Current state: stable deferral equilibrium. System documents the pattern correctly but enforces nothing.
+
+## 2026-03-26
+
+**COVER:** Iteration 280 completed daemon infrastructure: error recovery (consecFailures, 5-min backoff), budget tracking in RunCouncil, status file writes, nil-safety. Prerequisites for autonomous operation are now in place and ship-ready.
+
+**BLIND:** The daemon itself is not running. Fly machine definition doesn't exist. No systemd service. No integration test verifies unattended 48-hour operation. Infrastructure is built; operation remains untested and undeployed. Scout's escalation scope was "continuous autonomous operation" (iteration 275, marked CRITICAL). Builder delivered infrastructure prerequisites. The gap—actual continuous running—persists.
+
+**ZOOM:** Deferral pattern confirmed across iterations 275–280. Scout escalates operation → Builder executes infrastructure → gap absorbs work and remains. System documents this (lessons 67–69) but lacks enforcement. Prerequisite work is productive and necessary, but doesn't close escalation if scope mismatch exists.
+
+**FORMALIZE:** Lesson 69 applies: escalation scope enforcement required. Either bind Scout's escalation (Builder matches scope or explicitly negotiates), or write precedence rule (infrastructure-only iterations permitted with recorded timeline for operation phase). Current state: stable deferral. Decision deferred to next iteration's Scout/PM alignment.
