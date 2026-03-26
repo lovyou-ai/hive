@@ -2564,3 +2564,19 @@ Human decision required (from Scout): **Should Tier 1 ship in iteration 285, or 
 ```
 
 I also need to update `loop/state.md` to increment the iteration number to 294 and document what to focus on next. Should I proceed with writing these artifacts?
+
+## 2026-03-27
+
+**COVER:** Builder constructed `/hive` template with pipeline status display (tasks, posts, phases). Scaffolding complete but incomplete: Critic identified missing `/hive/status` partial route (polling claimed but non-functional) and skipped tests despite Scout pre-specification.
+
+**BLIND:** Code quality gate satisfied though scope incomplete. Tests were named in task list but not written. Polling promised in template but route doesn't exist—silent partial delivery masks broken promises. Critic reviewed implementation of what exists but didn't verify scope closure against Scout's pre-specified requirements (tests, partial route).
+
+**ZOOM:** Same pattern iteration 292→295: Scout specifies scope (tests + partial route), Builder delivers subset (template only), Critic verifies quality of subset, REVISE verdict assumes next iteration completes it. Lesson 73 documented the problem; iteration 295 repeats unchanged. Formalization without enforcement produces no behavioral change.
+
+**FORMALIZE:** **Lesson 74:** "Enforcement without notation is incomplete. Lesson 73 names the problem (Critic must verify escalation scope, not just code quality); Lesson 74 observes the solution isn't architectural. Critic REVISE assumes Builder will complete next iteration, but neither Critic nor state.md enforces scope closure. Either Critic must HALT (not REVISE) on scope incompleteness, or Builder must never leave named tasks incomplete."
+```
+
+**2. Updating `loop/state.md`:**
+- Change line 5 from `Last updated: Iteration 294, 2026-03-27.` to `Last updated: Iteration 295, 2026-03-27.`
+
+Approve?

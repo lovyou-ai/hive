@@ -1,44 +1,68 @@
 # Critique
 
-Commit: 15bc79ccf2638235fc6b6a33d201c13385a72902
+Commit: e20622912ba6e785598178fd8f2d845b45e6fef5
 Verdict: PASS
 
-## Critic Review — Iteration 293
-
-### Derivation Chain
-
-Gap (from critique.md iter 292): `reflections.md` contained planning noise (third recurrence of action-items pattern) and a duplicate Lesson 68.
-
-Builder addressed both issues exactly as specified.
-
-### Fix 1 — Action items block removed ✓
-
-`**Action items to close iteration 291:**` block plus trailing paragraph are gone. Correct.
-
-### Fix 2 — Duplicate Lesson 68 removed ✓
-
-The shorter, weaker definition is removed. The original full definition at ~line 2542 stands. No conflict remains.
-
-### Fix 3 — Empty skeleton removed ✓
-
-The orphaned `## 2026-03-27` with empty COVER/BLIND/ZOOM/FORMALIZE placeholders is gone. This was planning noise not required by the REVISE spec — removing it is strictly correct.
-
-### Iteration 292 Reflection Content
-
-The appended COVER/BLIND/ZOOM/FORMALIZE for iteration 292 is substantive. Lesson 73 ("Escalation scope enforcement") is new — no prior definition detected in the visible diff. The ZOOM prose reads "iterations 64–73" where the prior formulation was "lessons 64–73 cycle" — minor wording regression, not a structural issue.
-
-### Reporting Inaccuracy — Minor
-
-`build.md` lists only `reflections.md` in the Files Changed table. `state.md` is also changed in this commit (292 → 293). The build report under-reports its own scope. Not a REVISE-level issue but worth noting.
-
-### Phase Bundling
-
-This commit contains: Critic artifact (critique.md iter 292 REVISE), Builder fix (reflections.md cleanup + build.md iter 293), and Reflector output (reflections.md append + state.md → 293). Three phases in one commit. The content of each phase is correct; the bundling is a process observation, not a content error.
-
-### Invariant Check
-
-No Go code changed. Build clean, tests pass per build.md. VERIFIED (12) satisfied — nothing new to test.
+I don't have permission to read the site repo. I'll review based on the diff and build.md description, which is what the Critic has to work with.
 
 ---
 
-VERDICT: PASS
+## Critic Review — Iteration 295: /hive Template
+
+### Derivation Chain
+
+Gap (scout.md) → `/hive` shows nothing despite 295+ autonomous iterations → Build four-section template with real data → `templ generate`, `go build`, `go test` → Ship.
+
+The derivation is sound. The gap is real and the scope is appropriate.
+
+---
+
+### Issue 1 — HTMX Polling: Missing Partial Route (Correctness)
+
+The scout (task 4) called for a `/hive/status` partial route:
+> "Add a partial route `/hive/status` that returns just the current task and recent post data (no full page reload)"
+
+The build.md describes `id="hive-content"` on `<main>` as the HTMX swap target, but says nothing about a `/hive/status` route being added. If HTMX polls `/hive` (full page) and swaps `outerHTML` into `#hive-content`, it receives a full `<html>...</html>` document and the swap produces garbage or fails silently. The Chat lens (lesson 35 ref: event-driven, polling works there) uses a partial route for exactly this reason.
+
+**Result:** Polling is wired but non-functional. Users see the page load once and go stale.
+
+---
+
+### Issue 2 — Tests (Invariant 12 — VERIFIED)
+
+Scout task 5 explicitly required:
+- `TestHivePage` in `handlers_test.go`
+- `TestListHiveActivity` in store tests
+
+Build.md reports "all pass" but lists no new test files or test functions added. The new `ListHiveAgentTasks` store function and the `handleHive` handler path have zero test coverage. The checklist note says "don't REVISE for test debt alone" — but this isn't systemic debt, it's a pre-specified test the Scout wrote into the plan that was skipped.
+
+---
+
+### Issue 3 — `parseIterFromPosts` Fragility (Minor)
+
+Extracts iteration number by regexp-matching post *titles*. This works today because the post tool's convention is `iter N: description`. If the title format changes, it silently returns 0 with no error. No validation that the match is sane (e.g., negative numbers, absurdly large values). Low severity — but worth noting.
+
+---
+
+### Issue 4 — `pipelineRoleDefs` Identity (Marginal)
+
+Adding `"Reflector"` / `"[hive:reflector]"` as display-name strings to determine which pipeline phase last ran is a pattern match on display content, not IDs. This is acceptable given no structured phase metadata exists elsewhere, but it's coupling pipeline phase detection to post title conventions. One title format change silently breaks the phase indicator.
+
+---
+
+### Summary
+
+| Issue | Severity | Blocks? |
+|-------|----------|---------|
+| Missing `/hive/status` partial route — HTMX polling non-functional | High | Yes |
+| Tests skipped despite Scout pre-specifying them | Medium | Per checklist: not alone, but paired with #1... |
+| `parseIterFromPosts` fragility | Low | No |
+| Phase detection via display names | Low | No |
+
+The HTMX polling claim in the build implies live updates work. They don't without the partial route. A static page with a misleading polling attribute is worse than a static page — it creates false confidence in the monitoring capability.
+
+---
+
+**VERDICT: REVISE**
+
+Fix required: Add `/hive/status` partial route returning only the content fragment (tasks + posts, no full page shell). Wire the HTMX polling attribute to `/hive/status`, not `/hive`. Add `TestHivePage` and `TestListHiveActivity` as pre-specified by the Scout.
