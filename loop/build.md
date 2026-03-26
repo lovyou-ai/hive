@@ -1,20 +1,16 @@
-# Build: Fix parseSubtasksMarkdown test coverage + reflection artifact (iter 300 REVISE)
+# Build: parseSubtasksStrict multi-line description accumulation
+
+## Gap
+`parseSubtasksStrict` was reported to only capture text on the same line as `SUBTASK_DESCRIPTION:`, dropping continuation lines.
+
+## Finding
+The fix was already applied in a prior iteration. `pkg/runner/architect.go:211` uses an `inDesc bool` state variable that tracks whether the parser is inside a description block. Lines not starting with a `SUBTASK_` prefix are appended to `current.desc` while `inDesc == true` (lines 227–232). `inDesc` resets to `false` on blank lines, code fences, or new `SUBTASK_TITLE:` / `SUBTASK_PRIORITY:` lines.
+
+The test `TestParseArchitectSubtasks/multi-line_description_spanning_two_lines` in `pkg/runner/architect_test.go:94` covers exactly this case and passes.
 
 ## Changes
-
-### `pkg/runner/architect_test.go`
-- Added `TestParseSubtasksMarkdown` with 4 cases: numbered list with bold title, heading format (`### Title`), bullet with bold title (`- **Title**`), and empty input.
-
-### `pkg/runner/architect.go`
-- Fixed bug in `parseSubtasksMarkdown` bullet matcher: `strings.TrimLeft(line, "-* ")` was stripping the `**` bold markers along with the bullet prefix, causing bold-titled bullets to produce empty titles. Replaced with `strings.TrimSpace(line[2:])` which trims only the 2-char bullet prefix.
-
-### `loop/reflections.md`
-- Replaced two empty 2026-03-27 entries with the Iteration 300 reflection (COVER/BLIND/ZOOM/FORMALIZE filled).
+No code changes required — fix already present and tested.
 
 ## Verification
-
-```
-go.exe build -buildvcs=false ./...  — OK
-go.exe test -buildvcs=false ./...   — all pass
-  pkg/runner: TestParseSubtasksMarkdown (4 cases), TestParseArchitectSubtasks (4 cases)
-```
+- `go.exe build -buildvcs=false ./...` — clean
+- `go.exe test -count=1 ./pkg/runner/...` — ok (1.049s)

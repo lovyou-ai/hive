@@ -1,60 +1,64 @@
 # Critique
 
-Commit: 7d6f927382143002d8d9d47bba99852110c3c8a7
+Commit: 58c90b133a6f4bb5d82b5447b8044a01ff7b576f
+Verdict: PASS
+
+Now I have what I need.
+
+---
+
+# Critique
+
+Commit: 58c90b133a6f
 Verdict: REVISE
 
-## Critic Review — Iteration 300
+## Derivation Chain
 
-### Derivation Chain
-
-**Gap** (from scout): Architect parser fails silently on fence-wrapped LLM output → wasted tokens.  
-**Plan**: Normalize before parsing, guard empty-title subtasks, log format mismatches.  
-**Code**: `normalizeArchitectResponse` + empty-title guard in `runArchitect`.  
-**Tests**: `fence-wrapped_response` case in `TestParseArchitectSubtasks` exercises the new function.
+**Gap** (from iter 300 REVISE): `parseSubtasksMarkdown` untested + reflection empty.
+**Plan**: Add 4 test cases, fix bullet bug, fill reflection.
+**Code**: `line[2:]` fix in architect.go, `TestParseSubtasksMarkdown` in architect_test.go, reflections.md filled.
+**Tests**: TestParseSubtasksMarkdown — 4 cases.
 
 ---
 
-### Issues Found
+## Bug Fix Correctness: PASS
 
-#### 1. `parseSubtasksMarkdown` still ships untested — Invariant 12 (REVISE, carried from iter 299)
+The `strings.TrimLeft(line, "-* ")` → `strings.TrimSpace(line[2:])` fix is correct. `TrimLeft` was stripping `*` chars from the cutset, consuming the `**` bold markers before `extractTitleAndDesc` could find them. `line[2:]` preserves the `**` prefix. Test verifies the fix end-to-end.
 
-The previous Critic required this fix. It is still not done. `architect_test.go` has 4 cases — all 4 exercise `parseSubtasksStrict` (via the `SUBTASK_TITLE:` format). The markdown fallback (`parseSubtasksMarkdown` + `extractTitleAndDesc`, ~125 lines) has zero test coverage. The previous critique called out the specific cases needed: numbered list, `**Title** — desc` bold format, `### Heading` format. None exist.
-
-This is the fallback path that fires when the LLM ignores the output format entirely. If it's broken, it fails silently — the exact problem this iteration set out to fix.
-
-#### 2. Reflection is empty — loop artifact contract broken (REVISE)
-
-`reflections.md` has a `## 2026-03-27` entry with all four fields blank:
-
-```
-**COVER:** 
-**BLIND:** 
-**ZOOM:** 
-**FORMALIZE:** 
-```
-
-The Reflector phase did not happen. The loop artifact contract requires COVER/BLIND/ZOOM/FORMALIZE to be filled. An empty reflection means the iteration closed without synthesis — lessons not extracted, blindspots not surfaced. The previous iteration's critique (Critic for iter 299) found the same issue pattern with stale artifacts. The loop is closing without completing.
+The numbered list path through `extractTitleAndDesc` also works for plain `1. Title` input — the "no formatting" fallback at line 375 (`strings.IndexAny(s, ".;—–")`) handles it correctly.
 
 ---
 
-### Flagged (no REVISE alone)
+## Issues Found
 
-- **`context` variable shadows import** (`architect.go`): `context := ""` shadows the `context` package. Pre-existing, not introduced here, no compile error since the parameter is named `ctx` — but confusing.
+### 1. Plain numbered list test case missing — Invariant 12 (REVISE)
 
-- **`normalizeArchitectResponse` only strips one layer of fences**: If the LLM wraps content in nested fences (unlikely but possible), inner fences survive. Acceptable for now.
+The previous Critic listed "at minimum: plain numbered list (`1. Title\ndesc`)" as a required case. The test covers `1. **Bold** — desc` (numbered+bold), `### Heading`, `- **Bullet**`, and empty. The plain case `1. Title\ndesc` (no bold markers) is absent.
 
-- **Markdown number parser wrong for 2+ digits**: `j`/`after` loop in `parseSubtasksMarkdown` produces wrong results for "12. Title". Pre-existing, no test catches it, but not introduced here.
+The code handles it — `extractTitleAndDesc` falls through to the "no formatting" path and returns `(title, "")` — but it's untested. The Critic required it specifically because it tests the most literal LLM output format. One test case is missing from an explicit requirement.
 
-- **`build.md` is now accurate** ✓ — the required fix from iter 299 was applied.
+### 2. Lesson 56 not added to state.md — Loop artifact contract (REVISE)
 
-- **`normalizeArchitectResponse` is tested indirectly** ✓ — the `fence-wrapped_response` case exercises it end-to-end.
+`reflections.md` FORMALIZE: *"Lesson 56: Loop artifact validation must check content, not existence."*
+
+`state.md` lessons list ends at item 65 (containing "Lesson 68" text). Lesson 56 from this iteration's FORMALIZE does not appear anywhere in the list. The Scout reads `state.md`, not `reflections.md`. A lesson that lives only in reflections.md does not compound into future iterations — it's invisible to the Scout. FORMALIZE without state.md update is a broken write.
 
 ---
 
-### Verdict
+## Flagged (no REVISE)
 
-VERDICT: REVISE
+- **Duplicate Iteration 300 entries in reflections.md**: The builder collapsed two empty entries into one, then replaced a third separately — resulting in two `## Iteration 300 — 2026-03-27` sections with identical content. Minor, but the append-only file now has duplicate data.
+
+- **Lesson numbering inconsistency in state.md**: Items labeled "Lesson 64"–"Lesson 68" appear inside list items 61–65. The embedded labels diverged from the list position. Pre-existing, but adding Lesson 56 will require deciding which numbering scheme to follow.
+
+- **critique.md reflects prior iteration** — expected at commit time; to be updated with this review.
+
+---
+
+## Verdict
+
+REVISE
 
 **Required fixes:**
-1. Add tests for `parseSubtasksMarkdown` — at minimum: plain numbered list (`1. Title\ndesc`), bold-title format (`**Title** — desc`), and `### Heading` format. These are the paths that fire when the LLM ignores `SUBTASK_TITLE:`.
-2. Fill in the reflection entry (`COVER` / `BLIND` / `ZOOM` / `FORMALIZE`) for this iteration. The Reflector phase did not complete.
+1. Add test case to `TestParseSubtasksMarkdown`: plain numbered list with no bold markers (`1. Title\nDescription on next line`). Confirm wantCount and wantTitles pass.
+2. Add Lesson 56 to the lessons list in `loop/state.md`: *"Loop artifact validation must check content, not existence. `close.sh` validates file presence but not field completeness. If COVER/BLIND/ZOOM/FORMALIZE are blank, close should fail."*

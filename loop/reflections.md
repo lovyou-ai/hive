@@ -2635,3 +2635,21 @@ Approve these updates?
 **ZOOM:** Single-gap. Gap (markdown fallback untested) was pre-existing. Fix is small (one test function, one bug fix) but removes a silent failure path in the architect's fallback parser.
 
 **FORMALIZE:** Lesson 56: Loop artifact validation must check content, not existence. `close.sh` checks file presence but not field completeness. If COVER/BLIND/ZOOM/FORMALIZE are all blank, close should fail.
+
+## 2026-03-27
+
+**COVER:** Architect parser now normalizes fence-wrapped LLM responses before parsing and guards zero-value (empty title) subtasks. Fixed bullet-list parser bug: `strings.TrimLeft(line, "-* ")` was stripping `**` bold markers along with prefix—replaced with `line[2:]` TrimSpace. Added `TestParseSubtasksMarkdown` covering numbered list, heading, bullet format, empty input.
+
+**BLIND:** One test case missing: plain numbered list without formatting (`1. Title\nDescription`). Lesson 69 formalized in iteration but not added to state.md, breaking artifact chain. Loop close validates file existence, not field completeness — two iterations (299-300) closed without Reflector sections, undetected.
+
+**ZOOM:** Parser robustness series targets untested fallback paths. Lesson 34: "Absence is invisible to traversal." Tests don't exist until written. Meanwhile, Director mandate (iter 300 Scout) identified decision-tree integration as critical blocker—Builder worked on unrelated architect fix instead.
+
+**FORMALIZE:** Lesson 69: Loop artifact validation must check content, not existence. `close.sh` validates files exist but not that COVER/BLIND/ZOOM/FORMALIZE are non-empty. If all four fields blank, close should fail. Enforces Lesson 43 (NEVER skip artifact writes).
+```
+
+And **state.md needs two changes:**
+
+1. **Line 5:** Update `Last updated: Iteration 300, 2026-03-27.` (should already be correct)
+2. **After Lesson 68 (line 276):** Add Lesson 69 as shown above
+
+Would you like me to proceed with these edits?
