@@ -62,6 +62,7 @@ func run() error {
 
 	// Shared flags.
 	repo := flag.String("repo", "", "Path to repo for Operate (default: current dir)")
+	repos := flag.String("repos", "", "Named repos for pipeline: name=path,name=path (e.g. site=../site,hive=.)")
 
 	// Legacy runtime mode flags.
 	human := flag.String("human", "", "Human operator name (legacy runtime mode)")
@@ -74,7 +75,8 @@ func run() error {
 		return runCouncilCmd(*space, *apiBase, *repo, *budget, *councilTopic)
 	}
 	if *pipeline || *role == "pipeline" {
-		return runPipeline(*space, *apiBase, *repo, *budget, *agentID)
+		repoMap := parseRepos(*repos, *repo)
+		return runPipeline(*space, *apiBase, *repo, *budget, *agentID, repoMap)
 	}
 	if *role != "" {
 		return runRunner(*role, *space, *apiBase, *repo, *budget, *agentID, *oneShot)
@@ -194,7 +196,7 @@ func runCouncilCmd(space, apiBase, repoPath string, budget float64, topic string
 // ─── Pipeline mode ───────────────────────────────────────────────────
 
 // runPipeline runs Scout → Builder → Critic in sequence. One full cycle.
-func runPipeline(space, apiBase, repoPath string, budget float64, agentID string) error {
+func runPipeline(space, apiBase, repoPath string, budget float64, agentID string, repoMap map[string]string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -212,6 +214,15 @@ func runPipeline(space, apiBase, repoPath string, budget float64, agentID string
 	}
 
 	hiveDir := findHiveDir()
+
+	// Log available repos.
+	if len(repoMap) > 0 {
+		var names []string
+		for name := range repoMap {
+			names = append(names, name)
+		}
+		log.Printf("[pipeline] repos available: %v (default: %s)", names, absRepo)
+	}
 	client := api.New(apiBase, apiKey)
 
 	// Smart pipeline: assess the board, then run the right sequence.
@@ -258,6 +269,8 @@ func runPipeline(space, apiBase, repoPath string, budget float64, agentID string
 		roles = []string{"pm", "scout", "architect", "builder", "critic", "reflector"}
 	}
 
+	activeRepo := absRepo // default repo; may be overridden by PM directive
+
 	for _, role := range roles {
 		select {
 		case <-ctx.Done():
@@ -266,7 +279,17 @@ func runPipeline(space, apiBase, repoPath string, budget float64, agentID string
 		default:
 		}
 
-		log.Printf("[pipeline] ── %s ──", role)
+		// After PM or Scout runs, check if the directive specifies a target repo.
+		if (role == "scout" || role == "architect") && len(repoMap) > 0 {
+			if resolved := resolveTargetRepo(hiveDir, repoMap); resolved != "" {
+				if resolved != activeRepo {
+					log.Printf("[pipeline] target repo changed: %s", resolved)
+					activeRepo = resolved
+				}
+			}
+		}
+
+		log.Printf("[pipeline] ── %s ── (repo: %s)", role, filepath.Base(activeRepo))
 
 		model := runner.ModelForRole(role)
 		provider, err := intelligence.New(intelligence.Config{
@@ -282,7 +305,7 @@ func runPipeline(space, apiBase, repoPath string, budget float64, agentID string
 			Role:       role,
 			AgentID:    agentID,
 			SpaceSlug:  space,
-			RepoPath:   absRepo,
+			RepoPath:   activeRepo,
 			HiveDir:    hiveDir,
 			APIClient:  client,
 			Provider:   provider,
@@ -290,6 +313,7 @@ func runPipeline(space, apiBase, repoPath string, budget float64, agentID string
 			BudgetUSD:  budget,
 			OneShot:    true,
 			NoPush:     role == "builder",
+			RepoMap:    repoMap,
 		})
 
 		if err := r.Run(ctx); err != nil {
@@ -299,7 +323,7 @@ func runPipeline(space, apiBase, repoPath string, budget float64, agentID string
 
 	// Push after the full cycle. Code stays local until Critic has reviewed.
 	log.Printf("[pipeline] ── pushing ──")
-	pusher := runner.New(runner.Config{RepoPath: absRepo})
+	pusher := runner.New(runner.Config{RepoPath: activeRepo})
 	if err := pusher.Push(); err != nil {
 		log.Printf("[pipeline] push error: %v", err)
 	} else {
@@ -308,6 +332,62 @@ func runPipeline(space, apiBase, repoPath string, budget float64, agentID string
 
 	log.Printf("[pipeline] ── cycle complete ──")
 	return nil
+}
+
+// parseRepos parses a "name=path,name=path" string into a map of absolute paths.
+// Falls back to a single-entry map using the --repo flag if --repos is empty.
+func parseRepos(reposFlag, defaultRepo string) map[string]string {
+	m := make(map[string]string)
+	if reposFlag != "" {
+		for _, entry := range strings.Split(reposFlag, ",") {
+			parts := strings.SplitN(strings.TrimSpace(entry), "=", 2)
+			if len(parts) == 2 {
+				abs, err := filepath.Abs(strings.TrimSpace(parts[1]))
+				if err == nil {
+					m[strings.TrimSpace(parts[0])] = abs
+				}
+			}
+		}
+	}
+	// Always include the default repo if not already mapped.
+	if len(m) == 0 && defaultRepo != "" {
+		abs, _ := filepath.Abs(defaultRepo)
+		m[filepath.Base(abs)] = abs
+	}
+	return m
+}
+
+// resolveTargetRepo reads the current Scout directive from state.md and
+// looks for "Target repo: <name>" (case-insensitive). Returns the absolute
+// path if found in repoMap, or "" if not found.
+func resolveTargetRepo(hiveDir string, repoMap map[string]string) string {
+	if hiveDir == "" || len(repoMap) == 0 {
+		return ""
+	}
+	data, err := os.ReadFile(filepath.Join(hiveDir, "loop", "state.md"))
+	if err != nil {
+		return ""
+	}
+	s := strings.ToLower(string(data))
+	// Look for "target repo:" or "**target repo:**" patterns.
+	for _, prefix := range []string{"target repo:", "**target repo:**", "target repo: `", "**target repo:** `"} {
+		idx := strings.Index(s, prefix)
+		if idx < 0 {
+			continue
+		}
+		rest := strings.TrimSpace(string(data)[idx+len(prefix):])
+		// Extract the repo name (first word, strip backticks).
+		name := strings.TrimLeft(rest, " `")
+		if end := strings.IndexAny(name, " \t\n\r`"); end > 0 {
+			name = name[:end]
+		}
+		name = strings.TrimRight(name, "`.,;:")
+		name = strings.ToLower(strings.TrimSpace(name))
+		if abs, ok := repoMap[name]; ok {
+			return abs
+		}
+	}
+	return ""
 }
 
 // findHiveDir returns the hive repo directory by walking up from cwd.

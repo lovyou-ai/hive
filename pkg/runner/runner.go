@@ -54,8 +54,9 @@ type Config struct {
 	Interval   time.Duration
 	BudgetUSD     float64 // daily budget, 0 = $10 default
 	OneShot       bool    // if true, work one task then exit (for testing)
-	NoPush        bool    // if true, commit but don't push (pipeline pushes after Critic PASS)
-	CouncilTopic  string  // optional: focus the council on a specific question
+	NoPush        bool              // if true, commit but don't push (pipeline pushes after Critic PASS)
+	CouncilTopic  string            // optional: focus the council on a specific question
+	RepoMap       map[string]string // named repos: name → absolute path (for multi-repo pipeline)
 }
 
 // CostTracker records per-call spending.

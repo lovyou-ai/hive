@@ -27,7 +27,7 @@ func (r *Runner) runPM(ctx context.Context) {
 	sharedCtx := LoadSharedContext(r.cfg.HiveDir)
 	currentDirective := r.readScoutSection()
 
-	prompt := buildPMPrompt(sharedCtx, backlog, recentCommits, boardSummary, completedWork, currentDirective)
+	prompt := buildPMPrompt(sharedCtx, backlog, recentCommits, boardSummary, completedWork, currentDirective, r.cfg.RepoMap)
 
 	resp, err := r.cfg.Provider.Reason(ctx, prompt, nil)
 	if err != nil {
@@ -139,7 +139,22 @@ func (r *Runner) updateScoutDirective(directive string) error {
 	return os.WriteFile(path, []byte(s), 0644)
 }
 
-func buildPMPrompt(sharedCtx, backlog, recentCommits, board, completedWork, currentDirective string) string {
+func buildPMPrompt(sharedCtx, backlog, recentCommits, board, completedWork, currentDirective string, repoMap map[string]string) string {
+	repoSection := ""
+	if len(repoMap) > 0 {
+		var lines []string
+		for name, path := range repoMap {
+			lines = append(lines, fmt.Sprintf("- **%s** → %s", name, path))
+		}
+		repoSection = fmt.Sprintf(`## Available Repos
+
+The pipeline can target any of these repos. Your directive MUST include a "**Target repo:** <name>" line.
+
+%s
+
+`, strings.Join(lines, "\n"))
+	}
+
 	return fmt.Sprintf(`You are the PM. You decide WHAT the hive should build next.
 
 ## Institutional Knowledge
@@ -163,7 +178,7 @@ Do NOT issue a directive that repeats or overlaps with this work:
 
 %s
 
-## Your Task
+%s## Your Task
 
 The Scout has exhausted its current directive. It needs a new one.
 
@@ -173,6 +188,7 @@ The Scout has exhausted its current directive. It needs a new one.
 4. Don't repeat the current Scout directive above.
 5. Pick ONE direction with 3-5 specific implementable tasks.
 6. Write a directive the Scout can follow — specific files, specific changes.
+7. ALWAYS include "**Target repo:** <name>" — the pipeline needs to know which repo to operate on.
 
 ## Output Format
 
@@ -181,8 +197,8 @@ Write a directive that will replace the Scout's current section in state.md:
 DIRECTIVE_START
 [Your directive here — include specific tasks the Scout should create,
 which repo they target, and why this is the priority now.
-Write it as if you're updating state.md directly.]
-DIRECTIVE_END`, sharedCtx, backlog, recentCommits, board, completedWork, currentDirective)
+MUST include a "**Target repo:** <name>" line.]
+DIRECTIVE_END`, sharedCtx, backlog, recentCommits, board, completedWork, currentDirective, repoSection)
 }
 
 func parsePMDirective(content string) string {
