@@ -2,7 +2,7 @@
 
 Living document. Updated by the Reflector each iteration. Read by the Scout first.
 
-Last updated: Iteration 268, 2026-03-26.
+Last updated: Iteration 270, 2026-03-26.
 
 ## Current System State
 
@@ -613,32 +613,26 @@ Roles (`KindRole`) and Teams (`KindTeam`) are entity kinds with no membership mo
 
 ## What the Scout Should Focus On Next
 
-## What the Scout Should Focus On Next
+**Priority: Knowledge Product — Documents, Q&A, and Agent Auto-Answer**
 
-**Priority: Surface agent memory — make what agents know visible**
+**Target repo:** `site`
 
-**Target repo:** site
+The agent stack is complete (memory, grounded chat, event-driven reply). The Knowledge layer has `assert/challenge/verify/retract` but no document management and no Q&A entity kind. A user cannot create a document, ask a question, or receive an agent-grounded answer. This is the platform's core differentiator and it is not yet usable.
 
-**Why now:** The `agent_memories` table, `RememberForPersona`, and `RecallForPersona` were built in iter 233. Agents have been accumulating memories (factual, procedural, episodic) with importance scores, and memories are already injected into `buildSystemPrompt`. But users can't see what agents know. The differentiator of this platform is "agents that remember your space and participate as members." Without visibility, memory is invisible infrastructure. The Council feature shipped with tests (build.md). The Hive Dashboard was the prior directive. This is the next real gap.
+**Tasks for the Scout to create (in order):**
 
-**Prerequisite: verify test suite first.**
-Run `go test ./graph/...` in site. If `TestHandlerJoinViaInvite`, `TestHandlerCreateInviteHTMX`, or `TestHandlerRevokeInvite` still fail with duplicate slug constraint errors — fix that first. The fix is one function: generate unique slug suffixes per test (timestamp or `t.Name()` hash). 15 minutes, no handler changes. Then proceed.
+1. **Knowledge sidebar tab navigation** — Wire `/app/{slug}/knowledge?tab=docs|qa|claims` with three sub-tabs under the Knowledge lens. Files: `site/internal/handlers/knowledge.go`, Knowledge templates. Default tab is `docs` if documents exist, else `qa`.
 
-**What to build:**
+2. **Document entity kind + list view** — Add `KindDocument` constant to kinds.go, add `document` to the `intend` op allowlist, implement `ListDocuments(ctx, spaceID)` with LIMIT 100, add `DocumentsView` template (title, excerpt, author badge, timestamp), wire to `/app/{slug}/knowledge?tab=docs`. One handler test: GET returns 200 with document rows.
 
-1. **Read the schema before building** — Open `site/graph/store.go` and find `RememberForPersona`/`RecallForPersona`. Understand the columns: persona, kind (factual/procedural/episodic), content, importance. Do NOT build until you've read what exists.
+3. **Question entity kind + list view** — Add `KindQuestion` constant, add `ask` op or extend `intend` allowlist with `kind=question`, implement `ListQuestions(ctx, spaceID)` with JOIN on respond ops for answer status, add `QuestionsView` template (question title, answer excerpt, Answered/Awaiting badge). One handler test: GET returns 200 with question rows.
 
-2. **Memory panel on agent profiles** — In the People lens, when viewing a user with `is_agent=true`, add a collapsible "Memories" section below the profile. List memories with kind badge + content + importance indicator. Use existing card/badge patterns.
+4. **Mind auto-answers new questions** — When a `KindQuestion` node is created, fire the existing `triggerMindReply` event-driven pattern (same path as conversation auto-reply in `handlers.go`). Inject the space's three most recent documents as context into the Mind prompt. Answer is posted as a `respond` op on the question node. Verify: ask a question → Mind answers with document grounding.
 
-3. **"What the agent knows" on space overview** — On the space overview/landing (the first lens when entering a space), if the space has an agent with memories scoped to that space, show a small panel: "Agent has learned N things about this space." Expandable list. Reuses the memory fetch.
+**Verification before DONE:**
+- A document can be created and appears in the Docs tab
+- A question can be asked and Mind auto-answers it within the Q&A tab
+- The auto-answer prompt includes document bodies (grep `triggerMindReply` call site)
+- At least one test covers the question auto-answer trigger path
 
-4. **Handler + test for memory endpoint** — `GET /app/{slug}/memories` returns agent memories for that space context (filtered by persona + space slug). Write the handler test: GET returns 200 with memory list. Invariant 12 (VERIFIED) requires the test.
-
-**Scout tasks to create:**
-- "Verify test suite passes (fix invite slug uniqueness if still failing)"
-- "Read agent_memories schema — understand RememberForPersona/RecallForPersona columns"
-- "Add memory panel to agent profile view in People lens"
-- "Add 'What the agent knows' panel to space overview"
-- "Add GET /app/{slug}/memories handler + handler test"
-
-**Constraint:** Do not re-implement memory storage or recall logic — it's done. Read `store.go` and `mind.go` to understand what exists, then build UI on top of it. The goal is surfacing, not re-implementing.
+**Why now:** The autonomous pipeline ships features at $0.83/iteration. The Knowledge Q&A product is 4 concrete tasks with clear files, a complete spec, and existing infrastructure. It closes the loop: agent memory (iter 233) + document grounding + Q&A = a product people describe to others and would pay for.

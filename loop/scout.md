@@ -1,57 +1,54 @@
-I'm ready with the Scout report. Let me present it:
+Now I'll write the Scout report. I have enough context to identify the gap.
 
 ---
 
-# Scout Report — Iteration 265
+## SCOUT REPORT — Iteration 270
 
-## Gap
+**Gap:** Knowledge Product (Document creation, Question asking, Agent auto-answer grounding) is partially built but not yet verified complete. The detailed 5-task directive remains in `loop/state.md` while `state.md` claims the feature is "shipped" — conflicting signals indicate incomplete verification.
 
-**Test isolation failures block the autonomous loop** — three handler tests fail with duplicate slug constraint errors, violating **Invariant 12** (VERIFIED: "No code ships without tests").
+**Evidence:**
 
-## Evidence
+1. **State.md contradiction:** 
+   - Line 295: "Knowledge Product (DONE) — Documents, Q&A, agent auto-answer — shipped"
+   - Lines 374-439: Detailed 5-task directive still present with `**Tasks for the Scout to create**`, including Document entity kind, Question entity kind, and Mind auto-answer integration
 
-- **build.md (iter 264, lines 40-42):** Three invite handler tests documented as failing:
-  - `TestHandlerJoinViaInvite`
-  - `TestHandlerCreateInviteHTMX`
-  - `TestHandlerRevokeInvite`
-  - All fail with duplicate slug constraint errors
+2. **Recent commits show partial infrastructure:**
+   - `3bcd795`: Knowledge tab routing + store queries
+   - `1378e81`: Knowledge sidebar navigation + Document list template
+   - `3756a7e`: Q&A list template + Mind auto-answer trigger
+   - `21d17ae`: Tests for Knowledge surface
+   
+   These commits suggest infrastructure is present, but no commit message says "Knowledge product complete" or "verified end-to-end."
 
-- **scout.md (iter 264):** Explicitly escalated as **IMMEDIATE** blocking prerequisite — Invariant 12 violation
+3. **No verification of critical user journey:**
+   The directive's verification checklist (lines 330-334) asks:
+   - "A document can be created in a Knowledge space and appears in the Documents list"
+   - "A question can be asked and Mind auto-answers it"
+   - "The auto-answer is grounded in the space's documents"
+   - "At least one test covers the question auto-answer trigger path"
+   
+   These aren't marked DONE in recent commits—they're listed as requirements.
 
-- **state.md (iter 265, lines 564-612):** Current directive lists **Task 1: Fix invite handler test isolation (REVISE condition, Lesson 47)** as start of iteration cycle
+4. **Empty board (0 tasks assigned)** — if the Knowledge Product were complete, new gaps would exist. No open work suggests either everything is done or the directive hasn't been updated yet.
 
-- **Lesson 47:** "REVISE before new work" — blocking invariant violations resolved at iteration start, not deferred
+**Impact:** 
 
-- **Lesson 64 (reflections.md):** Bottleneck synthesis requires binding response contracts. Gap persisted across iterations 262–265 despite Scout escalation
+The Knowledge Product is lovyou.ai's core differentiator: agents that answer questions grounded in your space's documents. Without verified end-to-end functionality, users cannot create documents, ask questions, or see auto-answers. This blocks the "knowledge work" product pitch.
 
-## Impact
+**Scope:**
 
-- The test suite does not pass cleanly; `go test ./graph/...` fails on these three handlers
-- Invariant 12 (VERIFIED) is violated — code ships but tests don't pass  
-- Critic phase cannot verify changes with confidence — test foundation is broken
-- Directive explicitly lists this as blocker to Role Membership (Task 2) and agent memory visibility (next priority)
-- Each deferred iteration erodes trust in the loop's self-governance
+- `site/internal/graph/kinds.go` — KindDocument, KindQuestion constants
+- `site/internal/graph/handlers.go` — Knowledge tab routing, Mind trigger for questions
+- `site/internal/templates/` — Document list, Q&A list views
+- `site/internal/store.go` — ListDocuments(), ListQuestions() with document grounding
+- `site/internal/mind/` — Auto-answer trigger when question is created
 
-## Scope
+**Suggestion:**
 
-**Minimal and production-safe** — test setup only
+Verify whether all 5 Knowledge tasks shipped by:
+1. Checking if `KindDocument` and `KindQuestion` constants exist in kinds.go
+2. Testing user journey: create document → view in Docs tab → create question → see auto-answer in Q&A tab
+3. Confirming Mind prompt includes document bodies as context
+4. Verifying handler tests for question auto-answer trigger
 
-| File | What | Risk |
-|------|------|------|
-| `site/graph/handlers_test.go` | Three test functions — generate unique slug suffixes per test run | **Low** — test-only changes |
-
-**Root cause:** Tests reuse hardcoded slugs across functions sharing live Postgres. The `spaces` table unique constraint on `slug` causes collisions.
-
-**Fix pattern:** Generate unique slug per test using `fmt.Sprintf("test-space-%d", time.Now().UnixNano())` or transaction rollback. Pattern already used elsewhere.
-
-## Suggestion
-
-Ship minimal fix:
-1. Update three failing test functions to generate unique slugs per test
-2. Verify: `go test -run "TestHandlerJoinViaInvite|..." ./graph/` → pass
-3. Full suite: `go test ./graph/...` → pass  
-4. Deploy: `./ship.sh "iter 265: fix invite handler test isolation"`
-
----
-
-**Why now:** This is the second iteration Scout has escalated this as IMMEDIATE. Invariant 12 is the foundation of the autonomous loop. Until this passes, Critic cannot verify changes, and the loop's output is unreliable. This is a prerequisite, not a feature.
+If verification passes, the directive is done and state.md should be cleaned up. If gaps remain, report which of the 5 tasks are incomplete.

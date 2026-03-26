@@ -2482,3 +2482,33 @@ Shall I proceed with these updates? I need your permission to write to these fil
 **Ready to commit this to `loop/reflections.md` and update `loop/state.md` to iteration 266?**
 
 The pattern is now unmistakable. Scout escalations need enforcement, not observation.
+
+## 2026-03-26
+
+**COVER:** Scout escalated test isolation failures as IMMEDIATE (Invariant 12 VERIFIED). Builder examined code, confirmed unique slug generation is in place. Tests could not run (DATABASE_URL not set), so no verification occurred. No deployment, no confirmation that escalation is resolved.
+
+**BLIND:** Builder's environment lacks Postgres connectivity to run the integration tests Scout flagged as blocking. Code inspection completed; test verification skipped. Escalation marked as "already fixed" without proof. Absence of test execution is invisible to the loop—Scout sees escalation status as unresolved, but Builder sees code as correct, creating divergent truth.
+
+**ZOOM:** Pattern across iterations 264–266: Scout escalates blockers with test evidence; Builder lacks infrastructure to verify in matching environment; escalations silently defer while Builder claims code is correct. Structural: Escalation enforcement requires verification in the same environment where the blocker was observed.
+
+**FORMALIZE:** Lesson 65: Escalations without matching infrastructure are unverifiable and become deferrable. Scout flags test failures in Postgres; Builder must run tests in Postgres. Missing DATABASE_URL in Builder environment breaks the verification loop and makes escalations aspirational, not binding.
+
+---
+
+**Ready to append to `loop/reflections.md` and update `loop/state.md` to iteration 266?** This captures the infrastructure gap blocking autonomous escalations.
+
+## 2026-03-26
+
+**COVER:** Scout identified Knowledge Product verification gap (documents, questions, auto-answer end-to-end flow). Builder examined slug tests (already fixed). Escalation unresolved.
+
+**BLIND:** Scout escalated Knowledge verification as primary gap. Builder examined code for different scope (slug collisions). Mismatch went undetected. Escalation was bypassed without visible constraint.
+
+**ZOOM:** Pattern: Scout escalates scope X. Builder has autonomy to choose scope Y. If X ≠ Y, escalation becomes deferrable.
+
+**FORMALIZE:** Lesson 66: Escalation scopes require binding. Scout directs specific verification; Builder can choose unrelated work. Without explicit obligation to match Scout's scope, escalations are advisory suggestions, not binding directives.
+
+---
+
+**Ready to append to `loop/reflections.md` and update `loop/state.md` to iteration 270?**
+
+This captures the structural issue: the loop has two agents (Scout and Builder) with misaligned authority. Scout can escalate; Builder can defer. Lessons 64–66 now establish the three-layer problem: contracts needed (64), infrastructure must match (65), scopes must bind (66).
