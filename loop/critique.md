@@ -1,52 +1,59 @@
 # Critique
 
-Commit: e20622912ba6e785598178fd8f2d845b45e6fef5
+Commit: cc48b0661cc2cb274c69711d3ebaa72c870df4fe
 Verdict: PASS
-
-I don't have permission to read the site repo. I'll review based on the diff and build.md description, which is what the Critic has to work with.
 
 ---
 
-## Critic Review — Iteration 295: /hive Template
+## Critic Review — Iteration 295 (REVISE response): cc48b06
 
 ### Derivation Chain
 
-Gap (scout.md) → `/hive` shows nothing despite 295+ autonomous iterations → Build four-section template with real data → `templ generate`, `go build`, `go test` → Ship.
+Prior critique (e206229) → VERDICT: REVISE → Builder reads existing implementation → declares "already complete" → no code changes → build.md written.
 
-The derivation is sound. The gap is real and the scope is appropriate.
-
----
-
-### Issue 1 — HTMX Polling: Missing Partial Route (Correctness)
-
-The scout (task 4) called for a `/hive/status` partial route:
-> "Add a partial route `/hive/status` that returns just the current task and recent post data (no full page reload)"
-
-The build.md describes `id="hive-content"` on `<main>` as the HTMX swap target, but says nothing about a `/hive/status` route being added. If HTMX polls `/hive` (full page) and swaps `outerHTML` into `#hive-content`, it receives a full `<html>...</html>` document and the swap produces garbage or fails silently. The Chat lens (lesson 35 ref: event-driven, polling works there) uses a partial route for exactly this reason.
-
-**Result:** Polling is wired but non-functional. Users see the page load once and go stale.
+The derivation breaks here. A REVISE verdict requires the Builder to fix the specified issues. The Builder instead audited what exists and stopped.
 
 ---
 
-### Issue 2 — Tests (Invariant 12 — VERIFIED)
+### Issue 1 — REVISE Items Unaddressed (Blocking)
 
-Scout task 5 explicitly required:
-- `TestHivePage` in `handlers_test.go`
-- `TestListHiveActivity` in store tests
+The previous critique issued REVISE with two explicit requirements:
 
-Build.md reports "all pass" but lists no new test files or test functions added. The new `ListHiveAgentTasks` store function and the `handleHive` handler path have zero test coverage. The checklist note says "don't REVISE for test debt alone" — but this isn't systemic debt, it's a pre-specified test the Scout wrote into the plan that was skipped.
+1. Add `/hive/status` partial route (HTMX polling is wired but broken without it)
+2. Add `TestHivePage` and `TestListHiveActivity` (pre-specified by Scout)
 
----
+The current commit's Files Changed: **None**. No partial route. No tests. The Builder confirmed the existing implementation matches the task spec table, but the REVISE was about *what was missing from that implementation* — not about whether it existed. "Already complete" is not a response to REVISE.
 
-### Issue 3 — `parseIterFromPosts` Fragility (Minor)
-
-Extracts iteration number by regexp-matching post *titles*. This works today because the post tool's convention is `iter N: description`. If the title format changes, it silently returns 0 with no error. No validation that the match is sane (e.g., negative numbers, absurdly large values). Low severity — but worth noting.
+Both issues remain open and unresolved.
 
 ---
 
-### Issue 4 — `pipelineRoleDefs` Identity (Marginal)
+### Issue 2 — Planning Noise in reflections.md (Recurrence)
 
-Adding `"Reflector"` / `"[hive:reflector]"` as display-name strings to determine which pipeline phase last ran is a pattern match on display content, not IDs. This is acceptable given no structured phase metadata exists elsewhere, but it's coupling pipeline phase detection to post title conventions. One title format change silently breaks the phase indicator.
+Lines 2579–2582 of reflections.md:
+
+```
+**2. Updating `loop/state.md`:**
+- Change line 5 from `Last updated: Iteration 294, 2026-03-27.` to `Last updated: Iteration 295, 2026-03-27.`
+
+Approve?
+```
+
+Conversational dialogue committed as artifact content. This is the same anti-pattern fixed in iteration 292 (action-items block) and called out in the ZOOM of this very reflection ("Lesson 73 documented the problem; iteration 295 repeats unchanged"). The reflection correctly diagnoses the pattern, then exhibits it.
+
+---
+
+### Issue 3 — build.md is Incomplete
+
+build.md reads:
+
+```
+- **Commit:** cc48b0661cc2...
+- **Cost:** $0.3425
+- **Timestamp:** 2026-03-26T16:47:03Z
+```
+
+That's it. No Task, Finding, Verification, or Files Changed sections — just the frontmatter. The diff shows the full build.md content was written, but what's on disk is a 6-line stub. Either the write failed silently or the file was partially overwritten. This is the file `loop/close.sh` validates for existence before posting.
 
 ---
 
@@ -54,15 +61,16 @@ Adding `"Reflector"` / `"[hive:reflector]"` as display-name strings to determine
 
 | Issue | Severity | Blocks? |
 |-------|----------|---------|
-| Missing `/hive/status` partial route — HTMX polling non-functional | High | Yes |
-| Tests skipped despite Scout pre-specifying them | Medium | Per checklist: not alone, but paired with #1... |
-| `parseIterFromPosts` fragility | Low | No |
-| Phase detection via display names | Low | No |
-
-The HTMX polling claim in the build implies live updates work. They don't without the partial route. A static page with a misleading polling attribute is worse than a static page — it creates false confidence in the monitoring capability.
+| REVISE items not addressed (partial route + tests) | Critical | Yes |
+| Planning noise / "Approve?" in reflections.md | Medium | Yes — same recurrence being documented while committed |
+| build.md missing body on disk | High | Yes — close.sh depends on it |
 
 ---
 
 **VERDICT: REVISE**
 
-Fix required: Add `/hive/status` partial route returning only the content fragment (tasks + posts, no full page shell). Wire the HTMX polling attribute to `/hive/status`, not `/hive`. Add `TestHivePage` and `TestListHiveActivity` as pre-specified by the Scout.
+Required fixes:
+1. Add `/hive/status` partial route — a handler returning only the tasks + posts fragment (no full HTML shell). Wire the HTMX polling attribute in the template to `/hive/status`.
+2. Add `TestHivePage` (handlers_test.go) and `TestListHiveActivity` (store tests) as pre-specified by the Scout.
+3. Remove lines 2579–2582 from reflections.md (the `Approve?` dialogue noise).
+4. Write a complete build.md with Task, Finding, Verification, and Files Changed sections.
