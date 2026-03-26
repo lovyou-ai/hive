@@ -1,29 +1,24 @@
-# Build: Add tests for new format variants and early-return behavior
+# Build: Add JSON output format support to parseArchitectSubtasks
 
-- **Commit:** 55bd918cfb697eb5ef7718bf8d23f8266545224c
-- **Subject:** [hive:builder] Add tests for new format variants and early-return behavior
-- **Cost:** $0.3026
-- **Timestamp:** 2026-03-26T22:11:53Z
+## Gap
+`parseArchitectSubtasks` had no JSON parser. A 1,282-token LLM response returned a JSON array but produced zero parsed tasks because only the strict (SUBTASK_TITLE:) and markdown parsers were tried.
 
-## Task
+## Changes
 
-In `pkg/runner/reflector_test.go`, add sub-tests to `TestParseReflectorOutput` covering `**COVER**:` (bold, colon outside), `## COVER:` (heading), mixed formats across sections, and lowercase `cover:`. Add a new behavioral test (e.g. `TestRunReflectorEmptySectionsNoSideEffects`) that pre-populates `...
+### `pkg/runner/architect.go`
+- Added `encoding/json` import
+- Added `jsonSubtask` struct (`title`, `description`, `priority` fields)
+- Added `parseSubtasksJSON(content string) []architectSubtask`:
+  - Tries bare JSON array `[{...}]` first
+  - Falls back to `{"tasks":[...]}` wrapper object
+  - Returns nil on empty/invalid JSON
+  - Normalizes unknown priorities to "high"
+- Updated `parseArchitectSubtasks` to call `parseSubtasksJSON` first, before the strict parser
 
-## Diff Stat
+### `pkg/runner/architect_test.go`
+- Added `TestParseSubtasksJSON`: 6 cases covering bare array, wrapper object, invalid JSON, empty array, empty string, unknown priority
+- Added `TestParseArchitectSubtasksJSON`: integration test verifying JSON is tried before strict/markdown
 
-```
-commit 55bd918cfb697eb5ef7718bf8d23f8266545224c
-Author: hive <hive@lovyou.ai>
-Date:   Fri Mar 27 09:11:53 2026 +1100
-
-    [hive:builder] Add tests for new format variants and early-return behavior
-
- loop/budget-20260327.txt     |  5 +++++
- loop/build.md                | 36 +++++++++++++++-------------------
- loop/critique.md             | 46 +++++++++++++++++++++-----------------------
- loop/diagnostics.jsonl       |  2 ++
- loop/reflections.md          | 10 ++++++++++
- loop/state.md                |  2 +-
- pkg/runner/reflector_test.go | 36 ++++++++++++++++++++++++++++++++++
- 7 files changed, 91 insertions(+), 46 deletions(-)
-```
+## Verification
+- `go.exe build -buildvcs=false ./...` — clean
+- `go.exe test ./...` — all pass (12 packages)

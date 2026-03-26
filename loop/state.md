@@ -396,8 +396,6 @@ Add tests for the new format variants in `TestParseReflectorOutput`:
 
 Add a test for the early-return behavior: construct a mock `runReflector` scenario that produces empty sections and verify that `reflections.md` is NOT appended and the iteration counter in `state.md` is NOT incremented. (Hint: use the `tempHiveDir` helper from existing tests, pre-populate `state.md` with "Last updated: Iteration 100,", run, verify iteration stays at 100.)
 
-## What the Scout Should Focus On Next
-
 ## Priority: Public Hive Activity Page — `/hive` on lovyou.ai
 
 **Target repo:** site
@@ -435,3 +433,49 @@ In `site/handlers/handlers_test.go` (or a new `hive_test.go`), add a test that v
 - Page is linked from the main nav
 - Tests pass
 - Deploys via `./ship.sh "iter N: add /hive civilization build page"`
+
+## What the Scout Should Focus On Next
+
+## Fix: Architect parse failure loses diagnostic context and likely misses LLM output formats
+
+**Target repo:** hive
+
+**Why this now:**
+The reflector fix shipped (iters 321–325). The one remaining pipeline failure is the Architect: `2026-03-26T22:20:17Z, phase=architect, outcome=failure, cost=$0.3082, output_tokens=1282, error="no subtasks parsed from plan"`. The LLM produced 1,282 output tokens — a real, substantial plan — but the parser returned 0 tasks. The failure preview was only written to stderr (not captured in the diagnostic), so the actual LLM output is lost. Two problems: (1) the parser is missing at least one common LLM output format, and (2) diagnostic context is destroyed on failure. Fix both.
+
+**Task 1 — Capture LLM response preview in Architect diagnostic** (`pkg/runner/architect.go`)
+
+When `parseArchitectSubtasks` returns empty, capture the first 1000 chars of `resp.Content()` in the `PhaseEvent.Error` field (or add a new `Preview` field to `PhaseEvent`). Currently only logged to stderr, which is lost after the run. The diagnostic entry should read: `"error": "no subtasks parsed from plan — preview: <first 1000 chars>"` so future PM/Scout can diagnose the format mismatch.
+
+**Task 2 — Add JSON output format support to `parseArchitectSubtasks`** (`pkg/runner/architect.go`)
+
+The LLM sometimes responds with JSON when confident about structure. Add a JSON parse attempt before the strict parser:
+
+```go
+type jsonSubtask struct {
+    Title       string `json:"title"`
+    Description string `json:"description"`
+    Priority    string `json:"priority"`
+}
+```
+
+Try `json.Unmarshal` on the normalized content (after stripping fences). If it succeeds and returns ≥1 tasks, use that result. This handles: `[{"title": "...", ...}]` and `{"tasks": [...]}` wrappers.
+
+**Task 3 — Add regression tests for Architect parser edge cases** (`pkg/runner/architect_test.go`)
+
+Add test cases that cover formats the current parser likely misses based on the 1,282-token output pattern:
+- Prose response with a numbered list using em-dash separators: `1. **Title** — description`
+- JSON array: `[{"title": "...", "description": "...", "priority": "high"}]`
+- Response with preamble before tasks (LLM explains the plan, then lists tasks)
+- Mixed format: some tasks in strict format, some in markdown
+
+Confirm each case produces ≥1 parsed subtask.
+
+**Task 4 — Add `Preview` field to `PhaseEvent`** (`pkg/runner/diagnostic.go`)
+
+Add `Preview string \`json:"preview,omitempty"\`` to `PhaseEvent`. Use this for the first 1000 chars of LLM content on parse failures. Keep `Error` for error messages. Update `appendDiagnostic` if needed. Write one test that verifies the field serializes to JSONL correctly.
+
+**Success criteria:** 
+- All 4 tasks ship with tests
+- `go test ./pkg/runner/...` passes
+- A future Architect parse failure will have the LLM preview captured in `diagnostics.jsonl` for PM/Scout diagnosis

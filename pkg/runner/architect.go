@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -198,9 +199,70 @@ func normalizeArchitectResponse(content string) string {
 	return content
 }
 
+// jsonSubtask is the expected shape when an LLM returns JSON instead of the
+// structured-text format.  Both snake_case and camelCase field names are
+// accepted so either casing the model chooses will unmarshal correctly.
+type jsonSubtask struct {
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Priority    string `json:"priority"`
+}
+
+// parseSubtasksJSON attempts to unmarshal content as a JSON array of tasks or
+// as a {"tasks":[...]} wrapper object.  Returns nil when content is not valid
+// JSON or when the array is empty.
+func parseSubtasksJSON(content string) []architectSubtask {
+	content = strings.TrimSpace(content)
+	if content == "" || content[0] != '[' && content[0] != '{' {
+		return nil
+	}
+
+	var raw []jsonSubtask
+
+	// Try bare array first: [{...}, ...]
+	if err := json.Unmarshal([]byte(content), &raw); err != nil {
+		// Try wrapper object: {"tasks": [...]}
+		var wrapper struct {
+			Tasks []jsonSubtask `json:"tasks"`
+		}
+		if err2 := json.Unmarshal([]byte(content), &wrapper); err2 != nil {
+			return nil
+		}
+		raw = wrapper.Tasks
+	}
+
+	if len(raw) == 0 {
+		return nil
+	}
+
+	tasks := make([]architectSubtask, 0, len(raw))
+	for _, j := range raw {
+		if j.Title == "" {
+			continue
+		}
+		prio := j.Priority
+		switch prio {
+		case "high", "medium", "low", "urgent":
+		default:
+			prio = "high"
+		}
+		tasks = append(tasks, architectSubtask{
+			title:    j.Title,
+			desc:     j.Description,
+			priority: prio,
+		})
+	}
+	return tasks
+}
+
 func parseArchitectSubtasks(content string) []architectSubtask {
 	content = normalizeArchitectResponse(content)
-	// Try strict format first.
+	// Try JSON first — handles LLM responses that return raw JSON arrays or
+	// {"tasks":[...]} objects instead of the structured-text format.
+	if tasks := parseSubtasksJSON(content); len(tasks) > 0 {
+		return tasks
+	}
+	// Try strict format next.
 	tasks := parseSubtasksStrict(content)
 	if len(tasks) > 0 {
 		return tasks

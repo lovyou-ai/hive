@@ -122,6 +122,95 @@ Update the render pipeline to call persona_store before writing HTML.`,
 	}
 }
 
+func TestParseSubtasksJSON(t *testing.T) {
+	tests := []struct {
+		name       string
+		input      string
+		wantCount  int
+		wantTitles []string
+		wantPrios  []string
+	}{
+		{
+			name: "bare JSON array",
+			input: `[
+				{"title":"Add event store migration","description":"Create the SQL migration file.","priority":"high"},
+				{"title":"Implement MemoryStore","description":"Add pkg/store/memory_store.go.","priority":"medium"}
+			]`,
+			wantCount:  2,
+			wantTitles: []string{"Add event store migration", "Implement MemoryStore"},
+			wantPrios:  []string{"high", "medium"},
+		},
+		{
+			name: "tasks wrapper object",
+			input: `{"tasks":[
+				{"title":"Wire MemoryStore into loop","description":"Update loop.go.","priority":"high"}
+			]}`,
+			wantCount:  1,
+			wantTitles: []string{"Wire MemoryStore into loop"},
+			wantPrios:  []string{"high"},
+		},
+		{
+			name:      "invalid JSON returns nil",
+			input:     "not json at all",
+			wantCount: 0,
+		},
+		{
+			name:      "empty array returns nil",
+			input:     "[]",
+			wantCount: 0,
+		},
+		{
+			name:      "empty string returns nil",
+			input:     "",
+			wantCount: 0,
+		},
+		{
+			name:  "unknown priority defaults to high",
+			input: `[{"title":"Do something","description":"desc","priority":"unknown"}]`,
+			wantCount:  1,
+			wantTitles: []string{"Do something"},
+			wantPrios:  []string{"high"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseSubtasksJSON(tt.input)
+			if len(got) != tt.wantCount {
+				t.Fatalf("parseSubtasksJSON returned %d tasks, want %d\ninput:\n%s", len(got), tt.wantCount, tt.input)
+			}
+			for i, title := range tt.wantTitles {
+				if got[i].title != title {
+					t.Errorf("task[%d].title = %q, want %q", i, got[i].title, title)
+				}
+			}
+			for i, prio := range tt.wantPrios {
+				if got[i].priority != prio {
+					t.Errorf("task[%d].priority = %q, want %q", i, got[i].priority, prio)
+				}
+			}
+		})
+	}
+}
+
+func TestParseArchitectSubtasksJSON(t *testing.T) {
+	// JSON input should be parsed before strict/markdown formats are tried.
+	input := `[{"title":"Add persona resolver","description":"Implement pkg/store/persona_store.go.","priority":"high"}]`
+	got := parseArchitectSubtasks(input)
+	if len(got) != 1 {
+		t.Fatalf("parseArchitectSubtasks returned %d tasks, want 1", len(got))
+	}
+	if got[0].title != "Add persona resolver" {
+		t.Errorf("title = %q, want %q", got[0].title, "Add persona resolver")
+	}
+	if got[0].priority != "high" {
+		t.Errorf("priority = %q, want %q", got[0].priority, "high")
+	}
+	if !strings.Contains(got[0].desc, "persona_store.go") {
+		t.Errorf("desc = %q, want it to contain %q", got[0].desc, "persona_store.go")
+	}
+}
+
 func TestParseArchitectSubtasks(t *testing.T) {
 	tests := []struct {
 		name        string
