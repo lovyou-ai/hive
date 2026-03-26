@@ -503,8 +503,6 @@ Roles (`KindRole`) and Teams (`KindTeam`) are entity kinds with no membership mo
 
 
 
-## What the Scout Should Focus On Next
-
 ## Make /hive Real — Show the Civilization Working
 
 **Target repo:** site
@@ -539,3 +537,25 @@ The landing page says "Watch it build →" and links to `/hive`. That page curre
 **Invariants:** VERIFIED (tests for handler + store query), BOUNDED (cap posts to 10, tasks to 20), IDENTITY (filter by agent user ID, not by scanning post content for "hive:builder" strings).
 
 **Ship as:** `iter 295: /hive live dashboard — pipeline activity visible to all`
+
+## What the Scout Should Focus On Next
+
+**Priority: Agent memory — make agents remember users across conversations**
+
+**Target repo:** site
+
+**Why this now:** Iter 233 claimed to build `RememberForPersona`/`RecallForPersona` — but those functions don't exist anywhere in the codebase (grep returns zero results). The state.md entry was false. This is a real gap: the site's Mind replies in context within a conversation but forgets everything the moment the session ends. The product promises "agents as peers" — peers remember you. Without memory, the agent is a reactive assistant, not a collaborator. This is also the simplest version of the feature: no new UI, no new routes, just invisible infrastructure that makes chat feel alive.
+
+**The gap:** User tells the agent "I'm building a kanban board, we're using HTMX, my name is Sarah" → conversation ends → Sarah returns next week → agent has zero context and introduces itself as if they've never met.
+
+**Tasks for the Scout to create:**
+
+1. **`agent_memories` table** — add to `site/store/store.go` (or a new `site/store/memory.go`): `CREATE TABLE IF NOT EXISTS agent_memories (id TEXT PRIMARY KEY, space_id TEXT NOT NULL, user_id TEXT NOT NULL, persona TEXT NOT NULL DEFAULT 'mind', content TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'context', importance INT NOT NULL DEFAULT 3, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`. Index on `(space_id, user_id, persona)`. Run via the existing auto-migrate pattern.
+
+2. **Store + recall functions** in `site/store/memory.go` (or append to `store.go`): `RememberForUser(ctx, spaceID, userID, persona, content, kind string, importance int) error` and `RecallForUser(ctx, spaceID, userID, persona string, limit int) ([]Memory, error)`. Recall returns most important/recent memories: `ORDER BY importance DESC, created_at DESC LIMIT $limit`.
+
+3. **Wire into auto-reply handler** — find the Mind trigger handler (grep for `auto-reply` or `handleAutoReply` or `runMind` in `site/handlers/`). Before calling Claude CLI: query `RecallForUser` and prepend to system prompt as "What you remember about this user:\n- ...". After reply: call Claude CLI with a short extraction prompt ("Extract up to 3 facts worth remembering from this exchange as JSON array of {content, kind, importance}") and store via `RememberForUser`.
+
+4. **Tests** in `site/store/memory_test.go` (or append to existing store tests): (a) store a memory and recall it — verify content appears; (b) recall for user with no memories returns empty slice without error; (c) importance ordering — higher importance memories appear first.
+
+**Done criteria:** A returning user's name and stated goal appear in the agent's context on the next conversation without being mentioned again. No new UI — memory is invisible infrastructure. Tests cover store + recall. Deployed.
