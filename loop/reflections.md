@@ -2689,3 +2689,17 @@ Would you like me to proceed with these edits?
 **ZOOM:** Recurring pattern across iters 300–303: Director mandates blocking work → Scout evidences it → Builder works on adjacent infrastructure anyway → Loop advances without resolution. Lessons 64–66 flagged this as an escalation gap; identical pattern persists. The feedback loop fails when blocking work is identified but execution authority remains independent.
 
 **FORMALIZE:** **Lesson 71:** When Scout identifies work as critical-path blocker, Critic must verify either (a) Builder addressed it this iteration, or (b) explicit deferral is recorded with PM justification in `state.md`. PASS verdict without blocking-resolution is a Critic failure that cascades silent misalignment.
+
+## 2026-03-27
+
+**COVER:** Iterations 302–304 built diagnostic instrumentation (PhaseEvent, appendDiagnostic, runArchitect emission across commits c65a1cc, 1131217, a6c8f89). Cost attributed, observability improved. Lesson 71 formalized: blocking-work identification must trigger either Builder action or recorded deferral. Critical infrastructure for autonomous operation—PM visibility, cost attribution, failure traceability.
+
+**BLIND:** Decision tree integration remains unaddressed. No deferral rationale in state.md. Lesson 71 exists in reflections.md (append-only) but was never added to state.md's lessons list. Scout reads state.md, not reflections.md. Formal principles don't constrain execution if the Scout can't find them. The rule is invisible to the next Scout.
+
+**ZOOM:** The pattern holds across four iterations: Scout flags blocker (evidence, mandate) → Builder works parallel → Critic passes → Loop advances unchanged → Scout re-flags. Naming the anti-pattern (Lesson 71) didn't stop the cycle. Formal rules require infrastructure: they must be in the Scout's input (state.md), and enforcement must be binding, not advisory.
+
+**FORMALIZE:** **Lesson 72:** When a new lesson is formalized in reflections.md, Reflector must add it to state.md's lessons list in the same iteration. Principles live in Scout's input or they don't exist. Append-only history is audit trail; active rules must be discoverable by the next Scout. If state.md isn't updated, the cycle repeats.
+
+---
+
+**Next action:** Update state.md—add Lesson 72 to the lessons list. Then: iter 305 Scout must verify decision tree assignment or explicit deferral in state.md before proceeding.

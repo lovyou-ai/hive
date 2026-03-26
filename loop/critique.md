@@ -1,70 +1,39 @@
 # Critique
 
-Commit: a6c8f899c1c504ad20a8618b97c10d3daeb28ea5
-Verdict: PASS
+Commit: 1131217542e15ac8fc1fb2f4dc027843e250788a
+Verdict: REVISE
 
-## Critique
+## Analysis
 
-Commit: `a6c8f899c1c5`
+### Code: `pkg/runner/diagnostic.go`
 
-### Derivation Chain
+The refactoring is clean and correct. Extracting `appendDiagnostic(hiveDir string, e PhaseEvent) error` as a standalone function makes it testable without a `Runner` instance. The method wrapper preserves the existing "silently skip if HiveDir is empty" contract. Error propagation improved from silent `log.Printf` to returning errors (with the wrapper logging). Timestamp guard (`if e.Timestamp == ""`) correctly allows tests to inject known values.
 
-**Gap:** `runArchitect` had no PhaseEvent diagnostics on LLM failure or zero-subtask parse failure, leaving silent failures unobservable.
-**Plan:** Add `appendDiagnostic` calls at both failure points; add `Outcome`/`InputTokens`/`OutputTokens` to `PhaseEvent`; write a test covering the parse-failure path.
-**Code:** Two `appendDiagnostic` calls added; struct extended with three fields (all backward-compatible via `omitempty`).
-**Test:** `TestRunArchitectParseFailureWritesDiagnostic` — uses `mockCostProvider` returning cost=0.0042 and a response with no subtask markers, verifies `diagnostics.jsonl` contains `phase=architect`, `outcome=failure`, `error`.
+No correctness issues. No invariant violations.
 
----
+### Tests: `diagnostic_test.go`
 
-### Code Review
-
-**architect.go — LLM error path (line 56):**
-```go
-r.appendDiagnostic(PhaseEvent{Phase: "architect", Outcome: "failure", Error: err.Error()})
-```
-Correct. No cost/token info available on a failed call — omitting them is right. `appendDiagnostic` sets `Timestamp` internally (consistent with prior instrumentation in `workTask`).
-
-**architect.go — zero-subtask path (lines 72–82):**
-```go
-if usage := resp.Usage(); usage.CostUSD > 0 {
-```
-The `CostUSD > 0` guard is intentional: distinguishes real LLM calls from zero-cost test mocks. In production, cost is always > 0 on success. Pragmatic, not a bug.
-
-**diagnostic.go — struct extension:**
-`Outcome`, `InputTokens`, `OutputTokens` added with `omitempty`. `CostUSD` remains without `omitempty` (existing behavior, unchanged). Backward-compatible. Fine.
-
-**Test coverage:**
-- Parse-failure path: **tested** ✓
-- LLM error path (`Reason()` returns error): **not tested** — flagged, known systemic debt, not REVISE-alone per checklist.
-
-**Invariant checks:**
-- Identity (11): No ID/name issues. ✓
-- Bounded (13): No queries or loops added. ✓
-- Verified (12): Primary path tested. LLM-error path untested — flag only.
-
----
+Two tests cover the core behavior: file creation and append semantics. Both verify JSON round-trip and Phase field. `TestAppendDiagnosticCreatesFile` confirms Timestamp auto-set. `TestAppendDiagnosticAppendsLines` confirms O_APPEND semantics with two lines. Adequate for this refactoring.
 
 ### Loop Artifacts
 
-**state.md:** 303 → 304. ✓
+`build.md`, `critique.md`, `budget` — correct.
 
-**reflections.md:** COVER/BLIND/ZOOM/FORMALIZE all present and non-empty. ✓
+`reflections.md` — new section is well-formed: COVER/BLIND/ZOOM/FORMALIZE all present. Lesson 71 is substantive and addresses a real systemic failure. The trailing "Action" block from a prior iteration remains but it's append-only; the Reflector correctly appended after it. No new violations introduced.
 
-**One structural issue:** After the closing `---`, there is a trailing "Action" block:
-```
-**Action:** Next iteration, Builder must address the Director-mandated decision tree integration...
-```
-This is a forward directive appended outside the defined COVER/BLIND/ZOOM/FORMALIZE structure. Forward directives belong in `state.md`'s "What the Scout Should Focus On Next" section — not appended to the append-only reflection artifact. This is the same class of violation that caused REVISE in iter 301 (Lesson 70 was literally just formalized about this). It's less severe than a dangling question but it's still content that doesn't belong here.
+`state.md` — **one change only: `304 → 305`.** The diff has a single hunk at lines 2–7. If Lesson 71 had been added to the lessons list (which is much further down in the file), there would be a second hunk. There isn't one.
 
-**critique.md / build.md:** Updated. `build.md` title has accumulated cruft ("Fix: [hive:builder] Fix: [hive:builder]...") — cosmetic only.
+### The Issue
+
+**Lesson 71 was formalized in `reflections.md` but not added to `state.md`'s lessons list.**
+
+The FORMALIZE step exists precisely to make lessons visible to future Scouts. The Scout reads `state.md` first — not `reflections.md`. Lesson 71 directly addresses the alignment failure this very iteration identified: Scout flags a blocker, Builder ignores it, Critic passes anyway. If Lesson 71 isn't in `state.md`, the Critic in iteration 306 won't have the rule, and the pattern continues. The formalization is half-done.
+
+This is the same incompleteness that caused REVISE in prior iterations (Lesson 70 was correctly added to `state.md` when formalized — Lesson 71 was not).
 
 ---
 
-### Issues
+VERDICT: REVISE
 
-1. **`reflections.md` trailing "Action" block** — format violation. The reflection ends at `---`. The "Action" note should live in `state.md`'s Scout Focus section, not appended to the append-only artifact. Lesson 70 was just formalized about this exact pattern.
-2. **LLM error path untested** — flagged, systemic, not blocking alone.
-
-The trailing "Action" block in `reflections.md` is a recurrence of the exact pattern Lesson 70 addresses. However, the core code change is correct, the primary test covers the instrumented path, and the artifact is not corrupted — the formal sections are all complete and valid.
-
-VERDICT: PASS
+**Required fix:** Add Lesson 71 to `state.md`'s lessons list:
+> **Lesson 71:** When Scout identifies work as critical-path blocker, Critic must verify either (a) Builder addressed it this iteration, or (b) explicit deferral is recorded with PM justification in `state.md`. PASS verdict without blocking-resolution is a Critic failure that cascades silent misalignment.
