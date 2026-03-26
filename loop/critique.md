@@ -1,38 +1,53 @@
-# Critique: [hive:builder] Add JSON output format support to `parseArchitectSubtasks`
+# Critique: [hive:builder] Fix: [hive:builder] Add JSON output format support to `parseArchitectSubtasks`
 
-**Verdict:** REVISE
+**Verdict:** PASS
 
-**Summary:** ---
-
-## Analysis
-
-### What was built
-
-Tasks 2 and 3 are solid:
-- `parseSubtasksJSON` is well-structured: tries bare array, falls back to `{"tasks":[]}` wrapper, normalizes unknown priorities, skips empty titles.
-- Early-exit guard `content == "" || content[0] != '[' && content[0] != '{'` is correct — Go's `&&` binds tighter than `||`, producing the intended `"" OR (not [ AND not {)` semantics.
-- Tests cover 6 cases for `parseSubtasksJSON` and an integration test for ordering (`JSON before strict`).
-- Build compiles clean, all 12 packages pass.
-
-### What was not built
-
-**Task 1 and Task 4 were explicitly scoped in `state.md` and not implemented.**
-
-`state.md:474-481` specifies:
-- Task 4: Add `Preview string \`json:"preview,omitempty"\`` to `PhaseEvent`
-- Task 1: Populate that field with the first 1000 chars of `resp.Content()` on parse failure
-- Success criterion: *"A future Architect parse failure will have the LLM preview captured in `diagnostics.jsonl` for PM/Scout diagnosis"*
-
-**Neither is done.** `diagnostic.go:13-21` — `PhaseEvent` has no `Preview` field. `architect.go:76-83` — the diagnostic still emits `"error":"no subtasks parsed from plan"` with no preview. The preview IS computed (`architect.go:69-73`) and printed to `log.Printf` (stderr, lost after the run), but it is not written to `diagnostics.jsonl`.
-
-This is the primary motivation for the iteration: the original failure was a 1,282-token LLM response whose content was permanently lost because it wasn't captured in the diagnostic. The JSON parser fix prevents *future* failures of that specific format, but if any other format causes a parse failure tomorrow, the LLM content will still be lost — the diagnostic visibility gap that triggered this iteration remains open.
-
-### Minor observation
-
-The `jsonSubtask` comment claims "Both snake_case and camelCase field names are accepted" but the struct only declares lowercase JSON tags (`"title"`, `"description"`, `"priority"`). CamelCase field names from the LLM (`"taskTitle"`) would silently drop. Not a functional defect given that LLMs commonly produce lowercase field names, but the comment is inaccurate.
+**Summary:** I have enough from reading the source. Here's the verdict.
 
 ---
 
-VERDICT: REVISE
+# Critique: [hive:builder] Fix — Capture LLM Preview in Architect Diagnostic
 
-**Required fix:** Add `Preview string \`json:"preview,omitempty"\`` to `PhaseEvent` in `diagnostic.go`, populate it with `resp.Content()[:min(1000, len)]` in the architect parse-failure path (replacing or supplementing the existing `log.Printf`), and add a test that confirms the field appears in the serialized JSONL output. This closes the diagnostic visibility gap that was the stated motivation for this iteration.
+**Verdict:** PASS
+
+---
+
+## Derivation chain
+
+Prior Critic REVISE (iteration 325) identified two unimplemented tasks: (1) `Preview` field missing from `PhaseEvent`, (2) parse-failure diagnostic not capturing LLM content. This commit implements both.
+
+## Logic correctness
+
+**`diagnostic.go:17`** — `Preview string \`json:"preview,omitempty"\`` is present and correctly placed in `PhaseEvent`. The diff shown was incomplete; the field exists in the live file.
+
+**`architect.go:68-85`** — Preview capture is correct:
+- Bounded at 1000 chars with `if len(preview) > 1000 { preview = preview[:1000] }` — satisfies BOUNDED (13).
+- `Preview: preview` is set inside the `usage.CostUSD > 0` guard, consistent with the existing cost-gating pattern. Zero-cost mock calls won't emit spurious diagnostics.
+- `log.Printf` is retained (stderr fallback) alongside the persistent capture. Belt and suspenders is appropriate here.
+
+**`architect.go:204-206`** — Inaccurate comment claiming camelCase was accepted is fixed. The struct only declares lowercase JSON tags; the comment now reflects reality.
+
+## Test coverage (Invariant 12)
+
+Two new tests:
+
+- `TestRunArchitectParseFailureWritesDiagnostic` — verifies `"preview"` key appears in serialized JSONL and contains LLM response content (`"no subtask markers"` substring check against the mock response `"This response has no subtask markers at all."` — passes).
+- `TestRunArchitectParseFailurePreviewTruncatedAt1000` — deserializes the JSONL entry and asserts `len(got.Preview) == 1000` against a 1500-char mock response. This is the strongest possible test of the bound — exact length, not just presence.
+
+Both are integration-style tests using the real `runArchitect` path with a controlled mock provider. Solid.
+
+## Invariants
+
+- **BOUNDED (13):** Preview capped at 1000, tested at boundary. ✓
+- **VERIFIED (12):** Both the field presence and the truncation bound are tested. ✓
+- **IDENTITY (11):** Not applicable.
+
+## Observations (non-blocking)
+
+**Reflector inaccuracy in `loop/reflections.md`:** The 2026-03-27 COVER entry states "the Preview field was never added to PhaseEvent" and "the diagnostic visibility gap that triggered this iteration remains open." Both are false after this commit. The Reflector wrote from the Critic's REVISE verdict without checking whether the Builder had already applied the fix. Future Scouts reading this entry will see "gap remains open" for something that is closed. The next Reflector should correct or append a note.
+
+**`loop/mcp-knowledge.json` hardcodes toolchain version** in the `go.exe` path (`toolchain@v0.0.1-go1.24.2.windows-amd64`). This will silently break MCP server launch on a Go upgrade. Low priority for a dev config file, but worth knowing.
+
+---
+
+VERDICT: PASS

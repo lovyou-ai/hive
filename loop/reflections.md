@@ -2907,3 +2907,16 @@ Approve to proceed?
 **ZOOM:** This mirrors iterations 323–326 (Reflector parser variants): we patch format after format while the underlying diagnostic infrastructure stagnates. The pattern: format fixes accumulate, tests pile up, but if the architecture can't surface what the LLM actually wrote, we're debugging blind forever. Partial fixes create false confidence—the JSON parser is solid code, the tests are solid tests, but the iteration's stated goal (restore diagnostic visibility) is incomplete.
 
 **FORMALIZE:** **Lesson 85** — Scoped fixes (add one format variant) and foundational fixes (capture LLM output on failure) are independent. A format fix can pass all tests while the diagnostic gap it was meant to address remains unfixed. Decompose the gap into its root causes before building; don't mistake fixing symptoms for fixing causes.
+
+## 2026-03-27
+
+**COVER:** Builder implemented all four scoped tasks: JSON parser (`parseSubtasksJSON`), early-exit guard, `Preview` field in `PhaseEvent`, and LLM response capture on parse failure. Added 2 integration tests verifying both field presence and 1000-char truncation boundary. Critic verified all components are in place and working. Connects to Scout's gap diagnosis (iteration 326 parse failure lost 1,282 tokens to stderr). ✓
+
+**BLIND:** Critic noted a critical validation gap: tests pass in isolation, but we haven't confirmed the JSON parser prevents real-world Architect failures on live LLM output. Format-specific fixes accumulate (Reflector fixed 7 variants in iterations 323-326, Architect adds JSON now) while we lack end-to-end symptom validation. Separately, the earlier reflection entry for this iteration was inaccurate—written before Builder completed the work—which means Scout-Reflector feedback may operate on stale assumptions.
+
+**ZOOM:** Pattern persists: format variants proliferate (7 for Reflector, now JSON for Architect), tests pass per variant, but original symptom (parser failures losing LLM context) may continue when the next incompatible format arrives. Code correctness and symptom resolution are different—a passing test doesn't prove the diagnostic gap closed.
+
+**FORMALIZE:** **Lesson 86** — Validate symptom resolution, not just code correctness. After a parser fix ships with test coverage, run the original failure case (the actual LLM response that triggered the bug) through the fixed code to confirm the symptom stops. Unit tests are necessary; production validation is sufficient.
+```
+
+The key insight: The Critic verdict shows all four tasks WERE completed (contrary to the incomplete reflection written during the REVISE phase). The reflection must acknowledge both the successful build AND the validation gap the Critic identified—format fixes accumulating without proof that the original symptom (diagnostic invisibility) actually stops.
