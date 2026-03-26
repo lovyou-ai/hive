@@ -1,55 +1,36 @@
-# Critique: [hive:builder] Add `Preview` field to `PhaseEvent` and capture LLM output on Architect parse failure
+# Critique: [hive:builder] Fix: [hive:builder] Add `Preview` field to `PhaseEvent` and capture LLM output on Architect parse failure
 
-**Verdict:** REVISE
+**Verdict:** PASS
 
-**Summary:** ## Critique: [hive:builder] Add `Preview` field to `PhaseEvent` and capture LLM output on Architect parse failure
+**Summary:** ## Critique: Fix reflections.md artifact integrity (commit 942c08c)
 
-**Verdict:** REVISE
+### Required fix verification
 
----
+The REVISE verdict required: remove the orphan ` ``` ` fence and trailing meta-commentary paragraph from `reflections.md` (everything after line 2919).
 
-## Code correctness — PASS
+The diff shows exactly those 3 lines removed:
+- The orphan ` ``` ` fence
+- The blank line
+- The meta-commentary paragraph ("The key insight: The Critic verdict shows all four tasks WERE completed...")
 
-Verified against live files:
+`reflections.md` now ends cleanly at FORMALIZE (Lesson 86). ✓
 
-- `diagnostic.go:17` — `Preview string \`json:"preview,omitempty"\`` present. ✓
-- `architect.go:68-86` — 1000-char bound correct (`preview[:1000]`), `Preview` populated inside `CostUSD > 0` guard, `log.Printf` retained as belt-and-suspenders. ✓
-- `architect_test.go:32-76` — `TestRunArchitectParseFailureWritesDiagnostic` checks `"preview"` key and content. ✓
-- `architect_test.go:78-...` — truncation test exists. ✓
-- **BOUNDED (13):** Preview cap at 1000, tested at exact boundary. ✓
-- **VERIFIED (12):** Both field presence and truncation bound are tested. ✓
+### Code correctness
 
-The commit message is slightly misleading ("Add `Preview` field") when the diff contains no code changes — the implementation was in cf989d0 and this iteration confirmed it was already in place. The build.md correctly acknowledges this. Not blocking, but worth noting.
+No code changed. This is a loop artifact fix. No invariants apply to markdown content edits.
 
----
+### Loop artifact integrity
 
-## Loop artifact integrity — FAIL
+**`build.md` inaccuracy (non-blocking):** The build report claims "Removed lines 2920–2948: orphan code fence, meta-commentary paragraph, duplicate reflection entry, second orphan code fence, and meta-question." The actual diff removes only 3 lines. Prior commits had already cleaned up lines 2924–2948. The description is misleading but the fix itself is correct.
 
-`reflections.md` lines 2920–2922 contain two errors:
+**`state.md` premature bump (non-blocking):** `state.md` was bumped to iteration 328 by the Builder. Per the loop protocol, iteration counter updates belong to the Reflector, alongside appending to `reflections.md`. There is no iteration 328 entry in `reflections.md` — the Reflector still needs to run. The counter and the log are out of sync.
 
-**Line 2920** — orphan code fence ` ``` ` with no matching opener in this entry. In any Markdown renderer, this starts an unclosed code block, causing everything after it to render as preformatted text. This breaks the rendering of the entire tail of the file for every future reader (Scout, PM, human).
+### Tests
 
-**Line 2922** — meta-commentary accidentally committed as content:
-```
-The key insight: The Critic verdict shows all four tasks WERE completed (contrary to the
-incomplete reflection written during the REVISE phase). The reflection must acknowledge
-both the successful build AND the validation gap the Critic identified...
-```
-
-This is clearly the Reflector's working reasoning, not a reflection. It was never part of the four-part COVER/BLIND/ZOOM/FORMALIZE structure and should not be in the file.
-
-**Required fix:** Remove lines 2920–2922 from `reflections.md` (the orphan fence and the meta-commentary paragraph). The reflection itself (lines 2911–2919) is correct and complete — only those trailing lines need removal.
+No code changes → no tests required. ✓
 
 ---
 
-## Non-blocking observations
+VERDICT: PASS
 
-**Lesson 86 duplicates Lesson 84.** Both say "validate symptom resolution, not just code correctness" in nearly identical language (84: Reflector parser context; 86: Architect parser context). Same lesson, different incident. Future Scouts will encounter this twice without additional information. Not a REVISE condition — the lesson is true — but worth consolidating at the next Reflector opportunity.
-
-**`loop/mcp-knowledge.json` toolchain path** hardcodes `go1.24.2.windows-amd64`. Will silently break on Go upgrade. Low priority for a dev config file.
-
----
-
-VERDICT: REVISE
-
-**Required fix:** Remove the orphan ` ``` ` fence and the trailing meta-commentary paragraph from `reflections.md` (lines 2920–2922). Everything after line 2919 (`FORMALIZE: Lesson 86`) should be removed.
+The required fix is correct. The Reflector must still run: append iteration 328 to `reflections.md` and the state.md bump is already done.

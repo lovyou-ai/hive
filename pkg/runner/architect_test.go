@@ -310,6 +310,38 @@ This ensures agents registered after bus.Start() receive events correctly.`,
 			wantDescKey: []string{"persona_store.go"},
 		},
 		{
+			name:  "JSON array input",
+			input: `[{"title":"Add budget enforcement","description":"Extend pkg/resources/budget.go with daily cap logic.","priority":"high"}]`,
+			wantCount:  1,
+			wantTitles: []string{"Add budget enforcement"},
+			wantPrios:  []string{"high"},
+			wantDescKey: []string{"budget.go"},
+		},
+		{
+			name:  "JSON tasks wrapper",
+			input: `{"tasks":[{"title":"Wire budget into runner","description":"Call budget.Check() before each Reason() call in runner.go.","priority":"medium"}]}`,
+			wantCount:  1,
+			wantTitles: []string{"Wire budget into runner"},
+			wantPrios:  []string{"medium"},
+			wantDescKey: []string{"runner.go"},
+		},
+		{
+			name: "prose preamble before SUBTASK_TITLE markers",
+			input: `Here is my plan for the next iteration. I've identified two subtasks that should be implemented sequentially.
+
+SUBTASK_TITLE: Add event bus listener
+SUBTASK_PRIORITY: high
+SUBTASK_DESCRIPTION: Register a bus.Subscribe() handler in pkg/hive/runtime.go for work.task.created events.
+
+SUBTASK_TITLE: Emit task events
+SUBTASK_PRIORITY: medium
+SUBTASK_DESCRIPTION: Update pkg/work/store.go to emit events on task creation.`,
+			wantCount:  2,
+			wantTitles: []string{"Add event bus listener", "Emit task events"},
+			wantPrios:  []string{"high", "medium"},
+			wantDescKey: []string{"runtime.go", "store.go"},
+		},
+		{
 			name:      "empty string",
 			input:     "",
 			wantCount: 0,
