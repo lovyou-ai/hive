@@ -540,24 +540,4 @@ The landing page says "Watch it build →" and links to `/hive`. That page curre
 
 ## What the Scout Should Focus On Next
 
-## What the Scout Should Focus On Next
-
-**Priority: Fix the Architect role — close the plan gap in the hive pipeline**
-
-**Target repo:** hive
-
-**Why this now:** Commit `c89ea2c` added debug logging for an Architect plan parse failure — a breadcrumb, not a fix. The Architect role exists in `pkg/runner/` but fails to parse the LLM's response, producing a zero-value plan. Without it, the pipeline runs Scout → Builder with no plan phase: the Builder improvises from a task description instead of a structured architecture plan. This causes more Critic REVISE cycles. The debug commit proves the problem is known; it hasn't been fixed.
-
-**The gap:** Architect receives a task → calls Reason() → LLM returns a plan → parser fails (likely markdown-wrapped JSON vs. clean JSON mismatch) → Architect produces nothing → Builder gets no architecture context. The pipeline has a silent hole between Scout and Builder.
-
-**Tasks for the Scout to create:**
-
-1. **Root-cause the parse failure** — Read `pkg/runner/architect.go` (or wherever the architect lives — grep for `architect` in `pkg/runner/`). Find the plan parser and the struct it unmarshals into. The debug log from `c89ea2c` shows the raw LLM response that failed. Identify the mismatch: markdown fences? Schema mismatch? Wrong field names? Write one sentence in the task description: "root cause is X."
-
-2. **Fix the plan parser** — Strip ` ```json ` / ` ``` ` fences before unmarshal (defensive, handles both clean and wrapped responses) OR update the Architect prompt to explicitly require raw JSON with no fences — whichever the code already leans toward. Critical: an empty/zero-value plan must return an error, not silently succeed. Silent failure is the current bug.
-
-3. **Verify the Builder handoff** — Trace from `architect.Run()` to `builder.Run()`. Confirm the parsed plan is injected into the Builder's prompt as structured context (files to create/modify, component designs, build sequence). If the handoff is missing or the plan is parsed but discarded, wire it in. The Builder should receive: task description + architect plan, not just task description.
-
-4. **Tests** — `pkg/runner/architect_test.go` (new or extend): (a) parse clean JSON → succeeds; (b) parse markdown-wrapped JSON → succeeds after fix; (c) empty LLM response → returns error; (d) malformed/partial JSON → returns error. Use realistic LLM output samples, not toy inputs. All 4 must pass.
-
-**Done criteria:** Architect produces a valid plan from any LLM response format. Builder receives and uses that plan. Parse errors surface as returned errors, never silent zero-values. Four test cases cover the failure modes. Pipeline runs Scout → Architect → Builder with the plan in play.
+`/`

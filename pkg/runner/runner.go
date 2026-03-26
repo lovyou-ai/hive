@@ -279,6 +279,7 @@ func (r *Runner) workTask(ctx context.Context, t api.Node) {
 	})
 	if err != nil {
 		log.Printf("[builder] Operate error: %v", err)
+		r.appendDiagnostic(PhaseEvent{Phase: "builder", Error: err.Error(), CostUSD: r.cost.TotalCostUSD})
 		_ = r.cfg.APIClient.CommentTask(r.cfg.SpaceSlug, t.ID,
 			fmt.Sprintf("Operate failed: %v", err))
 		return
@@ -299,6 +300,7 @@ func (r *Runner) workTask(ctx context.Context, t api.Node) {
 		// Verify build passes.
 		if err := r.verifyBuild(); err != nil {
 			log.Printf("[builder] build failed: %v", err)
+			r.appendDiagnostic(PhaseEvent{Phase: "builder", Error: err.Error(), CostUSD: r.cost.TotalCostUSD})
 			_ = r.cfg.APIClient.CommentTask(r.cfg.SpaceSlug, t.ID,
 				fmt.Sprintf("Build failed after implementation, fixing...\n```\n%s\n```", err))
 			return // stay in-progress

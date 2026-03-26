@@ -2,6 +2,9 @@ package runner
 
 import (
 	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -9,6 +12,8 @@ import (
 	"testing"
 
 	"github.com/lovyou-ai/eventgraph/go/pkg/decision"
+	"github.com/lovyou-ai/eventgraph/go/pkg/event"
+	"github.com/lovyou-ai/eventgraph/go/pkg/types"
 	"github.com/lovyou-ai/hive/pkg/api"
 )
 
@@ -251,5 +256,55 @@ func TestBranchResetOnDaemonCycle(t *testing.T) {
 	cfg := Config{PRMode: false}
 	if got := buildBranchName(cfg, "some task title"); got != "" {
 		t.Errorf("buildBranchName with PRMode=false: expected \"\", got %q", got)
+	}
+}
+
+// mockErrorOperator implements intelligence.Provider + decision.IOperator,
+// returning an error from Operate.
+type mockErrorOperator struct {
+	operateErr error
+}
+
+func (m *mockErrorOperator) Reason(_ context.Context, _ string, _ []event.Event) (decision.Response, error) {
+	score, _ := types.NewScore(0.9)
+	return decision.NewResponse("", score, decision.TokenUsage{}), nil
+}
+func (m *mockErrorOperator) Name() string  { return "mock-operator" }
+func (m *mockErrorOperator) Model() string { return "mock-model" }
+func (m *mockErrorOperator) Operate(_ context.Context, _ decision.OperateTask) (decision.OperateResult, error) {
+	return decision.OperateResult{}, m.operateErr
+}
+
+func TestWorkTaskOperateErrorWritesDiagnostic(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"op":"ok"}`))
+	}))
+	defer srv.Close()
+
+	hiveDir := makeHiveDir(t, "# State\n", nil)
+
+	r := New(Config{
+		HiveDir:   hiveDir,
+		RepoPath:  t.TempDir(),
+		SpaceSlug: "test",
+		APIClient: api.New(srv.URL, "test-key"),
+		Provider:  &mockErrorOperator{operateErr: fmt.Errorf("claude CLI failed: exit status 1")},
+	})
+
+	task := api.Node{ID: "task-1", Title: "Add feature X", Kind: "task"}
+	r.workTask(context.Background(), task)
+
+	data, err := os.ReadFile(filepath.Join(hiveDir, "loop", "diagnostics.jsonl"))
+	if err != nil {
+		t.Fatalf("diagnostics.jsonl not written: %v", err)
+	}
+	body := string(data)
+	if !strings.Contains(body, `"phase":"builder"`) {
+		t.Errorf("diagnostics.jsonl missing phase=builder:\n%s", body)
+	}
+	if !strings.Contains(body, "claude CLI failed") {
+		t.Errorf("diagnostics.jsonl missing error message:\n%s", body)
 	}
 }
