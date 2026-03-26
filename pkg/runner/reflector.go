@@ -132,6 +132,23 @@ func (r *Runner) runReflector(ctx context.Context) {
 	// Parse the four sections.
 	sections := parseReflectorOutput(resp.Content())
 
+	// Validate that all four sections have content.
+	emptySections := false
+	for _, key := range []string{"COVER", "BLIND", "ZOOM", "FORMALIZE"} {
+		if sections[key] == "" {
+			emptySections = true
+			break
+		}
+	}
+	if emptySections {
+		raw := resp.Content()
+		if len(raw) > 500 {
+			raw = raw[:500]
+		}
+		log.Printf("[reflector] empty sections in response: %s", raw)
+		r.appendDiagnostic(PhaseEvent{Phase: "reflector", Outcome: "empty_sections"})
+	}
+
 	// Append to reflections.md.
 	date := time.Now().Format("2006-01-02")
 	entry := formatReflectionEntry(

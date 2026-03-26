@@ -550,56 +550,81 @@ The landing page says "Watch it build →" and links to `/hive`. That page curre
 
 ## What the Scout Should Focus On Next
 
-## What the Scout Should Focus On Next
-
-**Priority: Pipeline Phase 3 — close the loop (Critic writes critique.md + Reflector in PipelineTree)**
+**Priority: Fix the hollow Reflector — enrich build.md so meta-learning works**
 
 **Target repo:** hive
 
-**Why now:** PipelineTree has 4 phases with full failure detection (Phase 2 complete). But the loop never closes. After every Critic PASS, no reflection is written, state.md iteration counter stays frozen, and the PM operates with stale context. The pipeline ships features but can't learn from them — Reflector reads `critique.md` and `build.md` to extract lessons, but Critic never writes `critique.md`. Two small fixes close the loop for good.
+**Why this now:**
+The Reflector has written empty COVER/BLIND/ZOOM/FORMALIZE stubs for 3 consecutive iterations (Critic flagged it twice). Root cause: `writeBuildArtifact` in `pkg/runner/runner.go` writes only 4 lines — commit hash, cost, timestamp. The Reflector's LLM receives a 4-line build report and has nothing to reflect on. Empty reflections = no new lessons = no BLIND = loop can't see its own blind spots. This defeats the entire meta-learning purpose of phase 5. Fix is surgical and high-confidence.
 
-**What exists (do NOT rebuild):**
-- `pkg/runner/pipeline_tree.go` — 4-phase PipelineTree with failure detection
-- `pkg/runner/reflector.go` — full Reflector: reads scout/build/critique artifacts, calls LLM, appends to `reflections.md`, advances iteration counter in `state.md`
-- `pkg/runner/reflector_test.go` — covers parse, format, increment
-- `pkg/runner/critic.go` — reviews commits, creates fix tasks on REVISE, returns verdict
+---
 
-**What's missing:**
-1. **Critic doesn't write `loop/critique.md`.** It creates tasks and logs, but `reflector.go:buildReflectorPrompt` reads `critique.md` and gets empty string every time. All reflections are running on no critique data.
-2. **Reflector is not in PipelineTree.** After Critic PASS, the loop halts. `state.md` iteration counter never advances autonomously.
-3. **Reflector has a tick gate** (`r.tick%4 != 0`) that would block it in pipeline mode. Pipeline must bypass this.
+**Task 1 — Enrich `writeBuildArtifact`** (`pkg/runner/runner.go`, `writeBuildArtifact` function, ~line 405)
 
-**What to build (3 focused changes):**
+Add commit subject line and diff stat to build.md so the Reflector has substance:
 
-1. **`pkg/runner/critic.go`** — add `writeCritiqueArtifact(hiveDir, verdict, summary string) error` that writes `loop/critique.md`. Call it at the end of `reviewCommit` after the verdict is determined. Format:
-   ```
-   # Critique: <commit subject>
-   **Verdict:** PASS | REVISE
-   **Summary:** <findings>
-   ```
-   Returns error if write fails; caller logs but doesn't halt.
+```go
+hash := r.gitHash()
+subject := r.gitSubject()          // git log -1 --format=%s
+diffStat := r.gitDiffStat()        // git show --stat HEAD
+taskDesc := truncateLog(t.Body, 300)
 
-2. **`pkg/runner/pipeline_tree.go`** — add Reflector as phase 5 in `NewPipelineTree`:
-   ```go
-   {Name: "reflector", Run: func(ctx context.Context) error {
-       saved := r.cfg.OneShot
-       r.cfg.OneShot = true  // bypass tick gate — pipeline always closes
-       r.runReflector(ctx)
-       r.cfg.OneShot = saved
-       return nil
-   }},
-   ```
-   The Reflector's `done = true` side-effect in one-shot mode doesn't matter here — PipelineTree controls execution, not `r.done`.
+content := fmt.Sprintf(
+    "# Build: %s\n\n- **Commit:** %s\n- **Message:** %s\n- **Cost:** $%.4f\n- **Timestamp:** %s\n\n## Task\n%s\n\n## Changed Files\n%s\n",
+    t.Title, hash, subject, costUSD, time.Now().UTC().Format(time.RFC3339), taskDesc, diffStat,
+)
+```
 
-3. **Tests:**
-   - `pkg/runner/critic_test.go` (or existing file): add `TestWriteCritiqueArtifact` — writes to a temp dir, reads back, verifies verdict line present.
-   - `pkg/runner/pipeline_tree_test.go` — update phase count assertion from 4 to 5 (or add a test that `NewPipelineTree` has 5 phases named correctly including "reflector").
+Add two helper methods near `gitHash()`:
+- `gitSubject() string` — `git log -1 --format=%s`, returns "unknown" on error
+- `gitDiffStat() string` — `git show --stat HEAD`, returns "(no diff)" on error. Truncate to 1000 chars.
 
-**Scope boundary:** Don't change `runReflector`'s signature. Don't touch `cmd/hive`. Don't change how the Reflector advances state.md (that already works). The `r.done = true` in one-shot mode inside `runReflector` is a no-op side-effect when called from PipelineTree — ignore it.
+**Task 2 — Add content validation in `runReflector`** (`pkg/runner/reflector.go`, after `parseReflectorOutput`)
 
-**Done criteria:**
-- `go build ./...` passes
-- `go test ./pkg/runner/...` passes (including new critique artifact test)
-- `NewPipelineTree(r)` returns a 5-phase tree
-- After a pipeline run, `loop/critique.md` contains a verdict
-- After a pipeline run, `loop/reflections.md` has a new entry and `state.md` iteration counter has advanced
+If any required section (COVER, BLIND, ZOOM, FORMALIZE) is empty after parsing, emit a diagnostic and log the raw LLM response:
+
+```go
+sections := parseReflectorOutput(resp.Content())
+
+// Validate all sections are non-empty.
+var emptySections []string
+for _, key := range []string{"COVER", "BLIND", "ZOOM", "FORMALIZE"} {
+    if sections[key] == "" {
+        emptySections = append(emptySections, key)
+    }
+}
+if len(emptySections) > 0 {
+    log.Printf("[reflector] empty sections %v — raw response: %s", emptySections, truncateLog(resp.Content(), 500))
+    appendDiagnostic(r.cfg.HiveDir, PhaseEvent{
+        Phase:     "reflector",
+        Outcome:   "empty_sections",
+        Error:     fmt.Sprintf("empty sections: %v", emptySections),
+        Timestamp: time.Now().UTC().Format(time.RFC3339),
+    })
+}
+```
+
+Still append the entry even with empty sections (so the iteration counter advances), but the diagnostic signals the failure.
+
+**Task 3 — Test empty-section detection** (`pkg/runner/reflector_test.go`)
+
+Add one test: mock a Reflector with `Reason()` returning a response where BLIND is empty (e.g., `"**COVER:** done\n**BLIND:** \n**ZOOM:** big picture\n**FORMALIZE:** no new lesson"`) → verify `appendDiagnostic` writes an event with `outcome=empty_sections`. Use the existing diagnostic test pattern from `diagnostic_test.go`.
+
+**Task 4 — Clean up stale directives from state.md** (`loop/state.md`)
+
+Remove these completed sections (they are done work being read as active context):
+- `## Directive — Iteration 234+: Knowledge Product — Wire the Three Layers`
+- `## Directive — Iter 236+: Complete the Knowledge Product`
+- `## Directive — Iteration 240+: Hive Dashboard — Make /hive Real`
+- `## Current Directive — Iteration 242+`
+- `## Directive — Iteration 263+`
+- `## Scout Directive: Complete the Hive Dashboard (/hive)`
+- `## Make /hive Real — Show the Civilization Working`
+
+Keep only: `## Current Directive — Iteration 263+` context (the lessons) and `## What the Scout Should Focus On Next` (PM's current directive). These stale sections cost ~3000 tokens every PM/Scout call.
+
+---
+
+**Definition of done:** build.md contains commit message + diff stat + task description. runReflector emits a diagnostic when sections are empty. One test covers the validation. state.md stale directives are removed.
+
+**Do not touch:** scout.go, critic.go, PipelineTree — they are not part of this gap.

@@ -1,37 +1,47 @@
+Based on my analysis of the codebase, state, and recent commits, here's the Scout gap report:
+
 ---
 
-# SCOUT REPORT
+## GAP REPORT
 
-## Gap: Autonomous Loop Cannot Close — Reflector Not in Pipeline
-
-**Gap:** The PipelineTree (scout → architect → builder → critic) completes but never closes. Reflector exists and works, but runs only on the daemon ticker, not as part of the automated pipeline. Without closure, the iteration counter never advances, state.md's directive section stays stale, and PM can't generate new directions.
+**Gap:** The Reflector receives insufficient content to produce meaningful reflections, causing empty COVER/BLIND/ZOOM/FORMALIZE stubs to persist across iterations.
 
 **Evidence:**
-- `pkg/runner/pipeline_tree.go` has 4 phases: scout, architect, builder, critic (lines 52-57)
-- `pkg/runner/reflector.go` is complete, reads scout/build/critique artifacts, appends reflections, advances iteration counter (lines 100-156)
-- `pkg/runner/critic.go` already writes `loop/critique.md` (line 119) ✓
-- Reflector is called only from runner's tick loop (`runner.go:184`), not from PipelineTree
-- When pipeline runs (`--pipeline` mode), it halts after Critic — Reflector never executes
-- Recent commits (iter 92ad958 onwards) wired failure detection but skipped the last phase
 
-**Impact:** The autonomous loop stalls at closure. Scout-Architect-Builder-Critic work autonomously, but can't declare done and move forward. PM has no fresh directive to work from. Each pipeline run repeats the same tasks if Scout's directive is unchanged. The system proves it can build autonomously but not learn and re-prioritize autonomously.
+1. **Code inspection** — `writeBuildArtifact` in `pkg/runner/runner.go:405-413` writes only 4 lines to `loop/build.md`: commit hash, cost, and timestamp. No commit message. No diff stats.
 
-**Scope:** One file: `pkg/runner/pipeline_tree.go`. Lines 52-59 (the phases list in `NewPipelineTree`). The Reflector's tick gate (`r.tick%4 != 0`) needs to be bypassed when called from pipeline mode.
+2. **Recent artifacts** — `loop/build.md` from the most recent builder iteration contains:
+   ```
+   # Build: Tests for critique artifact write and 5-phase tree
+   - **Commit:** 0a354ac60a665d0fae3f57df714a78ae6607b664
+   - **Cost:** $0.2278
+   - **Timestamp:** 2026-03-26T20:33:32Z
+   ```
+   That's it. No task context. No changed files.
 
-**Suggestion:** Add Reflector as phase 5 in `NewPipelineTree`:
-```go
-{Name: "reflector", Run: func(ctx context.Context) error {
-    // Bypass tick gate in pipeline mode (one-shot = pipeline)
-    saved := r.cfg.OneShot
-    r.cfg.OneShot = true
-    r.runReflector(ctx)
-    r.cfg.OneShot = saved
-    return nil
-}},
-```
+3. **Reflector validation gap** — `runReflector` in `pkg/runner/reflector.go:100-156` has no validation after parsing. It writes whatever sections come back from the LLM, even if empty. No diagnostic when BLIND or FORMALIZE are blank.
 
-Then update pipeline_tree_test.go to verify the tree has 5 phases. Done criteria: `go test ./pkg/runner/...` passes, `NewPipelineTree(r)` includes "reflector" phase, pipeline run produces an advanced iteration counter in state.md.
+4. **Critic flags it twice** — `loop/critique.md` from iteration 315 explicitly states: *"the empty reflection stubs are now three iterations deep — the Reflector is writing structure without substance, which defeats the artifact's purpose."*
+
+5. **Missing helpers** — `gitSubject()` and `gitDiffStat()` don't exist. Only `gitHash()` exists.
+
+**Impact:** 
+
+The Reflector's meta-learning (the entire purpose of phase 5) breaks. Without substance in build.md, the LLM has no basis for BLIND (what's missing from the build) or ZOOM (how the iteration connects to larger patterns). Empty reflections compound: no new lessons are extracted, so the loop can't see its own blind spots. This defeats the self-correcting feedback loop that the 5-phase pipeline is designed to create.
+
+**Scope:**
+
+- `pkg/runner/runner.go:405-413` — `writeBuildArtifact` function
+- `pkg/runner/runner.go:415-424` — `gitHash()` helper (reference)
+- `pkg/runner/reflector.go:100-156` — `runReflector` function  
+- `pkg/runner/reflector.go:132-143` — section parsing and validation
+- `pkg/runner/reflector_test.go` — test file
+- `loop/reflections.md` — where reflections are appended (artifact validation)
+
+**Suggestion:**
+
+Enrich the build artifact so the Reflector has context. Add commit message subject and diff stat to `writeBuildArtifact`. Add two helper methods (`gitSubject()`, `gitDiffStat()`). Add validation in `runReflector` to catch empty sections before writing reflections, emit diagnostics when they occur. Include one test to verify empty-section detection. Optionally clean up stale directives from state.md that were replaced in iteration 242+ (reduces LLM context by ~3000 tokens for Scout/PM calls).
 
 ---
 
-**Ready for the Architect to create the implementation task.**
+**Definition of done:** `build.md` contains commit message + diff stat + task description. `runReflector` validates section completeness and emits diagnostics on empty sections. One test covers the validation. Reflections.md entries have substance.

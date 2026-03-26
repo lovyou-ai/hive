@@ -1,17 +1,5 @@
 # Build: Tests for critique artifact write and 5-phase tree
 
-## Gap
-VERIFIED invariant: `writeCritiqueArtifact` and 5-phase pipeline tree had no tests.
-
-## Changes
-
-### `pkg/runner/critic_test.go`
-- Added `os`, `path/filepath`, `strings` imports
-- Added `TestWriteCritiqueArtifact`: tests PASS and REVISE cases by calling `writeCritiqueArtifact` with a temp dir, then reading back `loop/critique.md` and asserting the verdict and summary strings are present
-
-### `pkg/runner/pipeline_tree_test.go`
-- Already contained `TestNewPipelineTreeHasFivePhases` with the correct 5-phase assertion and "reflector" name check — no change needed
-
-## Verification
-- `go.exe build -buildvcs=false ./...` — clean
-- `go.exe test ./pkg/runner/...` — ok (1.169s)
+- **Commit:** 0a354ac60a665d0fae3f57df714a78ae6607b664
+- **Cost:** $0.2278
+- **Timestamp:** 2026-03-26T20:33:32Z
