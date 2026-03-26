@@ -2,7 +2,7 @@
 
 Living document. Updated by the Reflector each iteration. Read by the Scout first.
 
-Last updated: Iteration 250, 2026-03-26.
+Last updated: Iteration 268, 2026-03-26.
 
 ## Current System State
 
@@ -290,18 +290,6 @@ Deploy: `fly deploy --remote-only` from site repo.
 - `work-product-spec.md` — Execute mode depth (12 ops, state machine, decomposition)
 - `social-product-spec.md` — Social product positioning
 
-## What the Scout Should Focus On Next
-
-**Active work (6 open tasks on board):** Space Invitations (3 tasks) + Council (3 tasks). Builder should complete these first.
-
-**Next priority after current tasks clear: Hive Knowledge Graph — MCP Knowledge Server**
-
-The hive's agents work in the dark. They get a flat context string and can't look anything up. The design is in `hive/docs/knowledge-graph-migration.md`. Phase 1: build `cmd/mcp-knowledge/` — an MCP server that indexes ALL knowledge sources (reference/primitives, blog, loop artifacts, API tasks/documents, agent prompts) and presents them as a navigable hierarchical tree. Agents call MCP tools (`knowledge.topics`, `knowledge.drill`, `knowledge.search`, `knowledge.primitives`) to explore instead of getting truncated file dumps. **Target repo: `hive`.**
-
-Key insight: the 201 primitives and 13 grammars from /reference should be accessible to every agent. The blog posts that explain WHY primitives exist should be searchable. The PM should be able to query "what primitives map to invitations?" and get Layer 2 Exchange (Offer, Acceptance, Agreement). No agent currently has this capability.
-
-Read `hive/docs/knowledge-graph-migration.md` for the full design including memory types (declarative, procedural, episodic, semantic), the tree structure, MCP tool signatures, and the 3-phase implementation plan.
-
 ## Completed Directives
 
 ### Knowledge Product (DONE)
@@ -570,3 +558,87 @@ Implementation notes:
 - No structured footnotes/citations — the system prompt instruction to cite by name is sufficient
 - Don't add a full "sources" panel — a muted label is enough
 
+
+## Current Directive — Iteration 263+
+
+**Priority: Fix test isolation → then unlock Organize mode with Role Membership**
+
+Two sequential tasks. Do not start task 2 until task 1 is committed and passing.
+
+---
+
+### Task 1 — Fix invite handler test isolation (REVISE condition, Lesson 47)
+
+Three tests in `site/graph/handlers_test.go` fail with duplicate slug constraint errors: `TestHandlerJoinViaInvite`, `TestHandlerCreateInviteHTMX`, `TestHandlerRevokeInvite`. They were silently blocked by the routing panic fixed in iter 262; now exposed.
+
+Root cause: test setup reuses hardcoded slugs across tests that share a live Postgres instance. Fix: generate unique slugs per test run using `fmt.Sprintf("test-space-%d", time.Now().UnixNano())` or similar, or wrap each test in a BEGIN/ROLLBACK transaction.
+
+**Files:** `site/graph/handlers_test.go`
+
+**Verification:** `go.exe test -run "TestHandlerJoinViaInvite|TestHandlerCreateInviteHTMX|TestHandlerRevokeInvite" ./graph/` → all pass.
+
+---
+
+### Task 2 — Role Membership: assign users to Roles and Teams
+
+Roles (`KindRole`) and Teams (`KindTeam`) are entity kinds with no membership model. A user can view the Roles list but cannot join a role or be added to one. Organize mode requires membership to be useful.
+
+**Data model:** Use the existing `ops` table — emit a `join` op on a Role or Team node (same op used for space membership), with `actor_id` = the joining user. Roles and Teams already use the same node/op infrastructure as spaces. No new table needed.
+
+**Changes:**
+
+1. `site/graph/handlers.go` — extend the `join` and `leave` op handlers to accept `kind=role` and `kind=team` nodes (currently only accepts `kind=space`). Existing guard: check that the actor is authenticated. Owner check: allow space owners to add other members via `assign` op on the role node.
+
+2. `site/graph/store.go` — add `ListRoleMembers(ctx, nodeID) []User` query: JOIN users on ops WHERE node_id = $1 AND op = 'join' AND NOT EXISTS (leave op after the join). LIMIT 50.
+
+3. `site/graph/views.templ` — add a Role detail view at `/app/{slug}/roles/{id}` showing:
+   - Role title + description
+   - Member list (avatar + display name + agent badge if applicable)
+   - "Join this role" button if not a member; "Leave" if already a member
+   - Empty state: "No members yet"
+
+4. `site/graph/handlers.go` — add `GET /app/{slug}/roles/{id}` route wired to the new Role detail template.
+
+5. Update the Roles list view (`site/graph/views.templ`) — each role card shows member count (from a `CountRoleMembers` query or subquery).
+
+**Test:** One handler test — POST join op on a KindRole node → verify 201, verify `ListRoleMembers` returns the joining user.
+
+**Why this over alternatives:**
+- Test isolation is a Lesson 47 REVISE — cannot be deferred.
+- Role Membership turns two shipped entity kinds (Roles, Teams, 11th+12th) from dead weight into usable infrastructure. Organize mode (the 2nd of 6 Work modes) requires it. This is depth on existing surface, not new surface — high leverage, low cost.
+- Strategy Arbiter is a hive-internal improvement; user-facing depth comes first.
+
+**Target repo:** `site`
+**Ship as:** `iter 263: fix invite test isolation + role membership`
+
+## What the Scout Should Focus On Next
+
+## What the Scout Should Focus On Next
+
+**Priority: Surface agent memory — make what agents know visible**
+
+**Target repo:** site
+
+**Why now:** The `agent_memories` table, `RememberForPersona`, and `RecallForPersona` were built in iter 233. Agents have been accumulating memories (factual, procedural, episodic) with importance scores, and memories are already injected into `buildSystemPrompt`. But users can't see what agents know. The differentiator of this platform is "agents that remember your space and participate as members." Without visibility, memory is invisible infrastructure. The Council feature shipped with tests (build.md). The Hive Dashboard was the prior directive. This is the next real gap.
+
+**Prerequisite: verify test suite first.**
+Run `go test ./graph/...` in site. If `TestHandlerJoinViaInvite`, `TestHandlerCreateInviteHTMX`, or `TestHandlerRevokeInvite` still fail with duplicate slug constraint errors — fix that first. The fix is one function: generate unique slug suffixes per test (timestamp or `t.Name()` hash). 15 minutes, no handler changes. Then proceed.
+
+**What to build:**
+
+1. **Read the schema before building** — Open `site/graph/store.go` and find `RememberForPersona`/`RecallForPersona`. Understand the columns: persona, kind (factual/procedural/episodic), content, importance. Do NOT build until you've read what exists.
+
+2. **Memory panel on agent profiles** — In the People lens, when viewing a user with `is_agent=true`, add a collapsible "Memories" section below the profile. List memories with kind badge + content + importance indicator. Use existing card/badge patterns.
+
+3. **"What the agent knows" on space overview** — On the space overview/landing (the first lens when entering a space), if the space has an agent with memories scoped to that space, show a small panel: "Agent has learned N things about this space." Expandable list. Reuses the memory fetch.
+
+4. **Handler + test for memory endpoint** — `GET /app/{slug}/memories` returns agent memories for that space context (filtered by persona + space slug). Write the handler test: GET returns 200 with memory list. Invariant 12 (VERIFIED) requires the test.
+
+**Scout tasks to create:**
+- "Verify test suite passes (fix invite slug uniqueness if still failing)"
+- "Read agent_memories schema — understand RememberForPersona/RecallForPersona columns"
+- "Add memory panel to agent profile view in People lens"
+- "Add 'What the agent knows' panel to space overview"
+- "Add GET /app/{slug}/memories handler + handler test"
+
+**Constraint:** Do not re-implement memory storage or recall logic — it's done. Read `store.go` and `mind.go` to understand what exists, then build UI on top of it. The goal is surfacing, not re-implementing.

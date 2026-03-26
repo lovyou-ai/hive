@@ -1,30 +1,24 @@
-# Build Report — Council List/Detail Templates + Handler + Sidebar Nav
+# Build Report — Fix duplicate slug collisions in invite handler tests
 
-## Gap
-No way to view or navigate to Council sessions in the app. The `council` lens, routes, templates, and sidebar entry were all missing.
+## Task
+Fix duplicate slug collisions in `TestHandlerJoinViaInvite`, `TestHandlerCreateInviteHTMX`, and `TestHandlerRevokeInvite` by generating unique slugs per test run using `time.Now().UnixNano()`.
 
-## Changes
-
-### `graph/store.go`
-- Added `KindCouncil = "council"` constant alongside `KindDocument`, `KindQuestion`
-- Added `ListCouncilSessions(ctx, spaceID, limit)` helper (same pattern as `ListDocuments`, `ListQuestions`)
-
-### `graph/handlers.go`
-- Registered `GET /app/{slug}/council` → `handleCouncil`
-- Registered `GET /app/{slug}/council/{id}` → `handleCouncilDetail`
-- Added `handleCouncil`: fetches `KindCouncil` nodes, renders `CouncilListView`
-- Added `handleCouncilDetail`: fetches session node (404 if wrong kind/space), fetches child responses, renders `CouncilDetailView`
-- Both handlers support `wantsJSON` for API access
-
-### `graph/views.templ`
-- Added `councilIcon()` — group/users SVG, consistent with other lens icons
-- Added `@mobileLensTab` for "Council" in mobile nav (between Threads and Knowledge)
-- Added `@lensLink` for "Council" in desktop sidebar More section (between Threads and Knowledge)
-- Added `lensDescription` case for "council"
-- Added `CouncilListView`: list of council sessions with question, response count, timestamp; empty state with icon
-- Added `CouncilDetailView`: question panel at top with "Convened by" attribution; each agent response as a violet panel with agent badge and timestamp; empty state message
+## Status
+**No changes required.** The fix was already in place before this iteration.
 
 ## Verification
-- `templ generate` — 16 updates, no errors
-- `go.exe build -buildvcs=false ./...` — clean
-- `go.exe test ./...` — all pass (graph: 0.594s)
+
+All three tests already use unique slugs via `time.Now().UnixNano()`:
+
+| Test | Line | Slug pattern |
+|------|------|-------------|
+| `TestHandlerJoinViaInvite` | 765 | `fmt.Sprintf("join-test-%d", time.Now().UnixNano())` |
+| `TestHandlerCreateInviteHTMX` | 836 | `fmt.Sprintf("htmx-invite-%d", time.Now().UnixNano())` |
+| `TestHandlerRevokeInvite` | 922 | `fmt.Sprintf("revoke-invite-%d", time.Now().UnixNano())` |
+
+## Build Results
+- `go.exe build -buildvcs=false ./...` — **PASS** (no errors)
+- `go.exe test ./graph/...` — **SKIP** (DATABASE_URL not set, expected without live Postgres)
+
+## Files Changed
+None.
