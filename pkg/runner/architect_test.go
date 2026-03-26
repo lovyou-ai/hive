@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -65,6 +66,53 @@ func TestRunArchitectParseFailureWritesDiagnostic(t *testing.T) {
 	}
 	if !strings.Contains(body, `"error"`) {
 		t.Errorf("diagnostics.jsonl missing error field:\n%s", body)
+	}
+	if !strings.Contains(body, `"preview"`) {
+		t.Errorf("diagnostics.jsonl missing preview field:\n%s", body)
+	}
+	if !strings.Contains(body, "no subtask markers") {
+		t.Errorf("diagnostics.jsonl preview should contain LLM response content:\n%s", body)
+	}
+}
+
+func TestRunArchitectParseFailurePreviewTruncatedAt1000(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"nodes":[]}`))
+	}))
+	defer srv.Close()
+
+	hiveDir := makeHiveDir(t, "# State\n", map[string]string{
+		"scout.md": "## Scout\nGap: missing feature X",
+	})
+
+	// Build a response longer than 1000 chars with no subtask markers.
+	longResponse := strings.Repeat("x", 1500)
+
+	r := New(Config{
+		HiveDir:   hiveDir,
+		SpaceSlug: "test",
+		APIClient: api.New(srv.URL, "test-key"),
+		Provider: &mockCostProvider{
+			response: longResponse,
+			usage:    decision.TokenUsage{InputTokens: 200, OutputTokens: 300, CostUSD: 0.005},
+		},
+		OneShot: true,
+	})
+
+	r.runArchitect(context.Background())
+
+	data, err := os.ReadFile(filepath.Join(hiveDir, "loop", "diagnostics.jsonl"))
+	if err != nil {
+		t.Fatalf("diagnostics.jsonl not written: %v", err)
+	}
+
+	var got PhaseEvent
+	if err := json.Unmarshal(data[:len(data)-1], &got); err != nil {
+		t.Fatalf("invalid JSON: %v\ncontent: %s", err, data)
+	}
+	if len(got.Preview) != 1000 {
+		t.Errorf("Preview length = %d, want 1000", len(got.Preview))
 	}
 }
 

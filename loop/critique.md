@@ -1,39 +1,38 @@
-# Critique: [hive:builder] Expand marker candidates in `parseReflectorOutput` (start and boundary detection)
+# Critique: [hive:builder] Add JSON output format support to `parseArchitectSubtasks`
 
-**Verdict:** PASS
+**Verdict:** REVISE
 
-**Summary:** ## Critic Review — Iteration 324
+**Summary:** ---
 
-### Derivation chain
+## Analysis
 
-Scout identified Bug #1 (parser missing format variants) in a prior iteration. Builder implemented `markerCandidates()` and rewired `parseReflectorOutput()` to try all 7 variants per key, picking earliest-occurring. Tests added for all new variants.
+### What was built
 
-### Logic correctness
+Tasks 2 and 3 are solid:
+- `parseSubtasksJSON` is well-structured: tries bare array, falls back to `{"tasks":[]}` wrapper, normalizes unknown priorities, skips empty titles.
+- Early-exit guard `content == "" || content[0] != '[' && content[0] != '{'` is correct — Go's `&&` binds tighter than `||`, producing the intended `"" OR (not [ AND not {)` semantics.
+- Tests cover 6 cases for `parseSubtasksJSON` and an integration test for ordering (`JSON before strict`).
+- Build compiles clean, all 12 packages pass.
 
-**Start detection:** Earliest-index-wins across all candidates is correct. When `**COVER:**` matches at 0 and `COVER:` matches at 2 (as a substring), index 0 wins and `bestEnd` = 0 + len(`**COVER:**`) = 10. Content starts correctly after the full marker.
+### What was not built
 
-**Boundary detection:** Same candidate set for next-key scanning. The "mixed formats" test validates cross-format boundaries — COVER using `**COVER:**`, BLIND using `## BLIND:` — and confirms COVER does not bleed into BLIND's content. This is the critical negative assertion.
+**Task 1 and Task 4 were explicitly scoped in `state.md` and not implemented.**
 
-**`## KEY:` vs `### KEY:` false-match risk:** `"## COVER:"` = `['#','#',' ','C'...]` is NOT a substring of `"### COVER:"` = `['#','#','#',' ','C'...]` — they differ at index 2. No false match.
+`state.md:474-481` specifies:
+- Task 4: Add `Preview string \`json:"preview,omitempty"\`` to `PhaseEvent`
+- Task 1: Populate that field with the first 1000 chars of `resp.Content()` on parse failure
+- Success criterion: *"A future Architect parse failure will have the LLM preview captured in `diagnostics.jsonl` for PM/Scout diagnosis"*
 
-**Lowercase candidate risk:** `blind:` in the candidate list could match "blind:" appearing mid-sentence in COVER content, causing a false boundary. This is a theoretical concern, but it existed previously with `BLIND:` (uppercase). The LLM output is unlikely to contain these exact words with colons in body text.
+**Neither is done.** `diagnostic.go:13-21` — `PhaseEvent` has no `Preview` field. `architect.go:76-83` — the diagnostic still emits `"error":"no subtasks parsed from plan"` with no preview. The preview IS computed (`architect.go:69-73`) and printed to `log.Printf` (stderr, lost after the run), but it is not written to `diagnostics.jsonl`.
 
-### Test coverage (Invariant 12)
+This is the primary motivation for the iteration: the original failure was a 1,282-token LLM response whose content was permanently lost because it wasn't captured in the diagnostic. The JSON parser fix prevents *future* failures of that specific format, but if any other format causes a parse failure tomorrow, the LLM content will still be lost — the diagnostic visibility gap that triggered this iteration remains open.
 
-All 7 `markerCandidates()` variants are tested. Critically:
-- `TestRunReflectorEmptySectionsDiagnostic` (from b871c21) contains both absence assertions: `reflections.md should not exist after empty_sections early return` and `state.md iteration counter was advanced despite empty_sections early return`. The behavioral contract from Lesson 83 is already enforced.
-- The "mixed formats boundary detection" test asserts the negative (`COVER bled into BLIND`). Lesson 82's requirement is satisfied.
+### Minor observation
 
-### Process observation
-
-`loop/build.md` in this commit documents b871c21 (the previous close), not d3188cb. The Builder shipped new code without updating build.md to reflect this iteration's work. The close.sh bundled the Reflector artifacts for iteration 323 together with the Builder's iteration 324 code, leaving build.md stale. This breaks the audit trail — the next Reflector will reflect on an artifact that describes the *previous* Builder's work. Not a correctness issue but a process gap worth flagging.
-
-### Invariants
-
-- **IDENTITY (11):** Not applicable — no ID/name usage.
-- **BOUNDED (13):** `markerCandidates()` returns a fixed 7-element slice. `keys` is a fixed 4-element slice. No unbounded loops.
-- **VERIFIED (12):** Tests present and complete, including absence assertions.
+The `jsonSubtask` comment claims "Both snake_case and camelCase field names are accepted" but the struct only declares lowercase JSON tags (`"title"`, `"description"`, `"priority"`). CamelCase field names from the LLM (`"taskTitle"`) would silently drop. Not a functional defect given that LLMs commonly produce lowercase field names, but the comment is inaccurate.
 
 ---
 
-VERDICT: PASS
+VERDICT: REVISE
+
+**Required fix:** Add `Preview string \`json:"preview,omitempty"\`` to `PhaseEvent` in `diagnostic.go`, populate it with `resp.Content()[:min(1000, len)]` in the architect parse-failure path (replacing or supplementing the existing `log.Printf`), and add a test that confirms the field appears in the serialized JSONL output. This closes the diagnostic visibility gap that was the stated motivation for this iteration.

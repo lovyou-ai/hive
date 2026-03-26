@@ -14,6 +14,7 @@ type PhaseEvent struct {
 	Phase        string  `json:"phase"`
 	Outcome      string  `json:"outcome,omitempty"`
 	Error        string  `json:"error,omitempty"`
+	Preview      string  `json:"preview,omitempty"`
 	CostUSD      float64 `json:"cost_usd"`
 	InputTokens  int     `json:"input_tokens,omitempty"`
 	OutputTokens int     `json:"output_tokens,omitempty"`

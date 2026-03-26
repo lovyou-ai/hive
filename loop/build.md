@@ -1,24 +1,27 @@
-# Build: Add JSON output format support to parseArchitectSubtasks
+# Build: Capture LLM Preview in Architect Diagnostic
 
-## Gap
-`parseArchitectSubtasks` had no JSON parser. A 1,282-token LLM response returned a JSON array but produced zero parsed tasks because only the strict (SUBTASK_TITLE:) and markdown parsers were tried.
+## What Changed
 
-## Changes
+### `pkg/runner/diagnostic.go`
+- Added `Preview string \`json:"preview,omitempty"\`` field to `PhaseEvent`.
 
 ### `pkg/runner/architect.go`
-- Added `encoding/json` import
-- Added `jsonSubtask` struct (`title`, `description`, `priority` fields)
-- Added `parseSubtasksJSON(content string) []architectSubtask`:
-  - Tries bare JSON array `[{...}]` first
-  - Falls back to `{"tasks":[...]}` wrapper object
-  - Returns nil on empty/invalid JSON
-  - Normalizes unknown priorities to "high"
-- Updated `parseArchitectSubtasks` to call `parseSubtasksJSON` first, before the strict parser
+- Increased preview capture from 500 → 1000 chars (matching the spec).
+- Populated `Preview` field in the `PhaseEvent` emitted on parse failure, so the LLM response content is written to `diagnostics.jsonl` and survives the run.
+- Fixed inaccurate comment on `jsonSubtask` that claimed camelCase field names were accepted (only lowercase JSON tags are declared).
 
 ### `pkg/runner/architect_test.go`
-- Added `TestParseSubtasksJSON`: 6 cases covering bare array, wrapper object, invalid JSON, empty array, empty string, unknown priority
-- Added `TestParseArchitectSubtasksJSON`: integration test verifying JSON is tried before strict/markdown
+- Added `encoding/json` import.
+- Extended `TestRunArchitectParseFailureWritesDiagnostic` to assert `"preview"` field is present and contains LLM response content.
+- Added `TestRunArchitectParseFailurePreviewTruncatedAt1000` to verify the preview is capped at 1000 chars.
 
 ## Verification
-- `go.exe build -buildvcs=false ./...` — clean
-- `go.exe test ./...` — all pass (12 packages)
+
+```
+go.exe build -buildvcs=false ./...  → clean
+go.exe test ./...                   → all 12 packages pass
+```
+
+## Why
+
+The original failure was a 1,282-token LLM response that was permanently lost because it wasn't captured in the diagnostic. The JSON parser fix (prior commit) prevents future failures of that specific format. This change closes the remaining gap: if any format causes a parse failure, the LLM content (first 1000 chars) is now written to `diagnostics.jsonl` so PM/Scout can diagnose it without re-running.

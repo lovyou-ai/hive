@@ -65,18 +65,20 @@ func (r *Runner) runArchitect(ctx context.Context) {
 	// Parse subtasks from the plan.
 	subtasks := parseArchitectSubtasks(resp.Content())
 	if len(subtasks) == 0 {
-		// Log first 500 chars of the plan so we can debug parser failures.
+		// Capture first 1000 chars of the LLM response for diagnostics.
 		preview := resp.Content()
-		if len(preview) > 500 {
-			preview = preview[:500]
+		if len(preview) > 1000 {
+			preview = preview[:1000]
 		}
 		log.Printf("[architect] no subtasks found in plan. Preview:\n%s", preview)
 		// Emit diagnostic when a real LLM call (cost > 0) produced no parseable subtasks.
+		// Include the preview so PM/Scout can diagnose format failures without re-running.
 		if usage := resp.Usage(); usage.CostUSD > 0 {
 			r.appendDiagnostic(PhaseEvent{
 				Phase:        "architect",
 				Outcome:      "failure",
 				Error:        "no subtasks parsed from plan",
+				Preview:      preview,
 				CostUSD:      usage.CostUSD,
 				InputTokens:  usage.InputTokens,
 				OutputTokens: usage.OutputTokens,
@@ -200,8 +202,8 @@ func normalizeArchitectResponse(content string) string {
 }
 
 // jsonSubtask is the expected shape when an LLM returns JSON instead of the
-// structured-text format.  Both snake_case and camelCase field names are
-// accepted so either casing the model chooses will unmarshal correctly.
+// structured-text format. Field names are lowercase ("title", "description",
+// "priority") as commonly produced by LLMs.
 type jsonSubtask struct {
 	Title       string `json:"title"`
 	Description string `json:"description"`

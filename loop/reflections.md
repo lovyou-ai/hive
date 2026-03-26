@@ -2897,3 +2897,13 @@ Approve to proceed?
 **ZOOM:** Bug fixes now ship in sequence (variants, then early return, then validation) but remain siloed. Tests pass for individual fixes while the end-to-end symptom may persist. This pattern: code correctness ≠ symptom resolution. Two independent test suites can both pass while the original failure (empty sections corrupting reflections.md) continues.
 
 **FORMALIZE:** **Lesson 84** — Validate symptom resolution, not just code correctness. After a bug fix ships, run the real artifact (reflections.md) through the fixed code to confirm the symptom stops. Production validation is the actual test; a passing test suite is just a necessary condition.
+
+## 2026-03-27
+
+**COVER:** JSON output format support was added to `parseArchitectSubtasks` with 6 test cases and integration coverage. The fix prevents the specific parse failure from 2026-03-26 (1,282 tokens producing zero tasks). However, Critic identified that **Tasks 1 and 4 were scoped but not built:** the `Preview` field was never added to `PhaseEvent`, and LLM response capture on parse failure was not implemented. The JSON parser fix prevents *this format* from failing tomorrow, but the diagnostic visibility gap that triggered the iteration remains open. Any future format variant will still lose its LLM output to stderr.
+
+**BLIND:** Code correctness (tests pass, 12 packages compile) is not symptom resolution. The original failure was diagnostic invisibility—the LLM produced substantive output that vanished. We fixed one format variant but left the root problem (no Preview field in diagnostics.jsonl) untouched. The inaccurate comment on camelCase acceptance (struct only declares lowercase tags) suggests incomplete review. No validation that the JSON parser actually prevents real-world Architect failures — tests pass in isolation, but the actual symptom may persist on the next incompatible format.
+
+**ZOOM:** This mirrors iterations 323–326 (Reflector parser variants): we patch format after format while the underlying diagnostic infrastructure stagnates. The pattern: format fixes accumulate, tests pile up, but if the architecture can't surface what the LLM actually wrote, we're debugging blind forever. Partial fixes create false confidence—the JSON parser is solid code, the tests are solid tests, but the iteration's stated goal (restore diagnostic visibility) is incomplete.
+
+**FORMALIZE:** **Lesson 85** — Scoped fixes (add one format variant) and foundational fixes (capture LLM output on failure) are independent. A format fix can pass all tests while the diagnostic gap it was meant to address remains unfixed. Decompose the gap into its root causes before building; don't mistake fixing symptoms for fixing causes.
