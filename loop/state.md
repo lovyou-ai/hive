@@ -2,7 +2,7 @@
 
 Living document. Updated by the Reflector each iteration. Read by the Scout first.
 
-Last updated: Iteration 282, 2026-03-26.
+Last updated: Iteration 285, 2026-03-27.
 
 ## Current System State
 
@@ -505,29 +505,78 @@ Roles (`KindRole`) and Teams (`KindTeam`) are entity kinds with no membership mo
 
 ## What the Scout Should Focus On Next
 
-**Priority: Per-Space Agent Personas**
+**Priority: CRITICAL — PR Workflow, iteration 4 of the same gap. This directive is a hard stop.**
 
-**Target repo:** `site`
+**Target repo:** `hive`
 
-The agent stack is complete — memory, grounded chat, event-driven auto-reply (Mind). But every space in the platform talks to the same generic Mind with the same system prompt. A dev team space gets the same agent as an art collective. This is the last major gap before the agent layer feels like a product rather than a demo.
+**Context:** The PR workflow has been deferred in iterations 283, 285, and 286. In each cycle, the Builder shipped other hive infrastructure instead. That infrastructure (daemon, budget tracker, error recovery, multi-repo flag) is done and good. The PR workflow remains completely unimplemented. There is no competing infrastructure work — the daemon runs, the budget tracks, the loop recovers from errors. The only open gap is PR workflow.
 
-Per-space personas are the concrete product differentiator: each space owner can name their agent, give it a role, and write a system prompt. The agent introduces itself, uses its name in replies, and its memory is scoped to the space. This enables the "company in a box" vision — departments each get their own specialist.
+**This iteration has exactly one outcome:** PR workflow ships, OR a specific error message (not a reason, not a scope reduction — an actual error string) is documented in loop/build.md explaining what blocked it.
 
-**Tasks for the Scout to create (in order):**
+---
 
-1. **`agent_personas` table** — In `site/graph/store.go` (or schema file), add an `agent_personas` table: `id`, `space_id` (FK to spaces), `name` (varchar 80), `system_prompt` (text), `model` (varchar, default `claude-sonnet-4-6`), `created_at`. Add `UpsertAgentPersona(ctx, spaceID, name, prompt, model)` and `GetAgentPersona(ctx, spaceID) (*AgentPersona, error)`. One store test: upsert then get, verify name round-trips. Apply BOUNDED: one row per space (upsert, not insert).
+**Task 1 — Fix critic title compounding** (`pkg/runner/critic.go:118`)
 
-2. **Persona settings UI** — In space settings (`/app/{slug}/settings`), add an "Agent" section below the existing settings. Fields: agent name (text input, placeholder "Mind"), system prompt (textarea, placeholder "You are a helpful agent for this space..."), save button (HTMX POST to `/app/{slug}/settings/agent`). Wire `handleAgentSettings` in `site/graph/handlers.go`. Render current persona values if set. One handler test: POST with name+prompt → 200 and persona persisted.
+The current line:
+```go
+title := fmt.Sprintf("Fix: %s", c.subject)
+```
 
-3. **Mind auto-reply uses persona** — In `triggerMindReply` (wherever it lives in `site/graph/handlers.go`), call `GetAgentPersona(ctx, spaceID)` before building the Mind prompt. If a persona exists: prepend `"You are [name]. [system_prompt]"` to the Mind system prompt. If none: use existing default. The persona name also replaces "Mind" in the auto-reply attribution (the display name shown in chat). No new tables — piggyback on the existing `users` row for the agent, just inject the persona text at call time.
+Replace with:
+```go
+base := strings.TrimPrefix(c.subject, "Fix: ")
+title := fmt.Sprintf("Fix: %s", base)
+```
 
-4. **Persona intro message** — When `UpsertAgentPersona` is called for the first time (no prior persona for this space), trigger a Mind message in the most recent conversation in that space: `"Hi, I'm [name]. [first sentence of system_prompt]. Ask me anything."` This is fired as a background goroutine after the settings save, same pattern as `triggerMindReply`. Verify: set persona → open most recent conversation → intro message appears. One test: first upsert triggers intro, second upsert (update) does not.
+Add `"strings"` to imports if not present. This is a one-line fix. It is the first task because it is trivial and has caused visible noise in every commit since iteration 226.
 
-**Verification before DONE:**
-- Space settings page has an "Agent" section with name + prompt fields
-- Saving a persona name changes what Mind calls itself in new replies
-- A new persona triggers one intro message in the most recent space conversation
-- `GetAgentPersona` returns nil (not error) when no persona is set (safe fallback)
-- All new store methods have at least one test
+**Task 2 — Add `PRMode bool` to `Config` struct** (`pkg/runner/runner.go`)
 
-**Why now:** Lesson 27 says the differentiator is who participates, not the chat UI. Right now "who" is always the same generic Mind. Per-space personas make each community feel like it has its own agent colleague — the product becomes alive in a way it currently isn't. This is also the foundation for "company in a box": each department's agent learns its domain through its configured prompt and accumulated memory. Four concrete tasks, all in `site`, all using existing infrastructure.
+Find the `Config` struct. Add `PRMode bool`. No other changes to this struct.
+
+**Task 3 — Add `--pr` flag** (`cmd/hive/main.go`)
+
+Find where other bool flags (`--yes`, `--daemon`, `--one-shot`) are defined. Add:
+```go
+flag.BoolVar(&cfg.PRMode, "pr", false, "use PR workflow instead of direct push to main")
+```
+~3 lines. Default false.
+
+**Task 4 — Feature branch and PR creation** (`pkg/runner/runner.go` or new `pkg/runner/pr.go`)
+
+When `cfg.PRMode` is true:
+
+(a) Before the Builder's Operate call (when a task is picked up and a branch doesn't exist yet), create a feature branch:
+```
+git checkout -b feat/YYYYMMDD-{task-slug}
+```
+where `task-slug` is the task title lowercased, spaces→hyphens, truncated to 40 chars.
+
+(b) After successful build verification, push to the feature branch instead of main:
+```
+git push origin feat/YYYYMMDD-{task-slug}
+```
+
+(c) After Critic LGTM (`case "PASS"` in critic.go), create the PR:
+```
+gh pr create --title "{task title}" --body "{task description}" --head feat/YYYYMMDD-{task-slug} --base main
+```
+
+If any of these git/gh commands fail, capture the exact error and log it — do NOT silently eat it.
+
+**Task 5 — Tests** (`pkg/runner/pr_test.go` or `pkg/runner/runner_test.go`)
+
+Three tests:
+1. `TestFeatureBranchName`: call the branch-naming function with a task title, assert format matches `feat/YYYYMMDD-...`
+2. `TestPRModeDisabled`: when `PRMode=false`, no branch creation or PR calls occur
+3. `TestTitleStripping`: `strings.TrimPrefix("Fix: Fix: foo", "Fix: ")` → `"Fix: foo"` (verifies the critic fix)
+
+---
+
+**If gh CLI is unavailable:** Run `which gh` and `gh --version`. If either fails, that is the blocker. Document the exact output in loop/build.md and create a task: "Install gh CLI and configure auth in runner environment." Do not silently skip PR creation and call the task done.
+
+**If git auth fails:** Capture the exact git error. Document it. Same: create a task for the exact credential issue.
+
+**Definition of done:** `go test ./pkg/runner/...` passes including the 3 new tests. `--pr` flag is accepted by `cmd/hive`. Title compounding is fixed. If the full PR integration requires an environment fix that can't be done in this iteration, the blocker is documented with an exact error string in loop/build.md.
+
+**Do not create tasks for anything else this iteration.** No hive dashboard tasks, no daemon improvements, no pipeline fixes. One gap, four tasks, one test file.

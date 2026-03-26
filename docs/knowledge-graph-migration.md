@@ -1,6 +1,26 @@
-# Knowledge Graph Migration: From Files to Graph
+# The Hive Runs on Its Own Event Graph
 
-## The Vision
+## The One Thing
+
+Everything in this document — knowledge tree, MCP server, event-driven pipeline, memory types, parallel builders — is one thing: **the hive running on its own substrate.**
+
+The 20 primitives that started this project describe a system where every action is a node, every failure is traceable to its root cause, and a diagnostic agent can walk the chain from any bad outcome back to the thing that broke. That's what the eventgraph IS. That's what the hive was built to demonstrate.
+
+And the hive doesn't use it.
+
+The pipeline is a Go for-loop. When the Architect fails to parse subtasks, the failure vanishes into a log line. Nobody traces it. Nobody asks why. Nobody feeds it back. We run again and hope. When the PM creates a duplicate directive, nothing notices. When the Builder targets the wrong repo, it ESCALATE's into the void. Every failure requires a human to read logs and manually intervene.
+
+**The SELF-EVOLVE invariant says "agents fix agents, not humans."** But the pipeline can't fix itself because it can't see itself. Its own operations aren't on the graph. Its own failures aren't events. There's no diagnostic traversal because there's nothing to traverse.
+
+The fix is not "migrate .md files to the graph." The fix is: **the pipeline runs ON the event graph.** Every Operate call, every Reason call, every REVISE, every no-op, every ESCALATE — events on the graph with causal links. The Guardian watches. A diagnostic agent traces failures back to root cause. The root cause becomes a task. The task enters the next cycle. The hive fixes itself.
+
+This is what the 20 primitives describe. This is what 70 agents derived when left running for two days. This is what 44 foundation primitives — Event, EventStore, CausalLink, Expectation, Violation, Diagnostic Traversal, Gap, Blind — were designed for. The hive should be the first system that actually runs on them.
+
+Everything below is the implementation plan for getting there.
+
+---
+
+## The Vision (Immediate)
 
 Agents work in the dark. They get a flat context string — `LoadSharedContext()` concatenates a few files — and then reason without the ability to look anything up. No light switch. They can't say "I need to understand how Knowledge was built" and navigate from concept to commits. They can't say "what primitive does this map to?" and drill into the ontology.
 

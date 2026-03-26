@@ -115,7 +115,7 @@ func (r *Runner) reviewCommit(ctx context.Context, c commit) {
 	case "REVISE":
 		// Extract the issues and create a fix task.
 		issues := extractIssues(content)
-		title := fmt.Sprintf("Fix: %s", c.subject)
+		title := fixTitle(c.subject)
 		desc := fmt.Sprintf("Critic review of commit %s found issues:\n\n%s", c.hash[:12], issues)
 
 		task, err := r.cfg.APIClient.CreateTask(r.cfg.SpaceSlug, title, desc, "high")
@@ -189,6 +189,15 @@ func parseVerdict(content string) string {
 		}
 	}
 	return "PASS" // default to pass if no verdict found
+}
+
+// fixTitle returns "Fix: {subject}" but avoids double-prefixing when the
+// subject already starts with "Fix: ".
+func fixTitle(subject string) string {
+	if strings.HasPrefix(subject, "Fix: ") {
+		return subject
+	}
+	return "Fix: " + subject
 }
 
 func extractIssues(content string) string {

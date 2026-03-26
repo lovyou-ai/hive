@@ -1,76 +1,73 @@
-Now I'll write the Scout report. Based on my analysis of the hive repo state, I've identified the critical gap.
+Now let me write the Scout report. Based on my review:
 
 ---
 
-## SCOUT REPORT — Iteration 275
+## SCOUT REPORT — Iteration 287
 
-**Gap:** The autonomous pipeline (Scout → Builder → Critic → Reflector) is proven but requires manual triggering. The hive cannot run self-directed without Matt invoking `next` or `--pipeline` — a single point of failure incompatible with the "Lovatts engagement" and "company in a box" vision.
+**Gap:** PR workflow infrastructure missing — blocking external repository support and the Lovatts engagement. This is the fourth consecutive iteration the same gap has been identified.
 
 **Evidence:**
 
-1. **Recent commits show pipeline closure (iters 224-233):**
-   - Autonomous task creation (Scout) ✓
-   - Autonomous implementation (Builder via Operate) ✓
-   - Autonomous code review (Critic) ✓
-   - Autonomous reflection (Reflector) ✓
-   - Autonomous direction (PM writes directives) ✓
-   
-   All pieces work. The loop is closed. **But there is no trigger.**
+1. **Gap persists across four cycles:**
+   - Iteration 283: Scout identified PR workflow gap
+   - Iteration 284-285: Builder executed other hive infrastructure (daemon, budget tracking, error recovery)
+   - Iteration 286: Scout re-identified PR workflow as CRITICAL blocker
+   - Iteration 287 (now): Same gap — no implementation, no deferrals documented
 
-2. **Current invocation model (cmd/hive/main.go):**
-   The Runner is invoked as a one-shot CLI tool. To run a full pipeline cycle:
-   ```
-   go run ./cmd/hive --role pm --pipeline
-   ```
-   This requires a human to run the command. No scheduling. No daemon. No continuous operation.
+2. **Code verification confirms zero implementation:**
+   - `pkg/runner/runner.go` — Config struct (line 45-60) has NO `PRMode` field
+   - `cmd/hive/main.go` — no `--pr` flag registered in flag parsing
+   - No feature branch creation logic anywhere in pkg/runner/
+   - No `gh pr create` integration in codebase
+   - No tests for PR workflow
 
-3. **Backlog marks "Bus factor" as URGENT (lines 201-213):**
-   > "Currently: Matt types `next` to trigger each cycle. If Matt can't work for a week, the hive stops."
-   
-   The backlog explicitly requires:
-   - `--daemon` flag for continuous operation
-   - Runs on a VM (not Matt's laptop)
-   - Automatic deploy after Critic PASS
-   - Budget ceiling per day
-   - Error alerting
+3. **Title compounding bug still active:**
+   - `pkg/runner/critic.go:118` — `title := fmt.Sprintf("Fix: %s", c.subject)` with no deduplication
+   - When c.subject is already "Fix: [hive:builder] Add error recovery...", creates: "Fix: Fix: [hive:builder] Add error recovery..."
+   - Visible in production commits: 6a8c5a3, b74e613, 5f85ef8 with `[hive:builder] Fix: [hive:builder] Fix: ...` pattern
+   - Never fixed despite being identified in iteration 283
 
-4. **Product vision blocked:**
-   - **Lovatts engagement:** A client won't accept a service that stops when the director takes a vacation
-   - **Company in a box:** Advertised as autonomous; currently semi-autonomous (works if triggered)
-   - **Dogfooding:** The hive doesn't use its own infrastructure for continuous operation (no automated tasks, no scheduled runs, no fault tolerance)
+4. **PM directive explicitly marked this a "hard stop":**
+   - state.md line 508-514: "This iteration has exactly one outcome: PR workflow ships, OR a specific error message explaining what blocked it"
+   - No scope reduction permitted without explicit PM approval
+   - "iteration 4 of the same gap" — pattern recognition applied
 
-5. **State.md shows iteration 275 but no daemon mode.**
-   Recent commits (March 26) include pipeline validation and multi-repo support. All focus on the LOGIC of autonomy, not its OPERATION. The loop works; the system doesn't.
+5. **Business impact — revenue blocked:**
+   - Lovatts contract requires code review gates before autonomous merge
+   - Cannot credibly offer "company-in-a-box" to external clients without PR workflow
+   - Current autonomous pipeline (daemon + builder + critic) ships code directly to main — unsuitable for client repos
 
 **Impact:**
 
-This blocks three revenue paths and the company's founding credibility claim:
-- **Lovatts:** "The hive will autonomously modernize our legacy portfolio" — requires unattended operation
-- **SaaS:** "Hive as a service" — requires per-client daemon instances
-- **Vision:** "Civilization that needs no human direction" — currently needs human to start each iteration
+- **Revenue:** Lovatts engagement cannot proceed without PR workflow (requires human review gate before autonomous merge)
+- **Product positioning:** Cannot claim "autonomous external repo support" without review gates  
+- **Velocity:** 4 iterations of deferral + 3 iterations of prerequisite work = $3+ autonomous budget spent, gap unchanged
+- **System health:** Escalation mechanism works (Scout catches it), but no enforcement converts detection to action (Lessons 71: escalations advisory only)
 
 **Scope:**
 
-Changes needed in the hive repo:
-- `cmd/hive/main.go` — add `--daemon` flag, scheduler loop (every 30min or on-demand)
-- `pkg/runner/runner.go` — RunDaemon() method; graceful shutdown; error recovery
-- `pkg/runner/pm.go`, `scout.go`, etc. — run in daemon context with budget ceilings
-- `pkg/api/` — error handling for API unavailability (retry backoff)
-- Infrastructure — Fly machine definition or systemd service file to run the daemon
-- Monitoring — log errors, budget tracking, heartbeat (Guardian role extended)
+The PM directive (state.md line 516-568) specifies Tier 1 exactly:
+
+1. **Fix critic title compounding** (`pkg/runner/critic.go:118`) — strip "Fix: " prefix before adding it
+2. **Add `PRMode bool` to Config struct** (`pkg/runner/runner.go`) — one field, no other changes
+3. **Add `--pr` flag** (`cmd/hive/main.go`) — register boolean flag, default false
+4. **Feature branch creation** — checkout `-b feat/YYYYMMDD-{task-slug}` when PRMode active
+5. **Push to feature branch** — when build succeeds, push to feature branch instead of main
+6. **PR creation on Critic LGTM** — after Critic PASS verdict, create PR with `gh pr create`
+7. **Tests** — 3 smoke tests (title dedup, branch naming, PRMode toggle)
+
+All 7 items are defined. All have code locations. No ambiguity.
 
 **Suggestion:**
 
-Implement daemon mode in three phases:
+**Implement Tier 1 in full this iteration.** This is the fourth cycle of the same gap with explicit PM directive ("hard stop"). The scope is bounded, code locations are specific, and tests are pre-defined. 
 
-1. **Phase 1 (Tier 1):** `--daemon` flag + basic scheduler. Every 30 minutes, run the pipeline (PM → Scout → Builder if tasks exist → Critic → Reflector). Budget ceiling ($20/day). Log all activity. No external alerting yet.
+The infrastructure prerequisites (daemon, budget tracking, error recovery) are complete and running. They proved the autonomous loop works. This gap is the only remaining blocker to external repo support. Building it closes the capability gap and unlocks revenue.
 
-2. **Phase 2 (Tier 2):** Deploy to Fly machine. Verify it runs unattended for 48 hours without intervention. Catch and report errors via Guardian role (email or lovyou.ai notification).
+If blocked during implementation, document the exact error in `loop/build.md` (as PM directive requires).
 
-3. **Phase 3 (Tier 3):** Automatic deploy gate — Critic PASS → auto-deploy to production. Hive self-directs deployments.
-
-This unlocks the product vision: a hive that builds while you sleep, costs under $20/day, and survives infrastructure hiccups.
+Human decision: The directive's "hard stop" language indicates this is non-negotiable. Builder should not reduce scope or defer without explicit approval from PM/Matt.
 
 ---
 
-**Priority: CRITICAL** — without this, the pipeline is a proof-of-concept, not a product.
+**Ready for Builder phase?**

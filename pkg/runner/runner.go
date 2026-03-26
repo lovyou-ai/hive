@@ -55,6 +55,7 @@ type Config struct {
 	BudgetUSD     float64 // daily budget, 0 = $10 default
 	OneShot       bool    // if true, work one task then exit (for testing)
 	NoPush        bool              // if true, commit but don't push (pipeline pushes after Critic PASS)
+	PRMode        bool              // if true, create a feature branch before committing
 	CouncilTopic  string            // optional: focus the council on a specific question
 	RepoMap       map[string]string // named repos: name → absolute path (for multi-repo pipeline)
 }
@@ -510,6 +511,39 @@ func (r *Runner) printCostSummary() {
 	log.Printf("[%s] cost summary: $%.4f / $%.2f (calls=%d, in=%d, out=%d)",
 		r.cfg.Role, r.cost.TotalCostUSD, r.cost.BudgetUSD,
 		r.cost.CallCount, r.cost.InputTokens, r.cost.OutputTokens)
+}
+
+// branchSlug converts a task title to a git branch name.
+// Format: feat/YYYYMMDD-{slug}, where the slug portion is lowercase
+// alphanumeric with hyphens, truncated at 40 characters.
+func branchSlug(title string, date time.Time) string {
+	dateStr := date.Format("20060102")
+
+	var b strings.Builder
+	prevHyphen := true // start true to suppress leading hyphens
+	for _, r := range strings.ToLower(title) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			prevHyphen = false
+		} else if !prevHyphen {
+			b.WriteRune('-')
+			prevHyphen = true
+		}
+	}
+	s := strings.TrimRight(b.String(), "-")
+	if len(s) > 40 {
+		s = strings.TrimRight(s[:40], "-")
+	}
+	return fmt.Sprintf("feat/%s-%s", dateStr, s)
+}
+
+// buildBranchName returns the branch to create before committing, or "" when
+// PRMode is disabled (caller should skip the git checkout -b step).
+func buildBranchName(cfg Config, title string) string {
+	if !cfg.PRMode {
+		return ""
+	}
+	return branchSlug(title, time.Now())
 }
 
 // ModelForRole returns the default model short name for a role.

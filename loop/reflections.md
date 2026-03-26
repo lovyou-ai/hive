@@ -2479,3 +2479,44 @@ I also need to update `loop/state.md` to set iteration to 272. Can you grant wri
 **ZOOM:** Deferral pattern confirmed across iterations 275–280. Scout escalates operation → Builder executes infrastructure → gap absorbs work and remains. System documents this (lessons 67–69) but lacks enforcement. Prerequisite work is productive and necessary, but doesn't close escalation if scope mismatch exists.
 
 **FORMALIZE:** Lesson 69 applies: escalation scope enforcement required. Either bind Scout's escalation (Builder matches scope or explicitly negotiates), or write precedence rule (infrastructure-only iterations permitted with recorded timeline for operation phase). Current state: stable deferral. Decision deferred to next iteration's Scout/PM alignment.
+
+## 2026-03-26
+
+**COVER:** Iteration 282 corrected artifact numbering (build.md header mismatch with state.md). Administrative fix, maintains audit trail integrity. Connects to iteration 281's cleanup pass — verifying artifact consistency across the loop.
+
+**BLIND:** Daemon infrastructure code-shipped (iteration 280) but has never run unattended. No Fly deployment. No 48-hour production validation. "Prerequisites complete" masks "operation untested." Meanwhile, iteration 282 spent cycles fixing artifact headers — hygiene while the critical escalation (iteration 275: "continuous autonomous operation") remains operational gap.
+
+**ZOOM:** Iterations 275–282 show escalation scope drift. Scout escalates "continuous autonomous operation" (275, CRITICAL). Builder executes infrastructure prerequisites (280: error recovery, budget, status). Administrative work (282: artifact fix) accumulates. Gap persists because prerequisite ≠ operation, and system distinguishes neither in priority nor in timeline binding.
+
+**FORMALIZE:** No new lesson. Lesson 69 (escalation binding requires scope enforcement) confirmed again. Next iteration: PM must decide whether "infrastructure ready" satisfies the escalation or if operation phase 2 (Fly deployment + 48h validation) owns the scope. Deferral without decision point creates cycle drift.
+
+## 2026-03-27
+
+**COVER:** Scout identified PR workflow as the critical blocker for external repos and the Lovatts engagement. Connects to iterations 275–282 where daemon infrastructure (error recovery, budget tracking) was built but couldn't operate on external codebases — the gap persists because clients require code review before merge. The Critic also surfaced task title compounding (`"Fix: [hive:builder] Fix: [hive:builder]..."`), indicating an artifact generation issue in title assembly.
+
+**BLIND:** "Autonomous daemon" masks a hybrid state: infrastructure runs unattended but human merge approval is structurally required. Recent iterations reported "infrastructure ready" but operation was never Fly-deployed or validated for 48 hours unattended. Artifact compounding invisible in feature scope but visible in git history — process generates concatenated titles with no deduplication, leaked upstream to recent commits.
+
+**ZOOM:** Pattern confirmed: iterations 275–282 escalated "continuous autonomous operation," built prerequisites, then administrative work (282: artifact cleanup) accumulated while operation gap persisted. Prerequisite ≠ Operation. Infrastructure ready ≠ Operation verified. The loop distinguishes neither in binding timeline nor in escalation closure criteria.
+
+**FORMALIZE:** Lesson 70: "Done" requires disambiguation. Code-shipped (tests pass, artifact created) ≠ Operation-verified (deployed, unattended run validated, human approval removed). Current escalation scope titled "autonomous operation" but satisfied by "infrastructure prerequisites." Either bind the scope or split the escalation into two: Infrastructure (deliver code) and Operation (validate deployed behavior).
+```
+
+This reflection:
+- **COVER**: Explains what Scout found and how it connects to the escalation history
+- **BLIND**: Highlights the hybrid state (unattended but human-blocked) and the invisible artifact compounding bug
+- **ZOOM**: Names the recurring pattern of prerequisite accumulation without operation closure
+- **FORMALIZE**: Codifies the disambiguation principle as Lesson 70, providing the rule to prevent future scope drift
+
+Ready for the Builder phase?
+
+## 2026-03-27
+
+**COVER:** Scout re-identified the PR workflow gap (CRITICAL, blocking Lovatts engagement) for the second consecutive cycle. Iteration 283 escalated it. Iteration 284 produced no build artifact — zero implementation. Iteration 285 surfaces the same unresolved gap with title compounding bug still unfixed.
+
+**BLIND:** Escalations carry advisory force only. Builder's authority to defer or subset scope is unchecked — nothing prevents the same gap from reopening next cycle. Artifact generation defect (critic.go duplication) is invisible to execution but visible in git history. Daemon cycles burn budget while loop has no mechanism to force escalation closure or report deferral back to Scout.
+
+**ZOOM:** Three clusters now show the pattern: iterations 271–280, then 283, then 284–285. Scout escalates → Builder executes subset → gap persists unchanged → Scout re-escalates. The loop produces correct diagnosis but no enforcement converts it to binding action. Same blocker cycles 3 times.
+
+**FORMALIZE:** **Lesson 71:** "Escalations require enforcement. Advisory escalations allow indefinite deferrals if Builder holds scope-reduction discretion unchecked. Either: (a) escalations become binding (Builder implements or returns cost/timeline/risk reasoning to PM), or (b) establish explicit approval gate on scope reduction before Builder proceeds. Without either, blocking gaps cycle indefinitely."
+
+Human decision required (from Scout): **Should Tier 1 ship in iteration 285, or should deferral authority be formally granted?** Two iterations of zero progress on a revenue-blocking gap signals either architectural problem or explicit deprioritization. Only one of those should be invisible.
