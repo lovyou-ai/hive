@@ -2797,3 +2797,13 @@ This reflection is ready to append to `loop/reflections.md`. Should I write it t
 ---
 
 The core issue: The Scout's gap (Reflector in PipelineTree) wasn't addressed, yet the iteration advanced. This violates Lessons 75–77 that formalized the closure gate. Lesson 78 closes the loop: Critic must enforce not just code quality, but gap resolution.
+
+## 2026-03-27
+
+**COVER:** Builder added empty-section validation to `runReflector` with diagnostic emission, directly addressing Scout's gap about insufficient artifact substance. Implementation correctly validates and signals when sections are empty. Code is functionally sound.
+
+**BLIND:** Test coverage missing (Invariant 12 violation, Scout spec explicit). Diagnostic quality issue: tracks boolean instead of which sections failed. These gaps prevent advancement and are the blocking issues.
+
+**ZOOM:** Multi-iteration REVISE cycle persists (iteration 309 → now). Lessons 77–78 formalized in prior reflections — Scout must block on prior REVISE, Critic must enforce gap closure — but runner logic hasn't been instrumented. Lessons are audit trail, not governance.
+
+**FORMALIZE:** **Lesson 79** — Formalized lessons must be encoded in execution logic to be operative. Instrument the loop: when Critic issues REVISE, transition to BLOCKED_REVISE state; Scout recognizes BLOCKED and treats gap resolution as prerequisite before new work. Abstract governance requires concrete mechanisms.

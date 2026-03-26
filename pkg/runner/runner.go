@@ -404,10 +404,29 @@ ACTION: ESCALATE
 // writeBuildArtifact writes loop/build.md summarising the completed task.
 func (r *Runner) writeBuildArtifact(t api.Node, costUSD float64) {
 	hash := r.gitHash()
-	content := fmt.Sprintf("# Build: %s\n\n- **Commit:** %s\n- **Cost:** $%.4f\n- **Timestamp:** %s\n",
-		t.Title, hash, costUSD, time.Now().UTC().Format(time.RFC3339))
+	subject := r.gitSubject()
+	diffStat := r.gitDiffStat()
+
+	body := t.Body
+	if len(body) > 300 {
+		body = body[:300] + "..."
+	}
+
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("# Build: %s\n\n", t.Title))
+	b.WriteString(fmt.Sprintf("- **Commit:** %s\n", hash))
+	b.WriteString(fmt.Sprintf("- **Subject:** %s\n", subject))
+	b.WriteString(fmt.Sprintf("- **Cost:** $%.4f\n", costUSD))
+	b.WriteString(fmt.Sprintf("- **Timestamp:** %s\n", time.Now().UTC().Format(time.RFC3339)))
+	if body != "" {
+		b.WriteString(fmt.Sprintf("\n## Task\n\n%s\n", body))
+	}
+	if diffStat != "" {
+		b.WriteString(fmt.Sprintf("\n## Diff Stat\n\n```\n%s\n```\n", diffStat))
+	}
+
 	path := filepath.Join(r.cfg.HiveDir, "loop", "build.md")
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(b.String()), 0644); err != nil {
 		log.Printf("[builder] write build.md: %v", err)
 	}
 }
@@ -421,6 +440,32 @@ func (r *Runner) gitHash() string {
 		return "unknown"
 	}
 	return strings.TrimSpace(string(out))
+}
+
+// gitSubject returns the latest commit subject line, or "unknown".
+func (r *Runner) gitSubject() string {
+	cmd := exec.Command("git", "log", "-1", "--format=%s")
+	cmd.Dir = r.cfg.RepoPath
+	out, err := cmd.Output()
+	if err != nil {
+		return "unknown"
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// gitDiffStat returns the diff stat for HEAD, truncated to 1000 chars.
+func (r *Runner) gitDiffStat() string {
+	cmd := exec.Command("git", "show", "--stat", "HEAD")
+	cmd.Dir = r.cfg.RepoPath
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	s := strings.TrimSpace(string(out))
+	if len(s) > 1000 {
+		s = s[:1000] + "\n... (truncated)"
+	}
+	return s
 }
 
 // ─── Build verification ──────────────────────────────────────────────
