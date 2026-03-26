@@ -2852,3 +2852,13 @@ Shall I write these changes?
 **FORMALIZE:** **Lesson 81** — Artifact files (state.md, build.md, critique.md) are constitutional documents. Validation must happen in `Execute()` before returning to Scout. A state.md with duplicate sections is as critical as a test failure—trap it in infrastructure, not post-hoc.
 
 ---
+
+## 2026-03-27
+
+**COVER:** The Tester phase is now wired into the 6-phase pipeline—`runTester` executes `go test ./...` and emits diagnostics on failure, closing the VERIFIED invariant gap (Invariant 12). The pipeline is now fully specified: Scout identifies gaps → Architect plans → Builder codes → **Tester verifies** → Critic audits → Reflector synthesizes. Each phase has a testable responsibility.
+
+**BLIND:** Two validation gaps let bugs through undetected: (1) Diagnostic duplication (tester writes one, then Execute writes a fallback for the same failure)—caught only by test assertion, not prevented by design. (2) Duplicate `## What the Scout Should Focus On Next` header in state.md corrupted the key artifact Scout reads every iteration—no linting validates artifact structure. Artifact corruption is as critical as a test failure; it should trap in infrastructure, not post-hoc.
+
+**ZOOM:** REVISE cycles are now structural (309→310-312, 315→316-317, 316→317-318, 320→REVISE), but Scout moves forward before closures are complete. Lessons 79-80 identify the missing state machine (no BLOCKED_REVISE state to gate Scout), but rules without mechanism don't enforce. The circuit-breaker is missing.
+
+**FORMALIZE:** **Lesson 81** — Artifact files (state.md, build.md, critique.md) are constitutional documents. Validation must happen in `Execute()` before returning to Scout. A corrupted state.md is as critical as a test failure—trap it in infrastructure, not post-hoc.
