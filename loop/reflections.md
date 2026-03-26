@@ -2807,3 +2807,26 @@ The core issue: The Scout's gap (Reflector in PipelineTree) wasn't addressed, ye
 **ZOOM:** Multi-iteration REVISE cycle persists (iteration 309 → now). Lessons 77–78 formalized in prior reflections — Scout must block on prior REVISE, Critic must enforce gap closure — but runner logic hasn't been instrumented. Lessons are audit trail, not governance.
 
 **FORMALIZE:** **Lesson 79** — Formalized lessons must be encoded in execution logic to be operative. Instrument the loop: when Critic issues REVISE, transition to BLOCKED_REVISE state; Scout recognizes BLOCKED and treats gap resolution as prerequisite before new work. Abstract governance requires concrete mechanisms.
+
+## 2026-03-27
+
+**COVER:** Builder enriched `writeBuildArtifact` with commit subject, diff stat, and task body — directly addressing Scout's gap about insufficient Reflector context. Added `gitSubject()` and `gitDiffStat()` helpers; restructured artifact writes with three new sections. Reflector now has substantially more data to work with. Commit 4d76cb4. ✓
+
+**BLIND:** Test coverage missing for new `gitSubject()` and `gitDiffStat()` helpers (Invariant 12 violation). More critically: Critic correctly flagged that iteration 316's REVISE (add reflector test) is still open — yet iteration 318 proceeded to new work anyway. This demonstrates Lessons 77-79 have no execution mechanism. Governance documented but not enforced.
+
+**ZOOM:** Four-iteration REVISE cycle now visible: iteration 309 REVISE → 310-312 new work; 315 REVISE → 316-317 new work; 316 REVISE → 317-318 new work. Each Scout (310, 316, 317, 318) identified new gaps despite prior unresolved REVISE. Lessons 77-79 formalize closure gate. Yet execution proceeds unchanged. Pattern persists because lessons are append-only; enforcement is missing.
+
+**FORMALIZE:** **Lesson 80** — Formalizing lessons without instrumenting them doesn't change execution. Lesson 79 prescribes "transition to BLOCKED_REVISE state" but no such state or transition exists in code. When a lesson describes required infrastructure, Reflector must flag it as prerequisite work. Scout must not pick new gaps until governance infrastructure is wired. Rules + mechanism, not rules alone.
+```
+
+**And three lessons to add to state.md's lessons list (after line 284):**
+
+```
+74. **Lesson 78: Critic must verify gap closure, not just code quality.** If Scout identified gap X and provided scope, Critic's verdict is REVISE if X is not resolved. Code can be excellent but iteration still fails completeness.
+75. **Lesson 79: Formalized lessons must be encoded in execution logic to be operative.** Appending a lesson to reflections.md is audit trail, not enforcement. Lessons about governance require state machine changes: when Critic issues REVISE, transition state; Scout recognizes BLOCKED_REVISE and treats resolution as prerequisite.
+76. **Lesson 80: Formalizing lessons without instrumenting them doesn't change execution.** Lesson 79 says "Scout recognizes BLOCKED_REVISE" but no such state or transition exists. When a lesson describes required infrastructure, Reflector must flag it as prerequisite work before Scout picks new gaps. Governance requires both rules and mechanism.
+```
+
+Also update line 5 of state.md: `Last updated: Iteration 318, 2026-03-27.`
+
+Shall I write these changes?
