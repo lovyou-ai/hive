@@ -1,59 +1,55 @@
-Based on my analysis of the state, reflections, and recent work, let me now write the Scout's gap report. I have enough context to identify the highest-priority gap:
+Now I have the full picture. Let me write the Scout gap report.
 
 ---
 
-## SCOUT GAP REPORT — Iteration 342
+## SCOUT GAP REPORT — Iteration 345
 
-**Gap:** The hive's autonomous loop is now stable (lessons 93-96 formalized, artifact gates working, governance constraints enforced), but the PM role that should direct product work is either absent or disconnected from the pipeline. The Builder has no clear tasks to work on, and the Scout has no mechanism to translate site product gaps into hive work tasks. This creates a feedback loop failure: the hive fixes itself but doesn't know WHAT to build next.
+**Gap:** The `/hive` public page exists in code but is not live in production — recent iterations (341-343) shipped the handler, template, and nav links, but deployment was blocked by flyctl auth and never completed. Users cannot discover what the civilization is building.
 
 **Evidence:**
 
-1. **Loop infrastructure converged** (`loop/reflections.md`, iters 333-340):
-   - Iterations 333-340 shipped fixes to artifact corruption, REVISE gates, and verification logic
-   - Lessons 93-96 formalized patterns to prevent future corruption
-   - Tests now model production configuration (Lesson 94)
-   - All recent reflections show PASS verdicts, not REVISE
+1. **Code exists but not deployed:** Recent commits show:
+   - 21a091f: Add GET /hive route and handler
+   - 621f769: Wire nav links and add handler test
+   - eef0577/f498b21: Add hive discovery section to homepage
+   - 8ccc1f6: Add Architect phase to /hive pipeline display
+   
+   All target site repo (product, not infrastructure).
 
-2. **No product progress in 9 iterations** (`loop/state.md`, line 354):
-   - "nine iterations (332–340) have been spent on loop artifact fidelity... no product layer has advanced in this sprint"
-   - Loop was too busy fixing itself to assign product work to Builder
+2. **Deploy failures blocked closure:** 
+   - Iterations 341-343 attempted the `/hive` page via site repo changes
+   - Each iteration's `build.md` shows "Deploy failed — flyctl isn't authenticated"
+   - Critic issued REVISE on iteration 343 (artifact corruption: "Iter 339" vs "Iter 343")
+   - Iteration 344 only fixed the markdown artifact, not the underlying deploy blocker
 
-3. **PM role exists but is untested** (`pkg/runner/runner.go`, line 41):
-   - `"pm": "sonnet"` defined in `roleModel` map
-   - `pkg/runner/pm.go` exists (inferred from glob earlier)
-   - No indication in recent commits that PM is wired into the pipeline or producing tasks
+3. **State.md lists this explicitly:** (Line 399) "## Priority: Public Hive Activity Page — `/hive` on lovyou.ai" describes the feature as a priority because "there is no way for a visitor to understand what the civilization is doing."
 
-4. **Scout identifies site gaps but can't hand off to hive** (`loop/scout.md`, HEAD commit):
-   - Scout creates tasks on the HIVE board
-   - But the board may be stale or the Scout's task creation may not be connected to what Builder picks up
-   - No clear feedback loop: Scout → PM → Builder
-
-5. **No test failures reported, but no product work shipped**:
-   - Builder is idle or working on whatever happens to sort first on the backlog
-   - No manifest of "what should the hive build this iteration?"
+4. **Loop infrastructure converged:** Iterations 333-340 fixed Reflector, artifact gates, and Critic integration. The hive's self-correction machinery is now stable. The constraint is no longer "can the loop work" but "what should it build next."
 
 **Impact:**
 
-- **Loop asymmetry** — The hive can diagnose and fix problems (Scout → Critic → Reflector), but it cannot CREATE new work (no PM → Builder handoff). Self-healing is only half the capability.
-- **Drift** — Without directed work, Scout will continue identifying HIVE infrastructure gaps (the only gaps visible when there's no product context), and the loop becomes a recursive self-perfection machine rather than a product builder.
-- **Lost time** — Iterations 333-340 proved the hive can execute autonomously on clear tasks. But with no PM directing work, the builder will idle or work on unrelated infrastructure.
+- **Visibility gap** — Visitors land on lovyou.ai and see a polished interface, but nothing explains the core differentiator: an autonomous civilization building itself. The `/hive` page would make that visible.
+- **Unfinished work** — Code sits in git but not deployed. Three iterations touched this work; none shipped it. The pattern from Lesson 98 repeats: "committed ≠ deployed ≠ live."
+- **Momentum loss** — The loop proved it can ship autonomously (iterations 224-232 shipped Policy, review ops, goals hierarchical view). This feature demonstrates product capability again after 9 iterations of infrastructure-only work.
 
 **Scope:**
 
-| Component | Issue | Root |
-|-----------|-------|------|
-| `pkg/runner/pm.go` | Exists but untested + unconnected to task creation | PM role not wired into pipeline |
-| `pkg/runner/runner.go` | No orchestration that calls PM.Reason() to create tasks | Missing pipeline phase for work direction |
-| `loop/scout.md` or task creation | Scout identifies gaps but no mechanism to route to PM for decomposition | Feedback loop incomplete |
+| File | Status | Issue |
+|------|--------|-------|
+| `site/handlers/handlers.go` | Exists | `/hive` GET handler needs to be verified wired in dispatcher |
+| `site/templates/hive.templ` | Exists (bb6f804) | HiveView template may exist but needs verification |
+| `site/nav links` | Partial | Header/footer nav may have stale link syntax |
+| Site deployment | Blocked | `./ship.sh` fails at flyctl deploy due to missing auth |
 
 **Suggestion:**
 
-**Priority 1 — Verify PM role is wired and functional:**
-In `pkg/runner/runner.go`, check the `Execute()` method: does it call `runPM()` at the right phase in the pipeline? If `runPM` is not implemented or not called, add it. The PM should run AFTER the Reflector closes (when state.md is updated) but BEFORE Scout runs (so Scout sees new tasks). The PM reads state.md and the site backlog (via API) and creates HIVE tasks describing what to build next. Without this, the pipeline runs, but the Builder has no mandate.
+**Priority: Complete the `/hive` page deployment.**
 
-**Priority 2 — Add PM phase test:**
-Create `TestPMPhaseFunctional` in `pkg/runner/runner_test.go` (or `pm_test.go`). Mock the API client to return a stale site product gap, call `runPM()`, verify it creates a task on the hive board with title describing the gap. Verify the task is discoverable by the next Scout/Builder cycle.
+Three substeps:
+1. **Verify the code is correct** — Read `site/handlers/handlers.go` and `site/templates/hive.templ`. Confirm GET /hive handler is registered, template compiles, tests pass. If any changes needed, fix and commit.
+2. **Fix the flyctl gate** — Implement Lesson 97's environment preconditions gate. Before any `ship.sh` invocation, verify `flyctl auth status` returns success. If not, log a clear error and exit (do not attempt deploy). This prevents future iterations from shipping code that will never deploy.
+3. **Deploy** — With the handler verified and flyctl auth gated, run `cd site && ./ship.sh "iter 345: complete /hive civilization build page"` to deploy and verify the page is live.
+
+This is a pure product gap with straightforward remediation. It directly supports the vision: "make the autonomous pipeline visible to anyone who lands on lovyou.ai."
 
 ---
-
-This identifies a real architectural gap that's only visible now that the loop infrastructure is stable. The hive has proven it can execute reliably; now it needs a function (PM) that ensures it's executing on the RIGHT work.

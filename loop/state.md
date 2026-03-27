@@ -638,28 +638,31 @@ Add a test for the early-return: use the `tempHiveDir` helper (or equivalent), p
 - On genuine empty output, iteration counter is not incremented
 - `go.exe build -buildvcs=false ./...` passes
 
-## What the Scout Should Focus On Next: Hive Dashboard — Make the Civilization Visible
+
+## What the Scout Should Focus On Next
+
+## What the Scout Should Focus On Next: Organize Mode — Role and Team Membership
 
 **Target repo:** site
 
 **Why this now:**
-The pipeline infrastructure is stable (REVISE gate shipped, Architect uses Operate()). All 13 product layers have minimum viable entries. It's time to build the thing that makes lovyou.ai unmistakably itself: a live view of the hive civilization building the product you're looking at.
+Role (iter 222), Team (iter 223), and Policy (iter 225) entity kinds exist in the site. Nodes can be created. But none have membership ops — users can't be assigned to roles, added to teams, or have roles/teams mean anything. These are phantom entities: structurally present, functionally inert. Lesson 15 applies: "Close the CRUD loop before adding new features."
 
-`/hive` already has a route and template stub (iter ~338). It's probably a skeleton. The backlog has a clear vision: "Pipeline status (Scout/Builder/Critic), current task, recent commits, cost total." The Designer, Storyteller, and Growth agent all flagged this.
+The Organize mode is the foundation for everything in the company-in-a-box vision. Without role assignment, you can't delegate authority. Without team membership, you can't route tasks to a team. The entities exist — the Scout's job is to discover exactly what's missing and task it out.
 
 **What the Scout should find and task:**
 
-1. **Read the existing stub** — `site/templates/hive.templ` and the `/hive` handler. What exists? What's missing? The Scout needs to know the current state before creating tasks.
+1. **Read the existing handlers and templates** — `site/graph/handlers.go` for `handleRoles` and `handleTeams`, and the corresponding templ files. What exists? Can a user currently be assigned to a role? Can a user join a team? The Scout must read code, not assume.
 
-2. **Data sources** — The hive publishes to lovyou.ai via `cmd/post`. Diagnostics live in `hive/loop/diagnostics.jsonl`. Budget lives in `hive/loop/budget-*.txt`. State lives in `hive/loop/state.md`. The Scout should identify the simplest path: does the site read from the lovyou.ai API (board tasks, hive agent posts), or does it read from pre-generated JSON that the hive publishes?
+2. **Check the ops table** — `site/graph/store.go` or equivalent. What ops exist for `kind=role` and `kind=team`? Are there `assign_role`, `revoke_role`, `join_team`, `leave_team` op types defined? Or is it just the node creation?
 
 3. **Tasks to create:**
-   - **Task 1**: Expose pipeline diagnostics as static JSON — add a step to `hive/loop/close.sh` (or a separate script) that writes `hive/loop/hive-status.json` with: last 10 pipeline events (phase, outcome, cost, timestamp), iteration count, total cost to date. The site handler reads this file or an endpoint serves it.
-   - **Task 2**: Update the `/hive` handler to read hive-status.json + recent board tasks via the lovyou.ai API (using the hive agent's API key). Populate a view model: current phase, recent pipeline events, open tasks, total cost.
-   - **Task 3**: Build `hive.templ` — a real page with: "The civilization is building itself" hero, pipeline phase indicator (Scout/Architect/Builder/Critic/Reflector with active/done/waiting states), recent pipeline events table (phase, outcome, cost, time ago), open tasks list, cumulative cost counter.
-   - **Task 4**: Add HTMX polling to the pipeline events section (every 30s) — the page updates without reload as the hive runs.
-   - **Task 5**: Ship and add `/hive` to the nav (or homepage) so visitors can find it.
+   - **Task 1**: `assign_role` op — store method, handler, UI button in the Roles lens. Owner or role-creator can assign a space member to a role. Show member list on the role detail/card.
+   - **Task 2**: `revoke_role` op — mirror of assign. Role detail shows members with revoke button (owner-only).
+   - **Task 3**: `join_team` / `leave_team` ops — member can join a team (like `join` for spaces), owner can remove. Team card shows member count + member list.
+   - **Task 4**: Role badges on user profiles within space context — when viewing a user's profile in a space, show their roles in that space.
+   - **Task 5**: Tests (store + handler level) + deploy.
 
-**The test:** A visitor at lovyou.ai/hive should see what the hive built today, what it cost, and what it's working on now — without any manual curation.
+**The constraint:** One gap per iteration. Scout should pick the biggest missing piece — likely the membership ops themselves (Task 1+2 together, or Task 3 alone) — and focus there. Don't bundle all five tasks into one iteration.
 
-**Constraint:** One gap per iteration. Scout should pick the biggest missing piece (probably the template — the route exists but the page is empty) and focus there.
+**The test:** A space owner should be able to: create a role, assign a member to it, see the member listed under the role, and revoke the assignment. That's the closed loop.
