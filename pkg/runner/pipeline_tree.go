@@ -5,7 +5,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/lovyou-ai/hive/pkg/api"
 )
@@ -47,24 +49,26 @@ func NewPipelineTree(r *Runner) *PipelineTree {
 	if r.cfg.APIClient != nil {
 		ft = &clientFixTasker{client: r.cfg.APIClient, slug: r.cfg.SpaceSlug}
 	}
-	return &PipelineTree{
-		cfg: r.cfg,
-		phases: []Phase{
-			{Name: "scout", Run: func(ctx context.Context) error { r.runScout(ctx); return nil }},
-			{Name: "architect", Run: func(ctx context.Context) error { r.runArchitect(ctx); return nil }},
-			{Name: "builder", Run: func(ctx context.Context) error { r.runBuilder(ctx); return nil }},
-			{Name: "tester", Run: func(ctx context.Context) error { return r.runTester(ctx) }},
-			{Name: "critic", Run: func(ctx context.Context) error { r.runCritic(ctx); return nil }},
-			{Name: "reflector", Run: func(ctx context.Context) error {
-				prev := r.cfg.OneShot
-				r.cfg.OneShot = true
-				r.runReflector(ctx)
-				r.cfg.OneShot = prev
-				return nil
-			}},
-		},
+	pt := &PipelineTree{
+		cfg:       r.cfg,
 		fixTasker: ft,
 	}
+	pt.phases = []Phase{
+		{Name: "scout", Run: func(ctx context.Context) error { r.runScout(ctx); return nil }},
+		{Name: "architect", Run: func(ctx context.Context) error { r.runArchitect(ctx); return nil }},
+		{Name: "builder", Run: func(ctx context.Context) error { r.runBuilder(ctx); return nil }},
+		{Name: "tester", Run: func(ctx context.Context) error { return r.runTester(ctx) }},
+		{Name: "critic", Run: func(ctx context.Context) error { r.runCritic(ctx); return nil }},
+		{Name: "loop-clean-check", Run: func(ctx context.Context) error { return pt.loopDirtyCheck(ctx) }},
+		{Name: "reflector", Run: func(ctx context.Context) error {
+			prev := r.cfg.OneShot
+			r.cfg.OneShot = true
+			r.runReflector(ctx)
+			r.cfg.OneShot = prev
+			return nil
+		}},
+	}
+	return pt
 }
 
 // Execute runs each phase in order. On the first failure it emits a PhaseEvent
@@ -89,6 +93,35 @@ func (pt *PipelineTree) Execute(ctx context.Context) error {
 			pt.callFixTasker(ctx, phase.Name)
 			return fmt.Errorf("phase %s failed: diagnostics written without error return", phase.Name)
 		}
+	}
+	return nil
+}
+
+// loopDirtyCheck returns an error if any loop/ files other than
+// loop/diagnostics.jsonl are uncommitted in cfg.RepoPath.
+func (pt *PipelineTree) loopDirtyCheck(_ context.Context) error {
+	if pt.cfg.RepoPath == "" {
+		return nil
+	}
+	cmd := exec.Command("git", "status", "--porcelain", "--", "loop/")
+	cmd.Dir = pt.cfg.RepoPath
+	out, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("git status: %w", err)
+	}
+	var dirty []string
+	for _, line := range strings.Split(string(out), "\n") {
+		if len(line) < 3 {
+			continue
+		}
+		path := strings.TrimSpace(line[2:])
+		if path == "loop/diagnostics.jsonl" {
+			continue
+		}
+		dirty = append(dirty, path)
+	}
+	if len(dirty) > 0 {
+		return fmt.Errorf("uncommitted loop/ artifacts: %s", strings.Join(dirty, ", "))
 	}
 	return nil
 }

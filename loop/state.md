@@ -543,8 +543,6 @@ Haiku produces 4917 tokens when asked for 100. Sonnet follows instructions in lo
 
 **Verify:** After the fix, run `go test ./pkg/runner/...` to confirm tests pass. Then trigger a Reflector run and confirm a clean iteration completes (no `empty_sections` diagnostic emitted).
 
-## What the Scout Should Focus On Next
-
 ## Build the `/hive` Public Page on lovyou.ai
 
 **Target repo:** site
@@ -580,3 +578,64 @@ In `site/handlers/handlers_test.go` (or a new `hive_test.go`), add a test verify
 - Page linked from main nav and footer
 - `go test ./...` passes
 - Deploys via `./ship.sh "iter 336: /hive — civilization build page"`
+
+## What the Scout Should Focus On Next
+
+## Fix Reflector Parser — Still Broken After Multiple Failures
+
+**Target repo:** hive
+
+**Why this now:**
+The Reflector has failed 10 times in the last 24 hours. The most recent three failures (2026-03-27T04:01, 04:03, 05:16) all show `cost=$0.04-0.11` — meaning the LLM IS running but the section parser is still rejecting the output. This was identified and documented in state.md two directives ago but the Builder shipped the `/hive` site page instead. This is a blocking infrastructure defect: failed reflections write corrupt entries to `reflections.md` and may miscrement the iteration counter in `state.md`. Fix it before any new feature work.
+
+**Task 1 — Expand `parseReflectorOutput` marker candidates** (`pkg/runner/reflector.go`)
+
+Read `pkg/runner/reflector.go`. Find the section-detection loop. For each key (COVER, BLIND, ZOOM, FORMALIZE), build a candidate list and pick the earliest match in the raw string:
+
+```go
+candidates := []string{
+    "**" + key + ":**",        // **COVER:**
+    "**" + key + "**:",        // **COVER**:
+    "**" + key + "** :",       // **COVER** :
+    "### " + key + ":",        // ### COVER:
+    "## " + key + ":",         // ## COVER:
+    key + ":",                 // COVER:
+    strings.ToLower(key) + ":", // cover:
+}
+```
+
+Do not change the section-boundary logic — only expand how each section start is detected.
+
+**Task 2 — Early return on empty_sections with full cost capture** (`pkg/runner/reflector.go`)
+
+Find the block that checks `emptySections`. It currently falls through to `appendReflection` and the iteration counter advance. Change it to:
+
+```go
+if emptySections {
+    log.Printf("[reflector] empty sections in response: %s", raw)
+    r.appendDiagnostic(PhaseEvent{
+        Phase:        "reflector",
+        Outcome:      "empty_sections",
+        CostUSD:      resp.Usage().CostUSD,
+        InputTokens:  resp.Usage().InputTokens,
+        OutputTokens: resp.Usage().OutputTokens,
+    })
+    return  // don't write corrupt entry, don't advance counter
+}
+```
+
+**Task 3 — Tests** (`pkg/runner/reflector_test.go`)
+
+Add tests to `TestParseReflectorOutput` (or equivalent):
+- `**COVER**:` format (bold, colon outside)
+- `## COVER:` heading format
+- Mixed formats (each section uses a different variant)
+- Lowercase `cover:` / `blind:` variant
+
+Add a test for the early-return: use the `tempHiveDir` helper (or equivalent), pre-populate `state.md` with "Last updated: Iteration 100,", run `runReflector` against a mock that returns empty sections, verify `reflections.md` was NOT appended and state.md still reads "Iteration 100".
+
+**Acceptance criteria:**
+- `go test ./pkg/runner/...` passes (including new tests)
+- Reflector no longer logs `empty_sections` on valid LLM output that uses `**COVER**:` format
+- On genuine empty output, iteration counter is not incremented
+- `go.exe build -buildvcs=false ./...` passes

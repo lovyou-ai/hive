@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -199,15 +200,15 @@ func TestPipelineTreeTesterFailureWritesExactlyOneDiagnostic(t *testing.T) {
 	}
 }
 
-// TestNewPipelineTreeHasSixPhases verifies that NewPipelineTree wires exactly
-// six phases: scout, architect, builder, tester, critic, reflector — in that order.
-func TestNewPipelineTreeHasSixPhases(t *testing.T) {
+// TestNewPipelineTreeHasSevenPhases verifies that NewPipelineTree wires exactly
+// seven phases in order, with loop-clean-check immediately before reflector.
+func TestNewPipelineTreeHasSevenPhases(t *testing.T) {
 	hiveDir := makeHiveDir(t, "# State\n", nil)
 	r := New(Config{HiveDir: hiveDir})
 
 	pt := NewPipelineTree(r)
 
-	want := []string{"scout", "architect", "builder", "tester", "critic", "reflector"}
+	want := []string{"scout", "architect", "builder", "tester", "critic", "loop-clean-check", "reflector"}
 	if len(pt.phases) != len(want) {
 		t.Fatalf("phase count: got %d, want %d", len(pt.phases), len(want))
 	}
@@ -215,5 +216,62 @@ func TestNewPipelineTreeHasSixPhases(t *testing.T) {
 		if pt.phases[i].Name != name {
 			t.Errorf("phase[%d]: got %q, want %q", i, pt.phases[i].Name, name)
 		}
+	}
+}
+
+// TestLoopDirtyCheckBlocksReflector verifies that Execute returns an error and
+// emits a diagnostic when loop/ contains uncommitted artifacts, and that the
+// reflector phase is never reached.
+func TestLoopDirtyCheckBlocksReflector(t *testing.T) {
+	repoDir := t.TempDir()
+	hiveDir := makeHiveDir(t, "# State\n", nil)
+
+	runGit := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repoDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	runGit("init")
+	runGit("config", "user.email", "test@test.com")
+	runGit("config", "user.name", "Test")
+	if err := os.WriteFile(filepath.Join(repoDir, "README.md"), []byte("# test\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runGit("add", ".")
+	runGit("commit", "-m", "initial")
+
+	// Create an uncommitted loop/build.md in the repo.
+	loopDir := filepath.Join(repoDir, "loop")
+	if err := os.MkdirAll(loopDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(loopDir, "build.md"), []byte("# Build\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	reflectorCalled := false
+	pt := &PipelineTree{
+		cfg: Config{HiveDir: hiveDir, RepoPath: repoDir},
+	}
+	pt.phases = []Phase{
+		{Name: "loop-clean-check", Run: func(ctx context.Context) error { return pt.loopDirtyCheck(ctx) }},
+		{Name: "reflector", Run: func(_ context.Context) error {
+			reflectorCalled = true
+			return nil
+		}},
+	}
+
+	err := pt.Execute(context.Background())
+	if err == nil {
+		t.Fatal("Execute returned nil, want error for dirty loop/ files")
+	}
+	if reflectorCalled {
+		t.Error("reflector was called despite loop-clean-check failing")
+	}
+	if countDiagnostics(hiveDir) == 0 {
+		t.Error("no diagnostic emitted for loop-clean-check failure")
 	}
 }

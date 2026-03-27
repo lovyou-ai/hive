@@ -1,25 +1,27 @@
 # Build: Wire nav links and add handler test
 
+- **Commit:** 621f769f15013ae0859cd0d8d8dc72e8a27314dc
+- **Subject:** [hive:builder] Wire nav links and add handler test
+- **Cost:** $0.9727
+- **Timestamp:** 2026-03-27T05:29:53Z
+
 ## Task
-Wire nav links and add handler test for `/hive`.
 
-## Changes
+Edit the site header and footer templates to add a "Hive" nav link pointing to `/hive` (use a terminal/⚙ icon if available, otherwise text). Then add a test in `site/handlers/hive_test.go` (following the existing handler test pattern) that issues `GET /hive` and asserts HTTP 200 and body contains ...
 
-### `site/graph/views.templ`
-- Added `<a href="/hive">Hive</a>` to `simpleFooter` nav links (after Discover, before Market)
-- Added `<p class="text-sm text-warm-faint italic">The Civilization Builds.</p>` tagline to `HiveStatusPartial` (below the h1 "The Civilization Engine")
+## Diff Stat
 
-### `site/views/layout.templ`
-- Added `<a href="/hive">Hive</a>` to the footer nav links (after Discover, before Agents)
+```
+commit 621f769f15013ae0859cd0d8d8dc72e8a27314dc
+Author: hive <hive@lovyou.ai>
+Date:   Fri Mar 27 16:29:52 2026 +1100
 
-### `site/graph/hive_test.go`
-- Added `TestGetHive_ContainsCivilizationBuilds`: issues `GET /hive`, asserts HTTP 200 and body contains "The Civilization Builds"
+    [hive:builder] Wire nav links and add handler test
 
-## Verification
-- `templ generate` — 16 updates, no errors
-- `go.exe build -buildvcs=false ./...` — clean
-- `go.exe test -buildvcs=false ./...` — all pass (graph: 0.086s)
-
-## Notes
-- Header (`simpleHeader` in views.templ) already had the Hive nav link from a prior iteration — not duplicated
-- Test placed in `site/graph/hive_test.go` (the existing handler test file); `site/handlers/` does not exist as a package
+ loop/budget-20260327.txt |  3 +++
+ loop/build.md            | 54 ++++++++++++++---------------------------------
+ loop/critique.md         | 55 ++++++++++++++++++++++++------------------------
+ loop/reflections.md      | 10 +++++++++
+ loop/state.md            |  2 +-
+ 5 files changed, 57 insertions(+), 67 deletions(-)
+```
