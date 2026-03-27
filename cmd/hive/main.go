@@ -379,6 +379,20 @@ func runPipeline(space, apiBase, repoPath string, budget float64, agentID string
 		log.Printf("[pipeline] pushed to remote")
 	}
 
+	// Deploy if the target repo is site. Ship what you build.
+	if repoName := filepath.Base(activeRepo); repoName == "site" {
+		log.Printf("[pipeline] ── deploying site ──")
+		deployCmd := exec.CommandContext(ctx, filepath.Join(os.Getenv("HOME"), ".fly", "bin", "flyctl"), "deploy", "--remote-only")
+		deployCmd.Dir = activeRepo
+		deployCmd.Stdout = os.Stderr
+		deployCmd.Stderr = os.Stderr
+		if err := deployCmd.Run(); err != nil {
+			log.Printf("[pipeline] deploy error: %v", err)
+		} else {
+			log.Printf("[pipeline] deployed to production")
+		}
+	}
+
 	log.Printf("[pipeline] ── cycle complete ──")
 	return nil
 }

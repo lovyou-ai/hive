@@ -1,43 +1,18 @@
-# Build: site/handlers/hive.go: standalone hive dashboard handlers
+# Fix: update stale /hive tests after HivePage redesign
 
-## Task
+## What changed
 
-Create `site/handlers/hive.go` with two standalone `http.HandlerFunc`-compatible functions:
-- `HiveDashboard(w, r)` — renders full hive dashboard page
-- `HiveFeed(w, r)` — returns JSON of last 10 phase history entries
+**`site/graph/hive_test.go`**
+- Removed `TestGetHive_ContainsCivilizationBuilds` — asserted old tagline "The Civilization Builds" that HivePage no longer renders; replaced with `TestGetHive_ContainsHiveFeed` which checks for the `hive-feed` element that HivePage always renders
+- Removed `TestGetHive_RendersMetrics` — asserted old stat card labels ("Features shipped", "Total autonomous spend", "Avg cost") that HivePage no longer renders
+- Removed `TestGetHive_RendersCurrentlyBuilding` — asserted "Currently building" section with "Idle" text and task title; this section no longer exists in HivePage
+- Removed unused `"fmt"` import (was only used by the dropped metrics test)
 
-## What Was Built
+## Why
 
-**New files:**
-- `site/handlers/hive.go` — new `handlers` package with:
-  - `DiagEntry{Phase,Outcome,Cost,Timestamp string}` — all-string type for JSON marshaling
-  - `HiveDashboardData{Iteration,Phase,LastBuildTitle,BuildCost,PhaseHistory,RecentCommits}` — collected dashboard state
-  - `readHiveState(loopDir)` — parses `Iteration:` and `Phase:` from `state.md`
-  - `readHiveBuild(loopDir)` — extracts first H1 title and `$X.XX` cost from `build.md`
-  - `readHiveDiagnostics(loopDir, limit)` — reads last N lines from `diagnostics.jsonl`, newest-first, malformed lines skipped
-  - `readHiveCommits(repoDir)` — runs `git log --oneline -10` (bounded constant, not user input)
-  - `buildHiveDashboardData()` — collects all data using `HIVE_REPO_PATH` env var or `../hive` sibling default
-  - `HiveDashboard` — builds data, converts to `graph.*` types, renders `graph.HivePage`
-  - `HiveFeed` — builds data, caps at `maxFeedEntries=10`, returns JSON with `Content-Type: application/json`
+The new `HivePage` renders: iteration counter, phase pill, last build title, phase timeline (`hive-feed` HTMX element), and recent commits. It no longer fetches posts for stat cards or tasks for a "currently building" section. `TestHiveDashboard` already covers the core HivePage content assertions (iteration number, phase, build title).
 
-- `site/handlers/hive_test.go` — 14 tests covering:
-  - `readHiveState`: happy path, missing file
-  - `readHiveBuild`: happy path, missing file
-  - `readHiveDiagnostics`: empty file (nil), malformed line skip, limit enforcement, cost formatting, zero cost, empty dir
-  - `HiveFeed`: JSON response, empty dir (no 500), max entries cap
-  - `HiveDashboard`: returns 200 with loop files, returns 200 with no files (no 500s)
+## Verification
 
-**No existing files modified.**
-
-## Build verification
-
-```
-go.exe build -buildvcs=false ./...   → exit 0
-go.exe test -buildvcs=false ./...    → all pass (auth, graph, handlers)
-```
-
-## Addresses
-
-- Critic issue 4: `loopDir` production default — now uses `HIVE_REPO_PATH` env var; no empty-string default in handlers
-- Critic issue 3: git subprocess uses `maxCommits=10` constant, not user-controlled input
-- Critic issue 5: all new helpers have tests
+- `go.exe build -buildvcs=false ./...` — clean
+- `go.exe test -buildvcs=false ./...` — all pass (graph tests skip without DB, as expected)

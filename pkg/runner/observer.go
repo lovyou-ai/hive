@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -21,7 +22,8 @@ func (r *Runner) runObserver(ctx context.Context) {
 	log.Printf("[observer] tick %d: observing product", r.tick)
 
 	// Build the observation instruction.
-	instruction := buildObserverInstruction(r.cfg.RepoPath)
+	apiKey := os.Getenv("LOVYOU_API_KEY")
+	instruction := buildObserverInstruction(r.cfg.RepoPath, r.cfg.SpaceSlug, apiKey)
 
 	// Use Operate() — the Observer needs file access to grep patterns, read templates, etc.
 	op, ok := r.cfg.Provider.(decision.IOperator)
@@ -45,35 +47,7 @@ func (r *Runner) runObserver(ctx context.Context) {
 	r.dailyBudget.Record(result.Usage.CostUSD)
 	log.Printf("[observer] observation done (cost=$%.4f)", result.Usage.CostUSD)
 
-	// Parse tasks from the observation.
-	tasks := parseObserverTasks(result.Summary)
-	if len(tasks) == 0 {
-		log.Printf("[observer] no actionable findings")
-		if r.cfg.OneShot {
-			r.done = true
-		}
-		return
-	}
-
-	// Create tasks for the most important findings (max 2 per run).
-	created := 0
-	for _, t := range tasks {
-		if created >= 2 {
-			break
-		}
-
-		task, err := r.cfg.APIClient.CreateTask(r.cfg.SpaceSlug, t.title, t.desc, t.priority)
-		if err != nil {
-			log.Printf("[observer] create task error: %v", err)
-			continue
-		}
-		log.Printf("[observer] created task %s: %s", task.ID, t.title)
-
-		if r.cfg.AgentID != "" {
-			_ = r.cfg.APIClient.ClaimTask(r.cfg.SpaceSlug, task.ID)
-		}
-		created++
-	}
+	// Observer creates tasks directly via Operate() — no text parsing needed.
 
 	if r.cfg.OneShot {
 		r.done = true
@@ -169,41 +143,42 @@ func parseObserverTasks(content string) []observerTask {
 	return tasks
 }
 
-func buildObserverInstruction(repoPath string) string {
-	return fmt.Sprintf(`You are the Observer. Your job is to look at this product as a human user would and identify what's broken, inconsistent, or missing.
+func buildObserverInstruction(repoPath, spaceSlug, apiKey string) string {
+	return fmt.Sprintf(`You are the Observer. Audit both the product AND the hive's own graph for integrity.
 
 ## Your repo: %s
 
-## What to check
+## Part 1: Product Audit
 
-1. **Consistency audit:** Grep for all entity kind constants (KindTask, KindPost, etc). For EACH kind, verify:
-   - Handler exists (handleX function)
-   - Route registered (GET /app/{slug}/X)
-   - Sidebar nav entry exists
-   - Mobile nav entry exists
-   - Search/filter works on the view
-   - Create form exists
-   - Added to intend allowlist (check the "if nodeKind != KindProject &&" line)
+1. **Consistency:** Grep entity kind constants. For each, verify handler, route, sidebar nav, create form exist.
+2. **Route health:** curl key pages — https://lovyou.ai/, /discover, /hive — check status codes.
+3. **User flow:** Is there a clear path from landing → sign in → create space → use product?
 
-2. **Route health:** List all registered routes. Check for dead routes or missing handlers.
+## Part 2: Graph Integrity Audit
 
-3. **Live check:** Run 'curl -s -o /dev/null -w "%%{http_code}" https://lovyou.ai/' and similar for key pages.
+Check the hive's own data on the board for structural issues:
 
-4. **User flow gaps:** Read the main templates. Is there a clear path from landing → sign in → create space → use the product? Any dead ends?
+curl -s -H "Authorization: Bearer %s" -H "Accept: application/json" "https://lovyou.ai/app/%s/board"
 
-5. **Spec vs reality:** Read the CLAUDE.md or any spec files. Does the code deliver what was specified?
+Look for:
+1. **Unlinked nodes** — critiques/claims that don't reference the build they review
+2. **Stale data** — open tasks that have been active for days with no progress
+3. **Title compounding** — tasks with "Fix: Fix: Fix:..." prefixes (should be stripped)
+4. **Schema violations** — any field using display names where IDs should be used (Invariant 11)
+5. **Orphaned milestones** — PM milestones still open after their subtasks completed
 
-## Output format
+Also use knowledge.search to check:
+- Are lessons (claims) being asserted? Or just documents?
+- Are reflections searchable? Or only in flat files?
+- Do agents use the right entity kind for each artifact?
 
-For each finding, output:
-TASK_TITLE: <one-line title>
-TASK_PRIORITY: <urgent|high|medium|low>
-TASK_DESCRIPTION: <2-3 sentences, specific files to change>
+## Output
 
-Report at most 2 findings — the most important ones. If everything looks good, say "No issues found."
+Create tasks directly for the most important findings (max 2):
 
-## Honest limits
-You cannot see the rendered UI. You cannot judge aesthetics or feel. Focus on what you CAN verify: code completeness, route health, pattern consistency, spec compliance.`, repoPath)
+curl -s -X POST -H "Authorization: Bearer %s" -H "Content-Type: application/json" -H "Accept: application/json" "https://lovyou.ai/app/%s/op" -d '{"op":"intend","kind":"task","title":"<TITLE>","description":"<DESCRIPTION>","priority":"<PRIORITY>"}'
+
+If everything looks good, say "No issues found."`, repoPath, apiKey, spaceSlug, apiKey, spaceSlug)
 }
 
 // Helper: grep registered routes from handlers.go.
