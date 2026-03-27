@@ -1,30 +1,29 @@
 # Build: Capture Operate summary in writeBuildArtifact
 
-- **Commit:** (pending — not yet committed)
+- **Commit:** ca23320d34446f8cdefb1be0faa8e7a5132deb72
 - **Subject:** [hive:builder] Capture Operate summary in writeBuildArtifact
-- **Cost:** $0.0000
-- **Timestamp:** 2026-03-27T00:00:00Z
+- **Cost:** $0.3393
+- **Timestamp:** 2026-03-27T05:54:00Z
 
 ## Task
 
-In `pkg/runner/runner.go`, change `writeBuildArtifact(t api.Node, costUSD float64)` to accept a third `operateSummary string` parameter. Add a `## What Was Built` section to build.md that includes the summary (truncated to 2000 chars) between the metadata block and the diff stat. In `workTask`, pass `result.Summary` as the third arg at line 337. Add a test in `pkg/runner/runner_test.go` that verifies the summary content appears in build.md output.
-
-## What Was Built
-
-- Changed `writeBuildArtifact` signature to accept `operateSummary string` as third parameter
-- Summary is truncated to 2000 chars if longer
-- Added `## What Was Built` section written after `## Task` and before `## Diff Stat`
-- Updated call site in `workTask` to pass `result.Summary`
-- Added `TestBuildArtifactContainsSummary`: verifies the summary text appears under `## What Was Built`
-- Added `TestBuildArtifactSummaryTruncated`: verifies summaries >2000 chars are truncated
-- Updated `TestBuildArtifactWritten` to pass empty string for backward compatibility
-- Build: `go.exe build -buildvcs=false ./...` — pass
-- Tests: `go.exe test ./pkg/runner/...` — pass (3.587s)
+In `pkg/runner/runner.go`, change `writeBuildArtifact(t api.Node, costUSD float64)` to accept a third `operateSummary string` parameter. Add a `## What Was Built` section to build.md that includes the summary (truncated to 2000 chars) between the metadata block and the diff stat. In `workTask`, pass...
 
 ## Diff Stat
 
 ```
-pkg/runner/runner.go      | 8 ++++++--
-pkg/runner/runner_test.go | 60 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-2 files changed, 66 insertions(+), 2 deletions(-)
+commit ca23320d34446f8cdefb1be0faa8e7a5132deb72
+Author: hive <hive@lovyou.ai>
+Date:   Fri Mar 27 16:54:00 2026 +1100
+
+    [hive:builder] Capture Operate summary in writeBuildArtifact
+
+ loop/budget-20260327.txt  |  3 ++
+ loop/build.md             | 40 +++++++++++++++---------
+ loop/critique.md          | 64 +++++++++++++++++---------------------
+ loop/reflections.md       | 10 ++++++
+ loop/state.md             |  2 +-
+ pkg/runner/runner.go      | 12 +++++--
+ pkg/runner/runner_test.go | 79 ++++++++++++++++++++++++++++++++++++++++++++++-
+ 7 files changed, 155 insertions(+), 55 deletions(-)
 ```
