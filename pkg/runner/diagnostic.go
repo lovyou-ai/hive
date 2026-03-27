@@ -10,17 +10,19 @@ import (
 )
 
 // PhaseEvent is a diagnostic event emitted by every pipeline phase.
-// Not just failures — records cost, duration, and outcome for every run.
+// Not just failures — records tokens, duration, and outcome for every run.
 // The Observer uses this to detect inefficiency, not just errors.
+// Cost is a derivative of tokens × model rate — track the raw data.
 type PhaseEvent struct {
 	Phase        string  `json:"phase"`
-	Outcome      string  `json:"outcome,omitempty"`      // "success", "failure", "revise", "skip"
+	Outcome      string  `json:"outcome,omitempty"`       // "success", "failure", "revise", "skip"
 	Error        string  `json:"error,omitempty"`
 	Preview      string  `json:"preview,omitempty"`
-	CostUSD      float64 `json:"cost_usd"`
-	DurationSecs float64 `json:"duration_secs,omitempty"` // wall clock time for this phase
+	Model        string  `json:"model,omitempty"`          // which model was used
 	InputTokens  int     `json:"input_tokens,omitempty"`
 	OutputTokens int     `json:"output_tokens,omitempty"`
+	DurationSecs float64 `json:"duration_secs,omitempty"`  // wall clock time
+	CostUSD      float64 `json:"cost_usd,omitempty"`       // derived, kept for convenience
 	Timestamp    string  `json:"timestamp"`
 }
 
