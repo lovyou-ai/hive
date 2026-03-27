@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/lovyou-ai/eventgraph/go/pkg/decision"
 )
 
 // councilMember represents one agent's voice in the council.
@@ -43,30 +45,55 @@ func RunCouncil(ctx context.Context, cfg Config) error {
 	log.Printf("[council] %d agents assembled: %s", len(members), memberNames(members))
 
 	// Each agent deliberates (concurrently for speed).
+	// Use Operate() if available so agents can search the knowledge layer.
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	totalCost := 0.0
+
+	op, canOperate := cfg.Provider.(decision.IOperator)
 
 	for i := range members {
 		wg.Add(1)
 		go func(m *councilMember) {
 			defer wg.Done()
 
-			prompt := buildCouncilPrompt(m.role, m.prompt, sharedContext, cfg.CouncilTopic)
+			if canOperate {
+				// Operate mode: agent can search knowledge, read code, check the board.
+				apiKey := os.Getenv("LOVYOU_API_KEY")
+				instruction := buildCouncilOperateInstruction(m.role, m.prompt, cfg.CouncilTopic, cfg.SpaceSlug, apiKey)
+				result, err := op.Operate(ctx, decision.OperateTask{
+					WorkDir:     cfg.HiveDir,
+					Instruction: instruction,
+				})
+				if err != nil {
+					log.Printf("[council] %s: error: %v", m.role, err)
+					m.response = fmt.Sprintf("(could not contribute: %v)", err)
+					return
+				}
 
-			resp, err := cfg.Provider.Reason(ctx, prompt, nil)
-			if err != nil {
-				log.Printf("[council] %s: error: %v", m.role, err)
-				m.response = fmt.Sprintf("(could not contribute: %v)", err)
-				return
+				mu.Lock()
+				totalCost += result.Usage.CostUSD
+				mu.Unlock()
+
+				m.response = result.Summary
+				log.Printf("[council] %s spoke ($%.4f)", m.role, result.Usage.CostUSD)
+			} else {
+				// Reason fallback: static context, no search.
+				prompt := buildCouncilPrompt(m.role, m.prompt, sharedContext, cfg.CouncilTopic)
+				resp, err := cfg.Provider.Reason(ctx, prompt, nil)
+				if err != nil {
+					log.Printf("[council] %s: error: %v", m.role, err)
+					m.response = fmt.Sprintf("(could not contribute: %v)", err)
+					return
+				}
+
+				mu.Lock()
+				totalCost += resp.Usage().CostUSD
+				mu.Unlock()
+
+				m.response = resp.Content()
+				log.Printf("[council] %s spoke ($%.4f)", m.role, resp.Usage().CostUSD)
 			}
-
-			mu.Lock()
-			totalCost += resp.Usage().CostUSD
-			mu.Unlock()
-
-			m.response = resp.Content()
-			log.Printf("[council] %s spoke ($%.4f)", m.role, resp.Usage().CostUSD)
 		}(&members[i])
 	}
 
@@ -257,6 +284,35 @@ func synthesizeCouncil(members []councilMember) string {
 	}
 
 	return b.String()
+}
+
+// buildCouncilOperateInstruction creates the instruction for a council member
+// using Operate(). The agent can search knowledge, read code, and check the
+// board before speaking — grounded deliberation, not blind opinion.
+func buildCouncilOperateInstruction(role, rolePrompt, topic, spaceSlug, apiKey string) string {
+	question := "What's the most important thing right now from your perspective? What risk or gap is invisible to others? What would you prioritize?"
+	if topic != "" {
+		question = fmt.Sprintf("The Director has focused this council on: **%s**\n\nDeliberate on this question from your role's perspective. Be deep, specific, and honest.", topic)
+	}
+
+	return fmt.Sprintf(`You are the %s, attending a council meeting of the hive.
+
+## Your Role
+%s
+
+## Your Tools
+Before speaking, SEARCH for relevant knowledge to ground your perspective:
+- Use knowledge.search to find prior work, decisions, and context
+- Use knowledge.primitives to check which ontology primitives are relevant
+- Use knowledge.get to read specific docs, blog posts, or reflections
+- Use Bash to check the board: curl -s -H "Authorization: Bearer %s" -H "Accept: application/json" "https://lovyou.ai/app/%s/board"
+
+## Your Task
+%s
+
+Search first, then speak. Ground your perspective in what you find.
+Respond in 10-20 lines. Be specific — name files, features, primitives.
+Disagree with other roles if you must. Name what's missing.`, role, rolePrompt, apiKey, spaceSlug, question)
 }
 
 func truncateForPost(s string, maxLen int) string {
