@@ -1,31 +1,27 @@
-# Build: Fix: Knowledge API omits causes field on claim nodes — Invariant 2
+# Build Report — Fix causes field absent from /knowledge API response
 
-## What Was Built
+## Gap
+Invariant 2 (CAUSALITY) violation: all 78 claims in `/knowledge` JSON response had no `causes` key at all. The field was declared `json:"causes,omitempty"` on the `Node` struct — Go's `omitempty` omits slices when empty, so every claim with no causes had the field silently dropped from the response.
 
-Fixed `syncClaims` in `cmd/post/main.go` to include the `causes` field when decoding claim nodes from the `/knowledge` API response and writing them to `loop/claims.md`. Added `TestSyncClaimsWritesCauses` to pin the fix.
+## Root Cause
+`site/graph/store.go:143` — `Causes []string json:"causes,omitempty"` — the `omitempty` tag causes Go's `encoding/json` to omit the field when the slice is empty or nil. Consumers cannot distinguish "no causes declared" (empty array) from "field not supported" (missing key).
 
-## Investigation
+## Fix
 
-The server-side code was already correct:
-- `handleOp`'s `assert` case reads `causes` from the request and stores them via `CreateNode`
-- `ListNodes` populates `Causes` via `pq.Array(&n.Causes)`
-- `Node.Causes []string \`json:"causes,omitempty"\`` is included in the JSON response
-- `TestAssertOpReturnsCauses` in `site/graph/knowledge_test.go` already covered end-to-end
+### `site/graph/store.go`
+- Changed `Causes []string json:"causes,omitempty"` → `Causes []string json:"causes"` on the `Node` struct.
+- The `causes` column has `NOT NULL DEFAULT '{}'` in Postgres, so it always scans as `[]string{}` — serializes as `[]` not `null`.
 
-The `cmd/post` side was also already correct:
-- `assertCritique`, `assertLatestReflection`, `assertScoutGap` all pass `causeIDs` via `p["causes"] = strings.Join(causeIDs, ",")`
-- Tests `TestAssertCritiqueSendsCauses`, `TestAssertLatestReflectionSendsCauses`, `TestAssertScoutGapSendsCauses` already verified these
-
-The actual gap: `syncClaims` decoded claims into an anonymous struct that omitted `Causes`, so `loop/claims.md` never included provenance links. MCP `knowledge_search` operates on `claims.md` — without causes, agents cannot trace claim provenance.
-
-## Files Changed
-
-- `cmd/post/main.go` — Added `Causes []string \`json:"causes"\`` to the `syncClaims` decode struct; added `**Causes:** id1, id2` line in the claims.md writer
-- `cmd/post/main_test.go` — Added `TestSyncClaimsWritesCauses` to pin that causes appear in claims.md output
+### `site/graph/knowledge_test.go`
+- Added `TestKnowledgeClaimsCausesFieldPresent` — verifies:
+  1. The `assert` op response JSON always contains a `"causes"` key (even when no causes are declared).
+  2. The `GET /app/{slug}/knowledge` JSON response always contains `"causes"` on every claim node.
 
 ## Verification
+- `go.exe build -buildvcs=false ./...` — clean
+- `go.exe test -run "TestKnowledge|TestAssert" ./graph/` with DATABASE_URL — all 6 tests pass
+- Pre-existing failures in other packages are unrelated (DB schema issues, duplicate key collisions in concurrent test setup)
 
-```
-go.exe build -buildvcs=false ./...   # clean
-go.exe test -buildvcs=false ./...    # all pass
-```
+## Files Changed
+- `site/graph/store.go` — 1 line changed (remove omitempty from Causes)
+- `site/graph/knowledge_test.go` — new test added (TestKnowledgeClaimsCausesFieldPresent)

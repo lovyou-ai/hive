@@ -1057,6 +1057,47 @@ func TestAssertCritiqueNoTitle(t *testing.T) {
 	}
 }
 
+// TestSyncClaimsMultipleCauses verifies that when a claim has multiple cause IDs,
+// all of them are comma-joined in the **Causes:** line in claims.md.
+// This exercises the strings.Join path added in this iteration.
+func TestSyncClaimsMultipleCauses(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"claims": []map[string]any{
+				{
+					"title":  "Multi-cause claim",
+					"body":   "This claim has two causes.",
+					"causes": []string{"build-doc-aaa", "build-doc-bbb"},
+				},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	outPath := filepath.Join(t.TempDir(), "claims.md")
+	if err := syncClaims("lv_testkey", srv.URL, outPath); err != nil {
+		t.Fatalf("syncClaims() error: %v", err)
+	}
+
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("claims.md not written: %v", err)
+	}
+	content := string(data)
+
+	if !strings.Contains(content, "build-doc-aaa") {
+		t.Error("claims.md missing first cause ID")
+	}
+	if !strings.Contains(content, "build-doc-bbb") {
+		t.Error("claims.md missing second cause ID")
+	}
+	// Both must appear on the same Causes line.
+	if !strings.Contains(content, "build-doc-aaa, build-doc-bbb") {
+		t.Errorf("expected causes joined as %q, not found in:\n%s", "build-doc-aaa, build-doc-bbb", content)
+	}
+}
+
 // TestSyncClaimsWritesCauses verifies that syncClaims includes the causes field
 // in claims.md when the API returns claims with causes populated.
 func TestSyncClaimsWritesCauses(t *testing.T) {
