@@ -1,59 +1,39 @@
-# Test Report: Fix causes field omitempty (Iteration 368)
+# Test Report: Observer meta-task anti-pattern (iter 370)
 
-**Tester:** Tester agent
-**Timestamp:** 2026-03-28
-**Build commit:** e98adfc (hive), site HEAD: 9ed933a
+- **Build:** Observer process defect: creating cleanup meta-tasks instead of acting
+- **Timestamp:** 2026-03-28
 
 ## What Was Tested
 
-The fix: removed `omitempty` from `Node.Causes []string json:"causes"` in `site/graph/store.go`.
-This ensures the `causes` key is always present in JSON responses (never silently omitted for empty slices).
-Invariant 2 (CAUSALITY) compliance.
+Two prompt changes in `pkg/runner/observer.go`:
+1. `buildOutputInstruction` — two-category model (Category A: act inline, Category B: create task only if code needed)
+2. `buildPart2Instruction` — item 7 added: meta-tasks are board noise, close inline with op=complete
 
-## Tests Run
+## Test Functions
 
-### site/graph — Knowledge tests (6/6 PASS)
+All in `pkg/runner/observer_test.go`:
 
-```
-=== RUN   TestKnowledgePublic                     PASS
-=== RUN   TestKnowledgeAuthed                     PASS
-=== RUN   TestAssertOpReturnsCauses               PASS
-=== RUN   TestKnowledgeClaimsCausesFieldPresent   PASS
-=== RUN   TestKnowledgeMissingSpace               PASS
-=== RUN   TestKnowledgeClaims                     PASS
-ok  github.com/lovyou-ai/site/graph  0.246s
-```
+| Test | What it verifies | Result |
+|------|-----------------|--------|
+| `TestBuildOutputInstructionCategoryModel` | Category A present with op=complete and op=edit curl examples; Category B present; hard rule "Creating a task to close a task is always wrong" present | PASS |
+| `TestBuildOutputInstructionNoAntiPatternWhenNoKey` | No-key fallback path does NOT contain Category A/B model (irrelevant without direct API access) | PASS |
+| `TestBuildPart2InstructionMetaTaskItem` | Item 7 (Meta-tasks) in Part 2 checklist; instructs op=complete inline closure; "Do not create a new task for this" present; Board hygiene rule section present | PASS |
+| `TestBuildPart2InstructionMetaTaskItemSkippedWhenNoKey` | Meta-task instructions absent when Part 2 is skipped (no API key) | PASS |
 
-### cmd/post — Causes/assert tests (14/14 PASS)
+## Full Package Run
 
 ```
-=== RUN   TestAssertScoutGapCreatesClaimNode      PASS
-=== RUN   TestAssertScoutGapMissingFile           PASS
-=== RUN   TestAssertScoutGapNoGapLine             PASS
-=== RUN   TestAssertScoutGapAPIError              PASS
-=== RUN   TestAssertScoutGapSendsAuthHeader       PASS
-=== RUN   TestAssertCritiqueCreatesClaimNode      PASS
-=== RUN   TestAssertCritiqueMissingFile           PASS
-=== RUN   TestAssertLatestReflectionCreatesDocument PASS
-=== RUN   TestAssertLatestReflectionMissingFile   PASS
-=== RUN   TestAssertCritiqueSendsCauses           PASS
-=== RUN   TestAssertScoutGapSendsCauses           PASS
-=== RUN   TestAssertLatestReflectionSendsCauses   PASS
-=== RUN   TestAssertCauseIDsMultipleJoined        PASS
-=== RUN   TestAssertCritiqueNoTitle               PASS
-ok  github.com/lovyou-ai/hive/cmd/post  0.605s
+ok  github.com/lovyou-ai/hive/pkg/runner  3.599s
 ```
+
+All 13 packages in the build compile and pass (Builder confirmed).
 
 ## Coverage Notes
 
-- `TestKnowledgeClaimsCausesFieldPresent` verifies the fix directly: decodes JSON as `map[string]json.RawMessage` and asserts `causes` key is present even when no causes are declared. This is the key regression test.
-- `TestAssertOpReturnsCauses` covers the round-trip: assert with a cause → causes stored → causes returned in both op response and GET /knowledge.
-- All 14 cmd/post tests cover the `causes` payload being sent to the API on scout/critique/reflection assertions.
-
-## Pre-existing Failure (not this iteration)
-
-`TestReposts` in `site/graph/store_test.go:899` — nil pointer dereference. The test creates a space with hardcoded slug `"repost-test"` without checking the error; `sp` is nil when the slug already exists. Last change to store_test.go was iteration 350. **Not introduced by this fix.**
+- Pure function tests — no DB required, no network calls
+- All four branches of the new logic are covered: key/no-key × category-model/meta-task-item
+- Edge cases covered by prior tests: empty input, invalid priority defaulting, whitespace trimming, claims summary truncation at 5
 
 ## Verdict
 
-**PASS.** The fix is correct and tested. The `causes` key is now always present in JSON responses for claim nodes. Invariant 2 compliance restored.
+PASS. The anti-meta-task invariant is enforced in the prompt text and verified by tests.

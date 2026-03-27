@@ -356,6 +356,84 @@ func TestBuildClaimsSummary(t *testing.T) {
 	}
 }
 
+// TestBuildOutputInstructionCategoryModel verifies the two-category anti-meta-task model
+// added in iteration 369. Category A must direct inline action; the hard rule must forbid
+// creating a task to close a task.
+func TestBuildOutputInstructionCategoryModel(t *testing.T) {
+	got := buildOutputInstruction("hive", "lv_testkey")
+
+	// Category A: must instruct inline action via op=complete and op=edit.
+	if !strings.Contains(got, "Category A") {
+		t.Errorf("expected Category A section in output, got: %q", got)
+	}
+	if !strings.Contains(got, `"op":"complete"`) {
+		t.Errorf("expected op=complete curl example in Category A, got: %q", got)
+	}
+	if !strings.Contains(got, `"op":"edit"`) {
+		t.Errorf("expected op=edit curl example in Category A, got: %q", got)
+	}
+
+	// Category B: must exist and limit to code-required tasks.
+	if !strings.Contains(got, "Category B") {
+		t.Errorf("expected Category B section in output, got: %q", got)
+	}
+
+	// Hard rule: must explicitly forbid the meta-task anti-pattern.
+	if !strings.Contains(got, "Creating a task to close a task is always wrong") {
+		t.Errorf("expected anti-meta-task rule in output, got: %q", got)
+	}
+}
+
+// TestBuildOutputInstructionNoAntiPatternWhenNoKey verifies the fallback (no apiKey) path
+// does not contain the category model — it's only relevant when direct API access is possible.
+func TestBuildOutputInstructionNoAntiPatternWhenNoKey(t *testing.T) {
+	got := buildOutputInstruction("hive", "")
+
+	if strings.Contains(got, "Category A") {
+		t.Errorf("Category A should not appear in no-key output, got: %q", got)
+	}
+	if strings.Contains(got, "Category B") {
+		t.Errorf("Category B should not appear in no-key output, got: %q", got)
+	}
+}
+
+// TestBuildPart2InstructionMetaTaskItem verifies item 7 (meta-tasks) was added to the
+// Part 2 audit checklist and instructs inline closure — not task creation.
+func TestBuildPart2InstructionMetaTaskItem(t *testing.T) {
+	got := buildPart2Instruction("hive", "lv_testkey", "")
+
+	// Item 7 must be present.
+	if !strings.Contains(got, "Meta-tasks") {
+		t.Errorf("expected Meta-tasks item in part2 checklist, got: %q", got)
+	}
+
+	// Must instruct to close inline with op=complete.
+	if !strings.Contains(got, "op=complete") {
+		t.Errorf("expected op=complete inline instruction for meta-tasks, got: %q", got)
+	}
+
+	// Must explicitly say not to create a new task.
+	if !strings.Contains(got, "Do not create a new task for this") {
+		t.Errorf("expected 'Do not create a new task for this' in meta-task instruction, got: %q", got)
+	}
+
+	// Board hygiene rule must mention meta-task pattern recognition.
+	if !strings.Contains(got, "Board hygiene rule") {
+		t.Errorf("expected board hygiene rule section, got: %q", got)
+	}
+}
+
+// TestBuildPart2InstructionMetaTaskItemSkippedWhenNoKey verifies item 7 is irrelevant
+// without an API key (the whole section is skipped).
+func TestBuildPart2InstructionMetaTaskItemSkippedWhenNoKey(t *testing.T) {
+	got := buildPart2Instruction("hive", "", "")
+
+	// Whole Part 2 is skipped — meta-task instructions shouldn't appear.
+	if strings.Contains(got, "Meta-tasks") {
+		t.Errorf("Meta-tasks item should not appear when Part 2 is skipped, got: %q", got)
+	}
+}
+
 func TestBuildObserverInstruction(t *testing.T) {
 	cases := []struct {
 		name      string
