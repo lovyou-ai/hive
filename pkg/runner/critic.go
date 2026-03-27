@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/lovyou-ai/eventgraph/go/pkg/decision"
 )
 
 // runCritic scans for recent builder commits and reviews them.
@@ -93,23 +95,63 @@ func (r *Runner) reviewCommit(ctx context.Context, c commit) {
 		diff = diff[:15000] + "\n... (truncated)"
 	}
 
-	// Build the review prompt.
-	sharedCtx := LoadSharedContext(r.cfg.HiveDir)
-	prompt := buildReviewPrompt(c, diff, sharedCtx)
+	// Use Operate() if available — Critic can search knowledge for invariants,
+	// check primitives, and read prior critiques to ground the review.
+	op, canOperate := r.cfg.Provider.(decision.IOperator)
+	var content string
+	if canOperate {
+		apiKey := os.Getenv("LOVYOU_API_KEY")
+		instruction := fmt.Sprintf(`You are the Critic. Review this diff and decide: PASS or REVISE.
 
-	// Call Reason() — no tools, just thinking.
-	resp, err := r.cfg.Provider.Reason(ctx, prompt, nil)
-	if err != nil {
-		log.Printf("[critic] Reason error: %v", err)
-		return
+## Diff
+%s
+
+## Your Tools
+- Use knowledge.search to check relevant invariants and conventions
+- Use knowledge.get to read the CLAUDE.md or coding standards
+- Use Read/Grep to verify the change in context
+
+## Rules
+- PASS if the code is correct, tested, and follows conventions
+- REVISE if there are bugs, missing tests, security issues, or invariant violations
+- Check Invariant 11 (IDs not names) and Invariant 12 (VERIFIED — tests exist)
+
+## Output
+End your response with exactly one of:
+VERDICT: PASS
+VERDICT: REVISE
+
+If REVISE, create a fix task:
+curl -s -X POST -H "Authorization: Bearer %s" -H "Content-Type: application/json" -H "Accept: application/json" "https://lovyou.ai/app/%s/op" -d '{"op":"intend","kind":"task","title":"Fix: <subject>","description":"<what needs fixing>","priority":"high"}'
+`, diff, apiKey, r.cfg.SpaceSlug)
+
+		result, err := op.Operate(ctx, decision.OperateTask{
+			WorkDir:     r.cfg.RepoPath,
+			Instruction: instruction,
+		})
+		if err != nil {
+			log.Printf("[critic] Operate error: %v", err)
+			return
+		}
+		r.cost.Record(result.Usage)
+		r.dailyBudget.Record(result.Usage.CostUSD)
+		log.Printf("[critic] review done (cost=$%.4f)", result.Usage.CostUSD)
+		content = result.Summary
+	} else {
+		// Fallback: Reason() without tools.
+		sharedCtx := LoadSharedContext(r.cfg.HiveDir)
+		prompt := buildReviewPrompt(c, diff, sharedCtx)
+		resp, err := r.cfg.Provider.Reason(ctx, prompt, nil)
+		if err != nil {
+			log.Printf("[critic] Reason error: %v", err)
+			return
+		}
+		r.cost.Record(resp.Usage())
+		r.dailyBudget.Record(resp.Usage().CostUSD)
+		log.Printf("[critic] review done (cost=$%.4f)", resp.Usage().CostUSD)
+		content = resp.Content()
 	}
 
-	r.cost.Record(resp.Usage())
-	r.dailyBudget.Record(resp.Usage().CostUSD)
-	log.Printf("[critic] review done (cost=$%.4f)", resp.Usage().CostUSD)
-
-	// Parse the verdict.
-	content := resp.Content()
 	verdict := parseVerdict(content)
 	log.Printf("[critic] verdict: %s", verdict)
 

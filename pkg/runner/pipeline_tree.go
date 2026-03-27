@@ -62,12 +62,14 @@ func NewPipelineTree(r *Runner) *PipelineTree {
 		{Name: "critic", Run: func(ctx context.Context) error { r.runCritic(ctx); return nil }},
 		{Name: "loop-clean-check", Run: func(ctx context.Context) error { return pt.loopDirtyCheck(ctx) }},
 		{Name: "reflector", Run: func(ctx context.Context) error {
-			if r.cfg.HiveDir != "" {
-				critique := readLoopArtifact(r.cfg.HiveDir, "critique.md")
-				if parseVerdict(critique) == "REVISE" {
-					log.Printf("[pipeline] skipping reflector — critic verdict is REVISE")
-					return nil
-				}
+			// Check graph first for critique verdict, fall back to file.
+			critique := r.readFromGraph("Critique:")
+			if critique == "" {
+				critique = readLoopArtifact(r.cfg.HiveDir, "critique.md")
+			}
+			if parseVerdict(critique) == "REVISE" {
+				log.Printf("[pipeline] skipping reflector — critic verdict is REVISE")
+				return nil
 			}
 			prev := r.cfg.OneShot
 			r.cfg.OneShot = true
