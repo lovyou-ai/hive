@@ -636,8 +636,10 @@ func parseAction(summary string) string {
 			}
 		}
 	}
-	// Default to DONE if the response doesn't explicitly say.
-	return "DONE"
+	// Default to PROGRESS — explicit ACTION: DONE is required to close a task.
+	// A missing ACTION line means the response was incomplete or an error text,
+	// not a confirmation that the work is finished.
+	return "PROGRESS"
 }
 
 func extractSummary(s string) string {

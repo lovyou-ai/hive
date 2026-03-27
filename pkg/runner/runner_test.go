@@ -28,10 +28,10 @@ func TestParseAction(t *testing.T) {
 		{"done", "I've finished the work.\n\nACTION: DONE", "DONE"},
 		{"progress", "Still working.\nACTION: PROGRESS", "PROGRESS"},
 		{"escalate", "Need help.\nACTION: ESCALATE", "ESCALATE"},
-		{"default", "No action line here.", "DONE"},
+		{"default", "No action line here.", "PROGRESS"},
 		{"with whitespace", "  ACTION:  DONE  \n", "DONE"},
 		{"middle of text", "Line 1\nACTION: DONE\nLine 3", "DONE"},
-		{"invalid action", "ACTION: INVALID", "DONE"},
+		{"invalid action", "ACTION: INVALID", "PROGRESS"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

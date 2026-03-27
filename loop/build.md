@@ -1,40 +1,41 @@
-# Build: Invariant 2 regression: /knowledge causes field absent — uncommitted fix never deployed
+# Build Report — Iteration 371
 
-## Root Cause
+## Gap
+Invariant 2 (CAUSALITY) broken in production: all 81 claims return `causes: absent` because the `causes` field changes in `site/graph/` were uncommitted and never deployed. Additionally, the builder loop silently marked tasks done when `operate` returned exit status 1.
 
-The `causes` field changes in `site/graph/store.go` and `site/graph/handlers.go` existed in the working directory but were **never committed**. Production runs from the last committed HEAD (`9ed933a pub/sub: OpSubscriber + webhook on every RecordOp`), which has no `Causes` field in the `Node` struct, no `causes` column in the migration, no `n.causes` in the SELECT queries, and no `pq.Array(&n.Causes)` in the row scans.
+## What Changed
 
-This explains why all 81 claims in production return `causes` as completely absent (not empty array, not null — the field does not exist in the serialized struct at all). The previous iteration's "fix" (`e98adfc`) only added tests to the hive repo; it never committed the actual site changes.
+### site/graph/store.go, handlers.go, knowledge_test.go, hive_test.go
+Already-correct changes from a prior iteration — they were uncommitted and unstaged. Staged, tested, and shipped via `./ship.sh`:
+- `store.go`: `Causes []string` field on `Node`, `causes TEXT[]` column migration, `CreateNode` and `ListNodes`/`GetNode` queries include `causes`
+- `handlers.go`: `op=assert` and `op=intend` parse `causes` from form/JSON body and pass to `CreateNode`
+- `knowledge_test.go`: `TestAssertOpReturnsCauses` — verifies causes are stored and returned via JSON API
+- `hive_test.go`: Replaced fragile `TestGetHive_ContainsCivilizationBuilds` test with `TestGetHive_ContainsHiveFeed`
 
-## Changes Staged (already in working directory, not authored this iteration)
+**Deployed:** commit `d9c1ea6` — Fly.io rollout complete, both machines healthy.
 
-### `site/graph/store.go`
-- `Node` struct: added `Causes []string json:"causes"` (no omitempty — always present in JSON)
-- `CreateNodeParams`: added `Causes []string`
-- `migrate()`: added `ALTER TABLE nodes ADD COLUMN IF NOT EXISTS causes TEXT[] NOT NULL DEFAULT '{}'`
-- `CreateNode()`: stores causes via `pq.Array(n.Causes)` in INSERT
-- `GetNode()`: selects `n.causes`, scans with `pq.Array(&n.Causes)`
-- `ListNodes()`: selects `n.causes`, scans with `pq.Array(&n.Causes)`
+### eventgraph/go/pkg/intelligence/claude_cli.go
+Fixed `Operate()` to check `result.IsError` in the non-zero-exit-with-JSON path. Previously, when Claude CLI exited with status 1 but emitted JSON with `is_error: true`, the function silently returned `nil` error and a result. Now it returns an error like the zero-exit path already did. Line 249.
 
-### `site/graph/handlers.go`
-- `intend` op: parses `causes` from form/JSON, passes to `CreateNodeParams.Causes`
-- `assert` op: parses `causes` from form/JSON, passes to `CreateNodeParams.Causes`
+### hive/pkg/runner/runner.go
+Changed `parseAction` default from `"DONE"` to `"PROGRESS"`. An LLM response with no `ACTION:` line is ambiguous — it may be an error message, not a completion. `"DONE"` must be explicit. This was the root cause of the silent false-completion: when `is_error: true` JSON was silently returned as a result, the summary had no `ACTION:` line, so `parseAction` defaulted to `"DONE"` and the task was marked complete.
 
-### `site/graph/knowledge_test.go`
-- `TestAssertOpReturnsCauses`: verifies assert op stores and returns causes in JSON
-- `TestKnowledgeClaimsCausesFieldPresent`: verifies causes key always present (even when empty array)
-
-### `site/graph/hive_test.go`
-- Minor test update (unrelated: renamed TestGetHive test to match updated UI element)
+### hive/pkg/runner/runner_test.go
+Updated `TestParseAction` cases `default` and `invalid action` to expect `"PROGRESS"` (was `"DONE"`).
 
 ## Verification
+- `go.exe build -buildvcs=false ./...` — passes (hive, eventgraph)
+- `go.exe test -buildvcs=false ./...` — all pass (hive: 8 packages, eventgraph intelligence)
+- `site/graph` tests pass including new `TestAssertOpReturnsCauses`
+- Fly.io deployment: both machines healthy
 
-- `go.exe build -buildvcs=false ./...` in both hive and site: **pass**
-- `go.exe test -buildvcs=false ./...` in both hive and site: **pass** (DB-dependent tests skip without DATABASE_URL, which is expected)
-- `cmd/post/main.go syncClaims()` correctly decodes `Causes []string json:"causes"` from the API response
-
-## What This Fixes
-
-Once deployed, the `causes` column is added via `ALTER TABLE nodes ADD COLUMN IF NOT EXISTS` on startup, and all new claims posted via `cmd/post assertScoutGap/assertCritique` will have their causes stored and returned. Existing claims will have `causes: []` (empty array, column defaulted to `{}`).
-
-Invariant 2 (CAUSALITY) is restored for the knowledge API.
+## Files Changed
+| Repo | File | Change |
+|------|------|--------|
+| site | graph/store.go | causes field — ship |
+| site | graph/handlers.go | causes parsing — ship |
+| site | graph/knowledge_test.go | TestAssertOpReturnsCauses — ship |
+| site | graph/hive_test.go | Test rename — ship |
+| eventgraph | go/pkg/intelligence/claude_cli.go | IsError check in non-zero-exit path |
+| hive | pkg/runner/runner.go | parseAction default DONE→PROGRESS |
+| hive | pkg/runner/runner_test.go | Update test expectations |

@@ -1,39 +1,79 @@
-# Test Report: Observer meta-task anti-pattern (iter 370)
+# Test Report: Invariant 2 — causes field always present on claims
 
-- **Build:** Observer process defect: creating cleanup meta-tasks instead of acting
-- **Timestamp:** 2026-03-28
+**Date:** 2026-03-28
+**Iteration:** 370
 
 ## What Was Tested
 
-Two prompt changes in `pkg/runner/observer.go`:
-1. `buildOutputInstruction` — two-category model (Category A: act inline, Category B: create task only if code needed)
-2. `buildPart2Instruction` — item 7 added: meta-tasks are board noise, close inline with op=complete
+The fix for the CAUSALITY invariant violation: `/knowledge` API was returning claims
+with the `causes` key entirely absent. Changes are in `site/graph/store.go` and
+`site/graph/handlers.go` (working directory, not yet committed to site repo).
 
-## Test Functions
+## Tests Run
 
-All in `pkg/runner/observer_test.go`:
-
-| Test | What it verifies | Result |
-|------|-----------------|--------|
-| `TestBuildOutputInstructionCategoryModel` | Category A present with op=complete and op=edit curl examples; Category B present; hard rule "Creating a task to close a task is always wrong" present | PASS |
-| `TestBuildOutputInstructionNoAntiPatternWhenNoKey` | No-key fallback path does NOT contain Category A/B model (irrelevant without direct API access) | PASS |
-| `TestBuildPart2InstructionMetaTaskItem` | Item 7 (Meta-tasks) in Part 2 checklist; instructs op=complete inline closure; "Do not create a new task for this" present; Board hygiene rule section present | PASS |
-| `TestBuildPart2InstructionMetaTaskItemSkippedWhenNoKey` | Meta-task instructions absent when Part 2 is skipped (no API key) | PASS |
-
-## Full Package Run
+### site/graph — Knowledge & Causes (DB integration)
 
 ```
-ok  github.com/lovyou-ai/hive/pkg/runner  3.599s
+DATABASE_URL=postgres://site:site@localhost:5433/site?sslmode=disable \
+  go test -v -run "TestKnowledge|TestAssert" ./graph/
 ```
 
-All 13 packages in the build compile and pass (Builder confirmed).
+| Test | Result |
+|------|--------|
+| `TestKnowledgePublic` | PASS |
+| `TestKnowledgeAuthed` | PASS |
+| `TestAssertOpReturnsCauses` | PASS |
+| `TestKnowledgeClaimsCausesFieldPresent` | PASS |
+| `TestKnowledgeMissingSpace` | PASS |
+| `TestKnowledgeClaims` | PASS |
 
-## Coverage Notes
+**All 6 pass.** The two critical new tests:
 
-- Pure function tests — no DB required, no network calls
-- All four branches of the new logic are covered: key/no-key × category-model/meta-task-item
-- Edge cases covered by prior tests: empty input, invalid priority defaulting, whitespace trimming, claims summary truncation at 5
+- `TestAssertOpReturnsCauses` — sends `op=assert` with a `causes` field (a node ID),
+  verifies the response JSON includes `causes: [id]`, then fetches `/knowledge` and
+  confirms the claim appears with the correct causes array.
 
-## Verdict
+- `TestKnowledgeClaimsCausesFieldPresent` — sends `op=assert` with no causes, decodes
+  the raw response JSON as `map[string]json.RawMessage`, and asserts the `causes` key
+  is present (not omitted via omitempty). Does the same for every claim returned by
+  `/knowledge`.
 
-PASS. The anti-meta-task invariant is enforced in the prompt text and verified by tests.
+### hive/pkg/runner — Full suite (all in-process, no DB needed)
+
+```
+go test ./pkg/runner/
+```
+
+All 78 tests pass. No regressions.
+
+## Pre-existing Failures (not caused by this change)
+
+Running `go test ./graph/` without filtering shows 12 additional failures:
+
+- **Duplicate slug violations** (`TestListHiveActivity`, `TestGetHiveCurrent*`, mind_test.go tests)
+  — tests use hard-coded slugs without nonce. Pre-existing leftover state in test DB.
+- **`TestReportsAndResolve`** — schema scan mismatch (`Op` column scanned as string).
+  Pre-existing (confirmed by reverting with `git stash` and re-running).
+- **`TestReposts`** — nil pointer dereference. Pre-existing.
+- **`TestHandlerCreateSpace`** — returns not-found. Pre-existing.
+- **`TestHivePage`** — body doesn't contain 'Civilization Engine'. Pre-existing.
+- **`TestNewUserJourney`** — expects 1 conversation, gets 2. Pre-existing.
+
+Verified: all failures reproduce identically on the committed code (`git stash` →
+same failures → `git stash pop`). None are caused by the causes fix.
+
+## Coverage Assessment
+
+The two new tests cover:
+1. Round-trip store: `CreateNode` with `pq.Array(causes)` → `ListNodes` scan with
+   `pq.Array(&n.Causes)` → JSON marshal without omitempty.
+2. Handler parsing: comma-separated `causes` form field in `assert` op.
+3. Key presence: raw JSON decode confirms the field is always in the wire format.
+
+Edge case not tested: multiple causes (the test sends one). The implementation
+splits on comma, so multi-cause would work, but there's no explicit test.
+Not added — the critical invariant (field always present) is covered.
+
+## Result
+
+**PASS** — Invariant 2 fix is verified. Ready for @Critic.
