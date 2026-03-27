@@ -93,7 +93,7 @@ You may report up to 2 findings. If everything looks good, say "No issues found.
 
 	tasks := parseObserverTasks(resp.Content())
 	for _, t := range tasks {
-		task, err := r.cfg.APIClient.CreateTask(r.cfg.SpaceSlug, t.title, t.desc, t.priority)
+		task, err := r.cfg.APIClient.CreateTask(r.cfg.SpaceSlug, t.title, t.desc, t.priority, nil)
 		if err != nil {
 			continue
 		}

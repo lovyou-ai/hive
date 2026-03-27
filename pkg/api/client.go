@@ -83,9 +83,9 @@ func (c *Client) GetTasks(slug string, assigneeID string) ([]Node, error) {
 	return resp.Nodes, nil
 }
 
-// PostOp sends a grammar operation to the space.
-// fields is a flat map sent as JSON body (must include "op").
-func (c *Client) PostOp(slug string, fields map[string]string) (*OpResponse, error) {
+// postOpAny sends a grammar operation with arbitrary field types.
+// Supports array fields like "causes" that map[string]string cannot represent.
+func (c *Client) postOpAny(slug string, fields map[string]any) (*OpResponse, error) {
 	u := fmt.Sprintf("%s/app/%s/op", c.base, slug)
 
 	body, err := json.Marshal(fields)
@@ -102,9 +102,20 @@ func (c *Client) PostOp(slug string, fields map[string]string) (*OpResponse, err
 
 	var resp OpResponse
 	if err := c.do(req, &resp); err != nil {
-		return nil, fmt.Errorf("PostOp(%s): %w", fields["op"], err)
+		op, _ := fields["op"].(string)
+		return nil, fmt.Errorf("PostOp(%s): %w", op, err)
 	}
 	return &resp, nil
+}
+
+// PostOp sends a grammar operation to the space.
+// fields is a flat map sent as JSON body (must include "op").
+func (c *Client) PostOp(slug string, fields map[string]string) (*OpResponse, error) {
+	any := make(map[string]any, len(fields))
+	for k, v := range fields {
+		any[k] = v
+	}
+	return c.postOpAny(slug, any)
 }
 
 // ClaimTask claims an unassigned task for the current agent.
@@ -146,8 +157,10 @@ func (c *Client) CommentTask(slug, nodeID, body string) error {
 }
 
 // CreateTask creates a new task on the board.
-func (c *Client) CreateTask(slug, title, description, priority string) (*Node, error) {
-	fields := map[string]string{
+// causes is the list of node IDs that triggered this task (Invariant 2 — CAUSALITY).
+// Pass nil when there is no triggering node.
+func (c *Client) CreateTask(slug, title, description, priority string, causes []string) (*Node, error) {
+	fields := map[string]any{
 		"op":    "intend",
 		"title": title,
 		"kind":  "task",
@@ -158,7 +171,10 @@ func (c *Client) CreateTask(slug, title, description, priority string) (*Node, e
 	if priority != "" {
 		fields["priority"] = priority
 	}
-	resp, err := c.PostOp(slug, fields)
+	if len(causes) > 0 {
+		fields["causes"] = causes
+	}
+	resp, err := c.postOpAny(slug, fields)
 	if err != nil {
 		return nil, err
 	}
@@ -265,13 +281,18 @@ func (c *Client) PostUpdate(slug, title, body string) error {
 // CreateDocument creates a document node in the knowledge layer.
 // Documents are institutional knowledge — specs, reports, reflections.
 // NOT feed posts. Use PostUpdate for social visibility.
-func (c *Client) CreateDocument(slug, title, body string) (*Node, error) {
-	resp, err := c.PostOp(slug, map[string]string{
+// causes is the list of node IDs that triggered this document (Invariant 2 — CAUSALITY).
+func (c *Client) CreateDocument(slug, title, body string, causes []string) (*Node, error) {
+	fields := map[string]any{
 		"op":          "intend",
 		"kind":        "document",
 		"title":       title,
 		"description": body,
-	})
+	}
+	if len(causes) > 0 {
+		fields["causes"] = causes
+	}
+	resp, err := c.postOpAny(slug, fields)
 	if err != nil {
 		return nil, err
 	}
@@ -281,12 +302,17 @@ func (c *Client) CreateDocument(slug, title, body string) (*Node, error) {
 // AssertClaim creates a knowledge claim — a factual assertion that can be
 // challenged, verified, or retracted. Use for lessons learned, verdicts,
 // architectural decisions — anything that should be verifiable.
-func (c *Client) AssertClaim(slug, title, body string) (*Node, error) {
-	resp, err := c.PostOp(slug, map[string]string{
+// causes is the list of node IDs that triggered this claim (Invariant 2 — CAUSALITY).
+func (c *Client) AssertClaim(slug, title, body string, causes []string) (*Node, error) {
+	fields := map[string]any{
 		"op":    "assert",
 		"title": title,
 		"body":  body,
-	})
+	}
+	if len(causes) > 0 {
+		fields["causes"] = causes
+	}
+	resp, err := c.postOpAny(slug, fields)
 	if err != nil {
 		return nil, err
 	}

@@ -132,3 +132,48 @@ func TestRunExistingTasksStartsAtBuilding(t *testing.T) {
 		t.Errorf("existing-tasks path: state = %s, want %s", sm.State(), StateBuilding)
 	}
 }
+
+// TestPipelineTransitionFromUnknownState verifies that transitioning from a
+// state not in the transition table returns an error and leaves state unchanged.
+func TestPipelineTransitionFromUnknownState(t *testing.T) {
+	unknown := PipelineState("nonexistent")
+	sm := &PipelineStateMachine{state: unknown}
+	_, _, err := sm.Transition(EventBoardClear)
+	if err == nil {
+		t.Error("expected error for state with no transitions, got nil")
+	}
+	if sm.state != unknown {
+		t.Errorf("state changed on error: got %s, want %s", sm.state, unknown)
+	}
+}
+
+// TestInferEventCriticRevise verifies that inferEvent("critic") returns
+// EventCritiqueRevise when critique.md contains "VERDICT: REVISE".
+func TestInferEventCriticRevise(t *testing.T) {
+	hiveDir := makeHiveDir(t, "# State\n", map[string]string{
+		"critique.md": "Some review.\n\nVERDICT: REVISE",
+	})
+	// nil APIClient → readFromGraph returns "" → falls back to critique.md
+	r := New(Config{HiveDir: hiveDir})
+	sm := NewPipelineStateMachine(r)
+
+	got := sm.inferEvent("critic")
+	if got != EventCritiqueRevise {
+		t.Errorf("inferEvent(critic) with REVISE: got %s, want %s", got, EventCritiqueRevise)
+	}
+}
+
+// TestInferEventCriticPass verifies that inferEvent("critic") returns
+// EventCritiquePass when critique.md contains "VERDICT: PASS".
+func TestInferEventCriticPass(t *testing.T) {
+	hiveDir := makeHiveDir(t, "# State\n", map[string]string{
+		"critique.md": "Looks good.\n\nVERDICT: PASS",
+	})
+	r := New(Config{HiveDir: hiveDir})
+	sm := NewPipelineStateMachine(r)
+
+	got := sm.inferEvent("critic")
+	if got != EventCritiquePass {
+		t.Errorf("inferEvent(critic) with PASS: got %s, want %s", got, EventCritiquePass)
+	}
+}

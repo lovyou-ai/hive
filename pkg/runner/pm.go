@@ -128,7 +128,7 @@ func (r *Runner) runPMReason(ctx context.Context) {
 
 	title := extractDirectiveTitle(directive)
 	if title != "" {
-		if _, err := r.cfg.APIClient.CreateTask(r.cfg.SpaceSlug, title, directive, "high"); err != nil {
+		if _, err := r.cfg.APIClient.CreateTask(r.cfg.SpaceSlug, title, directive, "high", nil); err != nil {
 			log.Printf("[pm] create milestone error: %v", err)
 		} else {
 			log.Printf("[pm] milestone created on board: %s", title)

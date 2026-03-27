@@ -1,56 +1,52 @@
-# Test Report — Fix: assertScoutGap kind=claim payload
+# Test Report: PipelineStateMachine fixes
 
-**Date:** 2026-03-28
-**Tests run:** 15 in cmd/post + full suite
-**Result:** ALL PASS
+## What Was Tested
 
-## Tests Verified This Session
+Three gaps in `pkg/runner/pipeline_state_test.go` after the Builder's fixes to `PipelineStateMachine`.
 
-All 15 tests in `cmd/post` confirmed passing:
+### 1. `TestPipelineTransitionFromUnknownState`
+- **What:** `Transition()` called from a state not in `pipelineTransitions` (the first `!ok` branch at line 115-117 of `pipeline_state.go`)
+- **Verified:** Returns an error; state is unchanged
+- **Why it matters:** The existing `TestPipelineTransitionInvalid` only tested an invalid *event* from a valid state. This tests an invalid *state* entirely — a distinct code path that was unexercised.
 
-- `TestBuildTitle` (6 subtests)
-- `TestPostCreatesNode`
-- `TestSyncClaimsWritesFile`
-- `TestSyncClaimsEmptyDoesNotWrite`
-- `TestExtractGapTitle` (3 subtests)
-- `TestExtractIterationFromScout` (3 subtests)
-- `TestAssertScoutGapCreatesClaimNode` — verifies `op=assert`, `kind=claim`, title, body
-- `TestAssertScoutGapMissingFile`
-- `TestAssertScoutGapNoGapLine`
-- `TestAssertScoutGapAPIError`
-- `TestAssertScoutGapSendsAuthHeader`
-- `TestSyncClaimsAPIError`
-- `TestSyncClaimsClaimWithNoMetadata`
-- `TestBuildTitleExtractedOnPost`
+### 2. `TestInferEventCriticRevise`
+- **What:** `inferEvent("critic")` with `critique.md` containing `VERDICT: REVISE`
+- **Verified:** Returns `EventCritiqueRevise`
+- **Why it matters:** The REVISE→StateBuilding loop is the fix cycle. It was untested — no test confirmed the critic verdict influenced the next state.
 
-## Full Suite Results
+### 3. `TestInferEventCriticPass`
+- **What:** `inferEvent("critic")` with `critique.md` containing `VERDICT: PASS`
+- **Verified:** Returns `EventCritiquePass`
+- **Why it matters:** Completes the critic verdict coverage; confirms the default pass path.
+
+## Side Note: `hasFixes` Dead Code
+
+The `hasFixes` variable in `Run()` can never be true without `hasOpen` also being true (the `hasFixes` condition is a strict subset of the `hasOpen` condition). The `hasOpen || hasFixes` guard is therefore equivalent to just `hasOpen`. Not a correctness bug, but dead code worth cleaning up.
+
+## Results
 
 ```
-ok  cmd/mcp-graph
-ok  cmd/mcp-knowledge
-ok  cmd/post
-ok  pkg/authority
-ok  pkg/hive
-ok  pkg/loop
-ok  pkg/resources
-ok  pkg/runner
-ok  pkg/workspace
+=== RUN   TestPipelineTransitionValid              PASS
+=== RUN   TestPipelineTransitionInvalid            PASS
+=== RUN   TestRunBoardClearStartsAtDirecting       PASS
+=== RUN   TestRunExistingTasksStartsAtBuilding     PASS
+=== RUN   TestPipelineTransitionFromUnknownState   PASS  [new]
+=== RUN   TestInferEventCriticRevise               PASS  [new]
+=== RUN   TestInferEventCriticPass                 PASS  [new]
+
+go test ./pkg/runner/ → ok (3.054s, all tests pass)
 ```
 
-No regressions.
+## Coverage
 
-## What Was Verified
-
-- `assertScoutGap` sends `op=assert`, `kind=claim`, correct title and body — PASS
-- `kind=claim` fix specifically asserted in `TestAssertScoutGapCreatesClaimNode` — PASS
-- Authorization header sent with correct Bearer token — PASS
-- Error paths: missing file, no gap line, API 4xx — all PASS
-
-## Coverage Notes
-
-- The `kind=claim` field is the core fix; `TestAssertScoutGapCreatesClaimNode` covers it directly
-- No untested code paths introduced by this fix
-- `main()` entry point not tested — pure glue, acceptable
+- Valid transitions: all 13 covered ✓
+- Invalid event in valid state: covered ✓
+- Invalid state (no transitions): covered ✓ [new]
+- Board clear → StateDirecting: covered ✓
+- Open tasks → StateBuilding: covered ✓
+- Critic REVISE verdict: covered ✓ [new]
+- Critic PASS verdict: covered ✓ [new]
+- `makeRunner` error propagation (main.go): not unit-testable (CLI integration point)
 
 ## Status
 

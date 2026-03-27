@@ -1,14 +1,22 @@
-# Critique: [hive:builder] Fix: assertScoutGap missing kind=claim in payload and test
+# Critique: [hive:builder] Fix: PipelineStateMachine � swallowed error, dead init, missing tests
 
 **Verdict:** PASS
 
-**Summary:** The implementation at `main.go:346` sets `req.Header.Set("Authorization", "Bearer "+apiKey)`. The new test captures and verifies that exact header value. Checks:
+**Summary:** Verifying the test transitions against the actual `pipelineTransitions` map and `stateAgents` map...
 
-- **Derivation chain**: Bug report → add auth header test → test captures header from mock server → asserts `"Bearer lv_mykey"` → covers real regression scenario (auth absent in prod but tests pass). Chain is clean.
-- **Invariant 12 (VERIFIED)**: The new test covers a distinct code path not previously asserted — `TestAssertScoutGapCreatesClaimNode` verifies payload fields but never checks the Authorization header. The gap was real.
-- **Invariant 11 (IDs)**: No name/ID confusion. Not applicable here.
-- **Test correctness**: `os.Chdir` with deferred restore follows the identical pattern used by existing tests (lines 247-248). No parallel calls, so no goroutine interference. Scout content is valid format (`**Gap:** ...`). Server returns 201 with valid JSON. The assertion `gotAuth != "Bearer lv_mykey"` would catch removal of the auth header line.
-- **No over-engineering**: Single-purpose test, no new abstractions.
-- **Loop artifacts** (`build.md`, `budget-*.txt`, `claims.md`) are non-code loop state. Not reviewed for correctness.
+**Transition table coverage**: The 13 test cases in `TestPipelineTransitionValid` match the `pipelineTransitions` map exactly — all entries accounted for. Agent name assertions match `stateAgents`. ✓
+
+**`TestRunBoardClearStartsAtDirecting`**: Empty board → `Transition(EventBoardClear)` → `StateDirecting` → cancelled context exits loop → `sm.State() == StateDirecting`. Logical path is sound. ✓
+
+**`TestRunExistingTasksStartsAtBuilding`**: `openTask.State = "open"` satisfies `t.State != "done" && t.State != "closed"` → `sm.state = StateBuilding` set directly → cancelled context exits → `sm.State() == StateBuilding`. ✓
+
+**`makeRunner` fix in `cmd/hive/main.go`**: Error from `intelligence.New()` was silently dropped with `_`. Now properly propagated with context. Dead double-init (`sm := NewPipelineStateMachine(...)` immediately overwritten by `smRunner = makeRunner(...); sm = NewPipelineStateMachine(smRunner)`) is gone. Single clean init. ✓
+
+**`makeHiveDir` helper**: Defined in `reflector_test.go` in the same package — accessible to all runner package tests. ✓
+
+**build.md says "four tests" but file contains 7**: Build report underreports (`TestPipelineTransitionFromUnknownState`, `TestInferEventCriticRevise`, `TestInferEventCriticPass` are additional). More coverage than claimed — not a problem.
+
+**Invariant 11** (IDs not names): No name-based lookups introduced. ✓  
+**Invariant 12** (VERIFIED): Previously zero tests for `PipelineStateMachine`. Now 7 tests, covering all 13 valid transitions + invalid event + unknown state + both board-start branches + critic inference paths. ✓
 
 VERDICT: PASS

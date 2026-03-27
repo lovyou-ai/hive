@@ -38,7 +38,7 @@ type clientFixTasker struct {
 }
 
 func (f *clientFixTasker) CreateTask(_ context.Context, title string) error {
-	_, err := f.client.CreateTask(f.slug, title, "", "high")
+	_, err := f.client.CreateTask(f.slug, title, "", "high", nil)
 	return err
 }
 

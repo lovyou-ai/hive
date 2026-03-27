@@ -341,7 +341,7 @@ func (r *Runner) runReflectorReason(ctx context.Context) {
 
 	if formalize := sections["FORMALIZE"]; formalize != "" && r.cfg.APIClient != nil {
 		title := fmt.Sprintf("Lesson: %s", date)
-		if _, err := r.cfg.APIClient.AssertClaim(r.cfg.SpaceSlug, title, formalize); err != nil {
+		if _, err := r.cfg.APIClient.AssertClaim(r.cfg.SpaceSlug, title, formalize, nil); err != nil {
 			log.Printf("[reflector] assert lesson error: %v", err)
 		}
 	}
@@ -412,7 +412,7 @@ func (r *Runner) appendReflection(entry string) error {
 	// Also post to graph as a document.
 	if r.cfg.APIClient != nil {
 		title := fmt.Sprintf("Reflection: %s", time.Now().UTC().Format("2006-01-02"))
-		_, _ = r.cfg.APIClient.CreateDocument(r.cfg.SpaceSlug, title, entry)
+		_, _ = r.cfg.APIClient.CreateDocument(r.cfg.SpaceSlug, title, entry, nil)
 	}
 	return nil
 }

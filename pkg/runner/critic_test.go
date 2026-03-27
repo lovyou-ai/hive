@@ -1,10 +1,17 @@
 package runner
 
 import (
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/lovyou-ai/hive/pkg/api"
 )
 
 // TestCriticThrottleBypassInOneShot verifies that in one-shot mode the critic
@@ -128,5 +135,101 @@ func TestWriteCritiqueArtifact(t *testing.T) {
 				t.Errorf("summary %q not found in:\n%s", tc.summary, content)
 			}
 		})
+	}
+}
+
+// TestReviewCommitFixTaskHasCauses verifies that when the critic issues a REVISE
+// verdict, the fix task is created with causes pointing to the critique claim node.
+// This satisfies Invariant 2 (CAUSALITY): fix tasks are traceable to their source.
+func TestReviewCommitFixTaskHasCauses(t *testing.T) {
+	// Track every POST body received by the mock server.
+	var bodies []map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		data, _ := io.ReadAll(r.Body)
+		var m map[string]any
+		if err := json.Unmarshal(data, &m); err == nil {
+			bodies = append(bodies, m)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		op, _ := m["op"].(string)
+		switch op {
+		case "assert":
+			// Claim creation — return a node with a known ID.
+			_, _ = w.Write([]byte(`{"op":"assert","node":{"id":"claim-99","kind":"claim","title":"Critique","created_at":"","updated_at":""}}`))
+		case "intend":
+			// Task creation — return a task node.
+			_, _ = w.Write([]byte(`{"op":"intend","node":{"id":"task-11","kind":"task","title":"Fix: something","created_at":"","updated_at":""}}`))
+		default:
+			_, _ = w.Write([]byte(`{"op":"ok"}`))
+		}
+	}))
+	defer srv.Close()
+
+	// Set up a minimal git repo with two commits so hash~1 is valid.
+	repoDir := t.TempDir()
+	runGit := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repoDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	runGit("init")
+	runGit("config", "user.email", "test@test.com")
+	runGit("config", "user.name", "Test")
+	if err := os.WriteFile(filepath.Join(repoDir, "init.txt"), []byte("init"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runGit("add", ".")
+	runGit("commit", "-m", "initial")
+	if err := os.WriteFile(filepath.Join(repoDir, "feature.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runGit("add", ".")
+	runGit("commit", "-m", "[hive:builder] Add feature")
+
+	hashCmd := exec.Command("git", "log", "--format=%H", "-1")
+	hashCmd.Dir = repoDir
+	hashOut, err := hashCmd.Output()
+	if err != nil {
+		t.Fatalf("git log: %v", err)
+	}
+	hash := strings.TrimSpace(string(hashOut))
+
+	hiveDir := makeHiveDir(t, "# State\n", nil)
+
+	r := New(Config{
+		HiveDir:   hiveDir,
+		RepoPath:  repoDir,
+		SpaceSlug: "hive",
+		APIClient: api.New(srv.URL, "test-key"),
+		Provider:  &mockProvider{response: "Issues found.\n\nVERDICT: REVISE"},
+	})
+
+	r.reviewCommit(t.Context(), commit{hash: hash, subject: "[hive:builder] Add feature"})
+
+	// Find the intend (task creation) call.
+	var taskBody map[string]any
+	for _, b := range bodies {
+		if op, _ := b["op"].(string); op == "intend" {
+			taskBody = b
+			break
+		}
+	}
+	if taskBody == nil {
+		t.Fatal("no intend op found — fix task was not created")
+	}
+
+	rawCauses, ok := taskBody["causes"]
+	if !ok {
+		t.Fatal("fix task missing 'causes' field — Invariant 2 violated")
+	}
+	causes, ok := rawCauses.([]any)
+	if !ok || len(causes) == 0 {
+		t.Fatalf("causes is empty or wrong type: %v", rawCauses)
+	}
+	if causes[0] != "claim-99" {
+		t.Errorf("fix task causes[0] = %v, want %q (critique claim ID)", causes[0], "claim-99")
 	}
 }

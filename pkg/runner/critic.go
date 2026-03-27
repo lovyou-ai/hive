@@ -155,19 +155,24 @@ curl -s -X POST -H "Authorization: Bearer %s" -H "Content-Type: application/json
 	verdict := parseVerdict(content)
 	log.Printf("[critic] verdict: %s", verdict)
 
-	// Write critique artifact.
-	if writeErr := r.writeCritiqueArtifact(c.subject, verdict, content); writeErr != nil {
+	// Write critique artifact. Returns the claim node ID for causality threading.
+	claimID, writeErr := r.writeCritiqueArtifact(c.subject, verdict, content)
+	if writeErr != nil {
 		log.Printf("[critic] write critique artifact error: %v", writeErr)
 	}
 
 	switch verdict {
 	case "REVISE":
-		// Extract the issues and create a fix task.
+		// Extract the issues and create a fix task caused by the critique claim.
 		issues := extractIssues(content)
 		title := fixTitle(c.subject)
 		desc := fmt.Sprintf("Critic review of commit %s found issues:\n\n%s", c.hash[:12], issues)
 
-		task, err := r.cfg.APIClient.CreateTask(r.cfg.SpaceSlug, title, desc, "high")
+		var causes []string
+		if claimID != "" {
+			causes = []string{claimID}
+		}
+		task, err := r.cfg.APIClient.CreateTask(r.cfg.SpaceSlug, title, desc, "high", causes)
 		if err != nil {
 			log.Printf("[critic] create fix task error: %v", err)
 			return
@@ -270,15 +275,21 @@ func writeCritiqueArtifact(hiveDir, subject, verdict, summary string) error {
 	return os.WriteFile(path, []byte(content), 0644)
 }
 
-func (r *Runner) writeCritiqueArtifact(subject, verdict, summary string) error {
+// writeCritiqueArtifact writes loop/critique.md and asserts a claim on the graph.
+// Returns the claim node ID (or "" if API unavailable or claim failed) for causality threading.
+func (r *Runner) writeCritiqueArtifact(subject, verdict, summary string) (string, error) {
 	if err := writeCritiqueArtifact(r.cfg.HiveDir, subject, verdict, summary); err != nil {
-		return err
+		return "", err
+	}
+	if r.cfg.APIClient == nil {
+		return "", nil
 	}
 	// Critique is a claim — a verifiable assertion about code quality.
-	if r.cfg.APIClient != nil {
-		content := fmt.Sprintf("**Verdict:** %s\n\n%s", verdict, summary)
-		title := fmt.Sprintf("Critique: %s — %s", verdict, subject)
-		_, _ = r.cfg.APIClient.AssertClaim(r.cfg.SpaceSlug, title, content)
+	content := fmt.Sprintf("**Verdict:** %s\n\n%s", verdict, summary)
+	title := fmt.Sprintf("Critique: %s — %s", verdict, subject)
+	node, err := r.cfg.APIClient.AssertClaim(r.cfg.SpaceSlug, title, content, nil)
+	if err != nil || node == nil {
+		return "", nil // non-fatal: file was written, graph sync failed
 	}
-	return nil
+	return node.ID, nil
 }

@@ -452,10 +452,10 @@ func (r *Runner) writeBuildArtifact(t api.Node, costUSD float64, operateSummary 
 		log.Printf("[builder] write build.md: %v", err)
 	}
 
-	// Also post to graph as a document — knowledge goes on the graph.
+	// Also post to graph as a document caused by the task that triggered the build.
 	if r.cfg.APIClient != nil {
 		title := fmt.Sprintf("Build: %s", t.Title)
-		_, _ = r.cfg.APIClient.CreateDocument(r.cfg.SpaceSlug, title, content)
+		_, _ = r.cfg.APIClient.CreateDocument(r.cfg.SpaceSlug, title, content, []string{t.ID})
 	}
 }
 

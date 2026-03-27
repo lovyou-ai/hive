@@ -1,31 +1,43 @@
-# Build Report
+# Build: Zero causes links: graph is causally disconnected — 0/486 nodes have causes declared
 
-**Task:** Fix: PipelineStateMachine — swallowed error, dead init, missing tests
-**Status:** DONE
-**Cost:** ~$0.00 (no LLM calls)
+- **Commit:** (pending — Ops will commit)
+- **Cost:** $0.0000
+- **Timestamp:** 2026-03-28T00:00:00Z
 
-## Changes
+## Task
 
-### `cmd/hive/main.go`
+Every node on the hive board has zero causes links (0/486). This violates Invariant 2 (CAUSALITY): "Every event has declared causes."
 
-**Issue 1 — swallowed error in `makeRunner`:**
-Changed `makeRunner` from `func(role string) *runner.Runner` to `func(role string) (*runner.Runner, error)`. Restored `return nil, fmt.Errorf("provider for %s: %w", role, err)` on `intelligence.New` failure. Updated the single call site to propagate the error.
+## What Was Built
 
-**Issue 2 — dead first `sm` creation:**
-Removed the dead `sm := runner.NewPipelineStateMachine(makeRunner("builder"))` at line 286 that was immediately overwritten. The live creation now uses `:=` directly: `smRunner, err := makeRunner("builder")` → `sm := runner.NewPipelineStateMachine(smRunner)`.
+### Root cause
+`CreateTask`, `CreateDocument`, and `AssertClaim` in `api/client.go` took `map[string]string` — no way to include `causes: []string` (a JSON array).
 
-### `pkg/runner/pipeline_state_test.go` (new file)
+### Changes
 
-Added four tests covering the untested `PipelineStateMachine`:
+**`pkg/api/client.go`**
+- Added `postOpAny(slug string, fields map[string]any)` — underlying implementation supporting array fields
+- `PostOp` (public, `map[string]string`) delegates to `postOpAny` for backward compat
+- `CreateTask(slug, title, description, priority string, causes []string)` — new `causes` parameter; sends `"causes":[...]` when non-empty
+- `CreateDocument(slug, title, body string, causes []string)` — same
+- `AssertClaim(slug, title, body string, causes []string)` — same
 
-- **`TestPipelineTransitionValid`** — table-driven; exercises all 13 valid (state, event) → (next state, agent) transitions.
-- **`TestPipelineTransitionInvalid`** — verifies that an event invalid for the current state returns an error and leaves state unchanged.
-- **`TestRunBoardClearStartsAtDirecting`** — mock HTTP server returns empty board; cancelled context stops the loop immediately; asserts state is `StateDirecting`.
-- **`TestRunExistingTasksStartsAtBuilding`** — mock server returns one open task; cancelled context stops the loop immediately; asserts state is `StateBuilding`.
+**`pkg/runner/critic.go`**
+- `writeCritiqueArtifact` now returns `(string, error)` — string is the claim node ID
+- `reviewCommit` threads that ID into fix task `causes: [claimID]` — fix tasks traceable to their critique
 
-## Verification
+**`pkg/runner/runner.go`**
+- `writeBuildArtifact` passes `[]string{t.ID}` to `CreateDocument` — build docs causally linked to task
 
-```
-go.exe build -buildvcs=false ./...   ✓ no errors
-go.exe test ./...                    ✓ all pass
-```
+**`pkg/runner/architect.go`**
+- Subtasks pass `causes: [milestoneID]` — decomposition traceable to milestone
+
+**Other callers** (observer, pm, reflector, pipeline_tree)
+- Updated to pass `nil` causes (no triggering node in those paths)
+
+### Tests added
+
+- `pkg/api/client_test.go` — 5 tests: `CreateTask`/`CreateDocument`/`AssertClaim` send causes; nil causes omit field; `PostOp` string fields preserved
+- `pkg/runner/critic_test.go` — `TestReviewCommitFixTaskHasCauses`: verifies REVISE verdict creates fix task with `causes:["<critique-claim-id>"]`
+
+All tests pass. Build passes.

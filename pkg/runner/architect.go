@@ -145,13 +145,21 @@ func (r *Runner) runArchitect(ctx context.Context) {
 		return
 	}
 
-	// Create right-sized tasks for the Builder.
+	// Create right-sized tasks for the Builder, caused by the milestone they decompose.
+	var milestoneID string
+	if milestone != nil {
+		milestoneID = milestone.ID
+	}
 	for _, st := range subtasks {
 		if st.title == "" {
 			log.Printf("[architect] skipping subtask with empty title")
 			continue
 		}
-		task, err := r.cfg.APIClient.CreateTask(r.cfg.SpaceSlug, st.title, st.desc, st.priority)
+		var causes []string
+		if milestoneID != "" {
+			causes = []string{milestoneID}
+		}
+		task, err := r.cfg.APIClient.CreateTask(r.cfg.SpaceSlug, st.title, st.desc, st.priority, causes)
 		if err != nil {
 			log.Printf("[architect] create subtask error: %v", err)
 			continue
