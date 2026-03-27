@@ -334,6 +334,43 @@ func TestAssertScoutGapAPIError(t *testing.T) {
 	}
 }
 
+// TestAssertScoutGapSendsAuthHeader verifies that assertScoutGap sets the
+// Authorization: Bearer header so the API can authenticate the request.
+// If the header is missing, production returns 401 but mock tests pass — this
+// test catches that regression.
+func TestAssertScoutGapSendsAuthHeader(t *testing.T) {
+	var gotAuth string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		w.Write([]byte(`{"node":{"id":"x"}}`))
+	}))
+	defer srv.Close()
+
+	origDir, _ := os.Getwd()
+	tmp := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tmp, "loop"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmp, "loop", "scout.md"),
+		[]byte("## SCOUT GAP REPORT — Iteration 7\n\n**Gap:** Auth header missing.\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	os.Chdir(tmp)
+	defer os.Chdir(origDir)
+
+	if err := assertScoutGap("lv_mykey", srv.URL); err != nil {
+		t.Fatalf("assertScoutGap() error: %v", err)
+	}
+
+	want := "Bearer lv_mykey"
+	if gotAuth != want {
+		t.Errorf("Authorization header = %q, want %q", gotAuth, want)
+	}
+}
+
 // TestSyncClaimsAPIError verifies that syncClaims returns an error and does not
 // write a file when the API responds with HTTP 4xx.
 func TestSyncClaimsAPIError(t *testing.T) {

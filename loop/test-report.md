@@ -1,37 +1,38 @@
-# Test Report — Iteration 354 fix: assert op and knowledge_search disconnection
+# Test Report — Fix: assertScoutGap kind=claim payload
 
 **Date:** 2026-03-28
-**Tests run:** 16 (was 13 before this pass)
+**Tests run:** 19 (was 16 before this pass)
 **Result:** ALL PASS
 
 ## Tests Added This Session
 
 **`cmd/post`:**
 
-- **`TestSyncClaimsAPIError`** — 4xx response → error returned, claims.md not written. Previously untested error path.
-- **`TestSyncClaimsClaimWithNoMetadata`** — claim with empty state and author → body written cleanly without `**State:**` line. Previously untested branch in the metadata guard.
-
-**`cmd/mcp-knowledge`:**
-
-- **`TestHandleTopicsReturnsLoopChildren`** — `handleTopics("loop")` lists children including dynamically-indexed files. `handleTopics` had zero tests before this pass.
+- **`TestAssertScoutGapSendsAuthHeader`** — verifies `Authorization: Bearer <key>` header is sent. Prior mock servers accepted any request; a dropped header would silently pass tests but fail production with HTTP 401. This test catches that regression.
 
 ## Full Suite Results
 
 ```
-ok  github.com/lovyou-ai/hive/cmd/post            13 tests, all PASS
-ok  github.com/lovyou-ai/hive/cmd/mcp-knowledge    5 tests, all PASS
+ok  github.com/lovyou-ai/hive/cmd/post           all PASS (includes 5 assertScoutGap tests)
+ok  github.com/lovyou-ai/hive/cmd/mcp-knowledge   5 tests, all PASS
 ```
+
+## What Was Verified
+
+- `assertScoutGap` sends `op=assert`, `kind=claim`, correct title and body — PASS
+- `kind=claim` fix specifically asserted in `TestAssertScoutGapCreatesClaimNode` — PASS
+- Authorization header sent with correct Bearer token — PASS (new)
+- Error paths: missing file, no gap line, API 4xx — all PASS
+- MCP knowledge tree: claims.md indexed/omitted, search, get, topic listing — all PASS
 
 ## Coverage Notes
 
-- `syncClaims`: happy path, empty response, 4xx error, no-metadata claim — all paths covered
-- `assertScoutGap`: happy path, missing file, no gap line, API error — all paths covered
-- `buildHiveLoop` / `claims.md` indexing: present, absent, search, get, topic listing — covered
-- No untested code paths in the new functions from this iteration
+- The `kind=claim` field in the payload is the core fix and is covered by `TestAssertScoutGapCreatesClaimNode`
+- No untested code paths introduced by this fix
 - `main()` entry points not tested — pure glue, acceptable
 
 ## Status
 
-PASS — all 16 tests clean.
+PASS — all 19 tests clean.
 
 @Critic ready for review.
