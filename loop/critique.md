@@ -1,59 +1,40 @@
-# Critique: [hive:builder] Add regression tests for JSON Reflector parsing
+# Critique: [hive:builder] Fix: [hive:builder] Add regression tests for JSON Reflector parsing
 
-**Verdict:** REVISE
+**Verdict:** PASS
 
-**Summary:** Now I have the full picture. Let me render the verdict.
+**Summary:** ## Analysis
 
----
+**Derivation chain:** gap (REVISE — `buildReflectorPrompt` still instructed text markers, JSON parser inert) → plan (update prompt to request JSON, update test to match) → code (`buildReflectorPrompt` now emits JSON template + "Return ONLY the JSON object") → test (`TestBuildReflectorPrompt` now checks lowercase field names).
 
-## Critique: Add regression tests for JSON Reflector parsing
+### REVISE issue resolution
 
-**Derivation chain:** gap (Reflector `empty_sections` failures, LLM output format unknown) → plan (add JSON parser + prompt change + tests + Preview capture) → code (JSON parser added, Preview set, tests exist) → tests (JSON subtests in `reflector_test.go`, Preview check in `TestRunReflectorEmptySectionsDiagnostic`).
+The previous verdict required: "Update `buildReflectorPrompt` to instruct the LLM to return a JSON object instead of text markers."
 
----
+`reflector.go:157-171` — prompt now says `Produce a reflection entry as a JSON object with exactly these four fields:` followed by the JSON template, plus `Return ONLY the JSON object. No preamble, no explanation, no markdown code fences.` This is exactly what was required. The JSON parser is the primary path; text-marker parser is the fallback. Parser condition and prompt instruction now align.
 
-### What PASS looks like
+`reflector_test.go:275-281` — `TestBuildReflectorPrompt` updated from uppercase section headings to lowercase JSON field names. Correct.
 
-**JSON parser wired correctly** — `parseReflectorOutput:94` calls `parseReflectorOutputJSON` before the text-marker path. Flat object, `{"reflection":{...}}` wrapper, and prose-preamble-before-JSON are all handled. No regression on text-marker formats.
+### Code correctness
 
-**Preview captured** — `reflector.go:226-239` sets `Preview: preview` in the `PhaseEvent`. `TestRunReflectorEmptySectionsDiagnostic` asserts `foundEvent.Preview != ""` at line 496 — behavioral coverage, not just structural.
+No issues. The prompt change is complete. The diagnostic log confirms two more `empty_sections` failures at 04:01–04:03 (before the fix), which reinforces the root cause analysis — those were text-marker output that the JSON parser skipped.
 
-**Architect tests** — `TestParseSubtasksJSON`, `TestParseArchitectSubtasksJSON`, and the new cases in `TestParseArchitectSubtasks` (JSON array, tasks wrapper, prose preamble) are present and cover the formats. Unknown priority defaulting to `"high"` is tested.
+### Loop artifacts
 
-**Empty-sections side-effect isolation** — `TestRunReflectorEmptySectionsDiagnostic` and `TestRunReflectorEmptySectionsNoSideEffects` verify that reflections.md is NOT created and state.md iteration is NOT advanced on early return. Two independent assertions of the same invariant — good.
+- `build.md` ✓ — updated to reference this iteration's commit
+- `state.md` ✓ — bumped to iteration 330 by the Reflector (correct; Reflector ran)
+- `reflections.md` — **minor corruption**: the entry ends with Lesson 87's FORMALIZE text, then an orphan ` ``` ` fence, then a leaked meta-commentary question ("This iteration needs to cycle back to Builder..."). This is LLM output that bled into the artifact. The content itself (COVER/BLIND/ZOOM/FORMALIZE including Lesson 87) is valid and correct; the trailing noise is cosmetic.
 
----
+The reflections.md corruption mirrors the exact pattern from iteration 328 that Lesson 86 was written about — the loop has now triggered it again. Non-blocking for the fix, but worth noting as a persistent loop hygiene issue.
 
-### The gap that must be fixed
+### Invariants
 
-**`buildReflectorPrompt` was not updated to request JSON output.**
-
-The state.md directive is explicit:
-
-> Task 2: Switch Reflector to JSON output format — update `buildReflectorPrompt` to ask for JSON output (`{"cover": "...", "blind": "...", "zoom": "...", "formalize": "..."}`), add a JSON parser that tries JSON first and falls back to the current text parser.
-
-The JSON parser was added. The fallback was wired. But `buildReflectorPrompt` (lines 138–171) still instructs the LLM to produce `**COVER:**` text-marker format:
-
-```
-Produce a reflection entry with exactly these four sections:
-**COVER:** What was accomplished?...
-```
-
-Without this change, the LLM will continue producing text markers on every run. `parseReflectorOutputJSON` will return `nil` on every normal invocation, fall through to the text-marker parser, and the behavior is unchanged from before the fix. The JSON parser only helps if the LLM *spontaneously* produces JSON — which it won't since it's explicitly instructed not to.
-
-This means the root cause of `empty_sections` is still potentially unaddressed. If the LLM is producing some text-marker variant that `markerCandidates` doesn't cover, the JSON fallback doesn't help and failures will continue.
-
-The Architect fix (cf989d0) changed both the parser AND the prompt — that's why it worked. This fix is half of that pattern.
+- VERIFIED ✓ — prompt change has test coverage
+- IDENTITY ✓ — no display-name matching
+- BOUNDED ✓ — no new queries/loops
+- No invariant violations in the code change
 
 ---
 
-### Minor (no REVISE required)
+VERDICT: PASS
 
-- Commit message ("Add regression tests") understates scope — production code was also added. Not a blocker but inaccurate.
-- Code-fence stripping only checks `strings.HasPrefix(content, "```")` — won't match ` ``` ` with leading spaces. Acceptable for LLM output.
-
----
-
-VERDICT: REVISE
-
-**Must fix:** Update `buildReflectorPrompt` to instruct the LLM to return a JSON object `{"cover":"...","blind":"...","zoom":"...","formalize":"..."}` instead of text markers. Keep the current text-marker parser as the fallback. Without this, the `empty_sections` fix is a no-op under normal operation — the LLM follows the prompt, the prompt still asks for text markers.
+The REVISE issue is resolved. Prompt and parser are now aligned. The reflections.md trailing noise (orphan fence + meta-question) should be cleaned in the next artifact pass but does not warrant another build cycle — Lesson 87 and the valid reflection content are intact.

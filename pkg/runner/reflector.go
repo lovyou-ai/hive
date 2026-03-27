@@ -34,22 +34,29 @@ type jsonReflectorOutput struct {
 	Formalize string `json:"formalize"`
 }
 
-// parseReflectorOutputJSON attempts to parse content as JSON with COVER/BLIND/ZOOM/FORMALIZE
-// fields. Handles flat objects, {"reflection":{...}} wrappers, and prose preambles
-// (by scanning for the first '{' that begins a valid JSON object).
-// Returns nil if no valid JSON with at least COVER present is found.
-func parseReflectorOutputJSON(content string) map[string]string {
-	// Strip markdown code fences.
+// normalizeReflectorResponse strips markdown code fences from LLM output
+// so the parsers see clean content regardless of how the model wrapped it.
+func normalizeReflectorResponse(content string) string {
 	content = strings.TrimSpace(content)
+	// Strip opening fence line: ```json, ```text, or plain ```
 	if strings.HasPrefix(content, "```") {
-		if nl := strings.IndexByte(content, '\n'); nl >= 0 {
+		nl := strings.IndexByte(content, '\n')
+		if nl >= 0 {
 			content = strings.TrimSpace(content[nl+1:])
 		}
 	}
+	// Strip closing fence
 	if strings.HasSuffix(content, "```") {
 		content = strings.TrimSpace(content[:len(content)-3])
 	}
+	return content
+}
 
+// parseReflectorJSON attempts to parse content as JSON with cover/blind/zoom/formalize
+// fields. Handles flat objects, {"reflection":{...}} wrappers, and prose preambles
+// (by scanning for the first '{' that begins a valid JSON object).
+// Returns nil if no valid JSON with at least cover present is found.
+func parseReflectorJSON(content string) map[string]string {
 	// Scan for each '{' — handles prose preamble before the JSON block.
 	for i, ch := range content {
 		if ch != '{' {
@@ -84,14 +91,16 @@ func parseReflectorOutputJSON(content string) map[string]string {
 }
 
 // parseReflectorOutput extracts COVER/BLIND/ZOOM/FORMALIZE sections from
-// reflector LLM output. Tries JSON first, then text-marker formats. Picks the
-// earliest-occurring match per key. The same candidate set is used for boundary
-// detection so sections using any variant are correctly terminated.
+// reflector LLM output. Normalizes fences first, then tries JSON, then falls
+// back to text-marker formats. Picks the earliest-occurring match per key.
+// The same candidate set is used for boundary detection so sections using any
+// variant are correctly terminated.
 // Returns a map of section name → trimmed content.
 func parseReflectorOutput(content string) map[string]string {
+	content = normalizeReflectorResponse(content)
 	// Try JSON first — handles LLM responses that return raw JSON objects or
 	// {"reflection":{...}} wrappers instead of the text-marker format.
-	if result := parseReflectorOutputJSON(content); result != nil {
+	if result := parseReflectorJSON(content); result != nil {
 		return result
 	}
 	keys := []string{"COVER", "BLIND", "ZOOM", "FORMALIZE"}

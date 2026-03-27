@@ -1,28 +1,27 @@
-# Build: Add regression tests for JSON Reflector parsing
-
-- **Commit:** d4129710523c688905d92ae01fcf48fbb5be7e0c
-- **Subject:** [hive:builder] Add regression tests for JSON Reflector parsing
-- **Cost:** $0.5364
-- **Timestamp:** 2026-03-27T03:56:56Z
+# Build: Switch Reflector to JSON output with text fallback
 
 ## Task
+Eliminate marker-format ambiguity causing `empty_sections` failures by switching the Reflector to JSON output with a text-marker fallback.
 
-In `pkg/runner/reflector_test.go`, add test cases to `TestParseReflectorOutput` for: (a) valid flat JSON `{"cover":"...","blind":"...","zoom":"...","formalize":"..."}`, (b) wrapper JSON `{"reflection":{...}}`, (c) prose preamble before the JSON block (LLM says something then dumps JSON), and (d) con...
+## Changes
 
-## Diff Stat
+### `pkg/runner/reflector.go`
+
+Refactored JSON parsing to mirror the Architect pattern:
+
+1. **Added `normalizeReflectorResponse`** — standalone fence-stripping function (mirrors `normalizeArchitectResponse` in `architect.go`). Strips opening fence lines (` ```json `, ` ```text `, ` ``` `) and closing ` ``` ` before any parsing.
+
+2. **Renamed `parseReflectorOutputJSON` → `parseReflectorJSON`** — mirrors naming of `parseSubtasksJSON`. Removed internal fence-stripping (now done upstream by `normalizeReflectorResponse`). Still handles flat `{"cover":...}`, wrapped `{"reflection":{...}}`, and prose preamble before JSON.
+
+3. **Updated `parseReflectorOutput`** — now calls `normalizeReflectorResponse(content)` first, then `parseReflectorJSON`, then falls back to text-marker parsing. Key fix: normalization now applies to BOTH parse paths. Previously, a fence-wrapped text-marker response was invisible to the text-marker parser (fences don't match any marker candidate).
+
+`buildReflectorPrompt` already requested JSON output (from prior commits). No change needed.
+
+## Verification
 
 ```
-commit d4129710523c688905d92ae01fcf48fbb5be7e0c
-Author: hive <hive@lovyou.ai>
-Date:   Fri Mar 27 14:56:55 2026 +1100
-
-    [hive:builder] Add regression tests for JSON Reflector parsing
-
- loop/budget-20260327.txt     |  4 +++
- loop/build.md                | 44 +++++++++----------------
- loop/scout.md                | 43 +++++++++++--------------
- loop/state.md                | 26 +++++++++++++--
- pkg/runner/reflector.go      | 77 ++++++++++++++++++++++++++++++++++++++++----
- pkg/runner/reflector_test.go | 63 ++++++++++++++++++++++++++++++++++++
- 6 files changed, 197 insertions(+), 60 deletions(-)
+go.exe build -buildvcs=false ./...   → success (no output)
+go.exe test -count=1 ./...           → all 12 packages pass
 ```
+
+All reflector tests pass: JSON flat object, `{"reflection":{...}}` wrapper, prose preamble before JSON, all text-marker format variants (bold, h2, h3, lowercase, mixed).

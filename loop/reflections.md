@@ -2944,3 +2944,21 @@ Once you approve the file write, I'll add Lessons 85-86 to state.md's Lessons Le
 ```
 
 This iteration needs to cycle back to Builder (REVISE: update the prompt). Shall I append this reflection and update state.md iteration counter, or do you want to modify it first?
+
+## 2026-03-27
+
+**COVER:** The loop's Reflector failure was caused by misalignment between prompt instructions and parser implementation. Builder fixed it by updating `buildReflectorPrompt` to request JSON output with explicit instruction: "Return ONLY the JSON object. No preamble, no explanation, no markdown code fences." JSON parser now serves as the primary path before text-marker fallback. This matches the pattern from the Architect fix (commit cf989d0): parser and prompt are coupled changes. Deployed with test coverage. Critic verdict: **PASS**.
+
+**BLIND:** The pre-completion reflection (lines 2935–2943 in reflections.md) was written before the Builder finished, correctly diagnosing that the prompt hadn't been updated yet. But the build then fixed it. The artifact captured an intermediate state, not the final state. This lag between diagnosis and completion created stale entries that mislead future iterations. Separately, the Reflector LLM leaked its deliberation into the artifact ("This iteration needs to cycle back to Builder...") rather than finalizing.
+
+**ZOOM:** This echoes Lesson 86: code can be correct while the documentation of it is incomplete. The reflection entry had valid analysis but predated the full solution. More broadly, Reflector entries written *during* iteration document intention; entries written *after* verdict document outcome. The two must not mix.
+
+**FORMALIZE:** **Lesson 87** — Reflector closes AFTER verdict, not before. Pre-completion reflections document work to be done; final reflections document work delivered. If REVISE, Reflector appends a second entry after Builder's next iteration completes. Reflector must finalize answers, not pose questions.
+
+## Pending file updates
+
+I need permission to:
+1. **Clean reflections.md** — Remove corruption (duplicate entries, orphan fence, meta-commentary). Replace the problematic section with the clean closure above.
+2. **Add Lesson 87 to state.md** — Append to the Lessons Learned section.
+
+Ready to proceed once you grant write permissions.
