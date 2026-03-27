@@ -242,7 +242,10 @@ Look for:
 3. **Title compounding** — tasks with "Fix: Fix: Fix:..." prefixes (should be stripped)
 4. **Schema violations** — any field using display names where IDs should be used (Invariant 11)
 5. **Orphaned milestones** — PM milestones still open after their subtasks completed
-6. **Claim integrity** — claims with no body, no causes, or stuck in challenged state with no resolution`, groundTruth, apiKey, spaceSlug, apiKey, spaceSlug)
+6. **Claim integrity** — claims with no body, no causes, or stuck in challenged state with no resolution
+7. **Meta-tasks** — any task whose sole purpose is to close/complete another task. These are board noise. Close BOTH the meta-task AND the target task inline using op=complete. Do not create a new task for this.
+
+**Board hygiene rule:** If you find a task that says "close task X" or "complete task Y" or "mark Z as done", that is a meta-task created by a prior Observer bug. Close the meta-task itself with op=complete. Then evaluate whether the target task should also be closed.`, groundTruth, apiKey, spaceSlug, apiKey, spaceSlug)
 }
 
 func buildOutputInstruction(spaceSlug, apiKey string) string {
@@ -252,9 +255,28 @@ TASK_TITLE: <title>
 TASK_PRIORITY: <priority>
 TASK_DESCRIPTION: <description>`
 	}
-	return fmt.Sprintf(`Create tasks directly for the most important findings (max 2):
+	return fmt.Sprintf(`## Acting on findings — two categories, different responses
 
-curl -s -X POST -H "Authorization: Bearer %s" -H "Content-Type: application/json" -H "Accept: application/json" "https://lovyou.ai/app/%s/op" -d '{"op":"intend","kind":"task","title":"<TITLE>","description":"<DESCRIPTION>","priority":"<PRIORITY>"}'`, apiKey, spaceSlug)
+**IMPORTANT: Do NOT create a task to close another task. That is the defect you must avoid.**
+
+### Category A — Administrative corrections (act NOW, inline)
+If the action requires no code change — closing a false-positive, completing a stale task,
+removing board noise — execute it directly with op=complete or op=edit:
+
+Close a false-positive task:
+curl -s -X POST -H "Authorization: Bearer %s" -H "Content-Type: application/json" -H "Accept: application/json" "https://lovyou.ai/app/%s/op" -d '{"op":"complete","node_id":"<NODE_ID>"}'
+
+Mark a task active/in-progress:
+curl -s -X POST -H "Authorization: Bearer %s" -H "Content-Type: application/json" -H "Accept: application/json" "https://lovyou.ai/app/%s/op" -d '{"op":"edit","node_id":"<NODE_ID>","state":"active"}'
+
+Heuristic: if you can fix it without writing code, fix it now. Do not defer.
+
+### Category B — Code changes needed (create a task, max 2)
+Only create a task if the finding requires a Builder to write or change code:
+
+curl -s -X POST -H "Authorization: Bearer %s" -H "Content-Type: application/json" -H "Accept: application/json" "https://lovyou.ai/app/%s/op" -d '{"op":"intend","kind":"task","title":"<TITLE>","description":"<DESCRIPTION>","priority":"<PRIORITY>"}'
+
+**Rule:** Creating a task to close a task is always wrong. Close it yourself.`, apiKey, spaceSlug, apiKey, spaceSlug, apiKey, spaceSlug)
 }
 
 // Helper: grep registered routes from handlers.go.

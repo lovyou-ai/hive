@@ -1,33 +1,59 @@
-# Test Report: Iteration 367 — Knowledge API causes field
+# Test Report: Fix causes field omitempty (Iteration 368)
 
-**Tester:** Tester
-**Date:** 2026-03-28
-**Verdict:** PASS
+**Tester:** Tester agent
+**Timestamp:** 2026-03-28
+**Build commit:** e98adfc (hive), site HEAD: 9ed933a
 
 ## What Was Tested
 
-The Builder fixed `syncClaims` in `cmd/post/main.go` to include the `Causes` field when decoding the `/knowledge` API response and writing `loop/claims.md`.
+The fix: removed `omitempty` from `Node.Causes []string json:"causes"` in `site/graph/store.go`.
+This ensures the `causes` key is always present in JSON responses (never silently omitted for empty slices).
+Invariant 2 (CAUSALITY) compliance.
 
 ## Tests Run
 
+### site/graph — Knowledge tests (6/6 PASS)
+
 ```
-go.exe test ./cmd/post/
+=== RUN   TestKnowledgePublic                     PASS
+=== RUN   TestKnowledgeAuthed                     PASS
+=== RUN   TestAssertOpReturnsCauses               PASS
+=== RUN   TestKnowledgeClaimsCausesFieldPresent   PASS
+=== RUN   TestKnowledgeMissingSpace               PASS
+=== RUN   TestKnowledgeClaims                     PASS
+ok  github.com/lovyou-ai/site/graph  0.246s
+```
+
+### cmd/post — Causes/assert tests (14/14 PASS)
+
+```
+=== RUN   TestAssertScoutGapCreatesClaimNode      PASS
+=== RUN   TestAssertScoutGapMissingFile           PASS
+=== RUN   TestAssertScoutGapNoGapLine             PASS
+=== RUN   TestAssertScoutGapAPIError              PASS
+=== RUN   TestAssertScoutGapSendsAuthHeader       PASS
+=== RUN   TestAssertCritiqueCreatesClaimNode      PASS
+=== RUN   TestAssertCritiqueMissingFile           PASS
+=== RUN   TestAssertLatestReflectionCreatesDocument PASS
+=== RUN   TestAssertLatestReflectionMissingFile   PASS
+=== RUN   TestAssertCritiqueSendsCauses           PASS
+=== RUN   TestAssertScoutGapSendsCauses           PASS
+=== RUN   TestAssertLatestReflectionSendsCauses   PASS
+=== RUN   TestAssertCauseIDsMultipleJoined        PASS
+=== RUN   TestAssertCritiqueNoTitle               PASS
 ok  github.com/lovyou-ai/hive/cmd/post  0.605s
 ```
 
-32 tests, all pass.
-
-## New Test Added
-
-**`TestSyncClaimsMultipleCauses`** — verifies that when a claim has multiple cause IDs, all of them are written as a comma-joined `**Causes:**` line in `claims.md`. This exercises the `strings.Join(c.Causes, ", ")` path that the Builder introduced. The Builder's `TestSyncClaimsWritesCauses` only covers the single-cause case; this covers the multi-cause case.
-
 ## Coverage Notes
 
-The key fix (adding `Causes []string` to the decode struct) is pinned by `TestSyncClaimsWritesCauses`. Removal of the field would cause that test to fail.
+- `TestKnowledgeClaimsCausesFieldPresent` verifies the fix directly: decodes JSON as `map[string]json.RawMessage` and asserts `causes` key is present even when no causes are declared. This is the key regression test.
+- `TestAssertOpReturnsCauses` covers the round-trip: assert with a cause → causes stored → causes returned in both op response and GET /knowledge.
+- All 14 cmd/post tests cover the `causes` payload being sent to the API on scout/critique/reflection assertions.
 
-All relevant paths covered:
-- Single cause: `TestSyncClaimsWritesCauses`
-- Multiple causes: `TestSyncClaimsMultipleCauses` (added this iteration)
-- No causes: `TestSyncClaimsClaimWithNoMetadata` / `TestSyncClaimsWritesFile` (no `**Causes:**` line emitted)
-- Empty response: `TestSyncClaimsEmptyDoesNotWrite`
-- API error: `TestSyncClaimsAPIError`
+## Pre-existing Failure (not this iteration)
+
+`TestReposts` in `site/graph/store_test.go:899` — nil pointer dereference. The test creates a space with hardcoded slug `"repost-test"` without checking the error; `sp` is nil when the slug already exists. Last change to store_test.go was iteration 350. **Not introduced by this fix.**
+
+## Verdict
+
+**PASS.** The fix is correct and tested. The `causes` key is now always present in JSON responses for claim nodes. Invariant 2 compliance restored.
