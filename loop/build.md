@@ -1,43 +1,36 @@
-# Build: Zero causes links: graph is causally disconnected — 0/486 nodes have causes declared
+# Build Report — Fix: Architect Operate path missing causes
 
-- **Commit:** (pending — Ops will commit)
-- **Cost:** $0.0000
-- **Timestamp:** 2026-03-28T00:00:00Z
+## Gap
+`buildArchitectOperateInstruction` never received the milestone ID, so the curl template the LLM executes omitted `causes`. Since claude-cli implements `IOperator`, this is the production path. The test covered only the fallback (Reason) path.
 
-## Task
+## Changes
 
-Every node on the hive board has zero causes links (0/486). This violates Invariant 2 (CAUSALITY): "Every event has declared causes."
+### `pkg/runner/architect.go`
 
-## What Was Built
+**Call site**: Extract `milestoneID` before calling `buildArchitectOperateInstruction`, pass it as a third argument.
 
-### Root cause
-`CreateTask`, `CreateDocument`, and `AssertClaim` in `api/client.go` took `map[string]string` — no way to include `causes: []string` (a JSON array).
+**`buildArchitectOperateInstruction`** signature changed from `(context, spaceSlug string)` to `(context, spaceSlug, milestoneID string)`.
 
-### Changes
+When `milestoneID != ""`, a `causesSuffix` of `,"causes":["<ID>"]` is injected into the curl payload template, so the LLM's generated commands produce:
 
-**`pkg/api/client.go`**
-- Added `postOpAny(slug string, fields map[string]any)` — underlying implementation supporting array fields
-- `PostOp` (public, `map[string]string`) delegates to `postOpAny` for backward compat
-- `CreateTask(slug, title, description, priority string, causes []string)` — new `causes` parameter; sends `"causes":[...]` when non-empty
-- `CreateDocument(slug, title, body string, causes []string)` — same
-- `AssertClaim(slug, title, body string, causes []string)` — same
+```json
+{"op":"intend","kind":"task","title":"...","description":"...","priority":"high","causes":["milestone-42"]}
+```
 
-**`pkg/runner/critic.go`**
-- `writeCritiqueArtifact` now returns `(string, error)` — string is the claim node ID
-- `reviewCommit` threads that ID into fix task `causes: [claimID]` — fix tasks traceable to their critique
+When no milestone is present (Scout fallback path), `causesSuffix` is empty and the payload is unchanged.
 
-**`pkg/runner/runner.go`**
-- `writeBuildArtifact` passes `[]string{t.ID}` to `CreateDocument` — build docs causally linked to task
+### `pkg/runner/architect_test.go`
 
-**`pkg/runner/architect.go`**
-- Subtasks pass `causes: [milestoneID]` — decomposition traceable to milestone
+Added `mockCaptureOperator` — implements `intelligence.Provider` + `decision.IOperator`. Captures `OperateTask.Instruction` for assertion.
 
-**Other callers** (observer, pm, reflector, pipeline_tree)
-- Updated to pass `nil` causes (no triggering node in those paths)
+Added `TestRunArchitectOperateInstructionIncludesCauses` — creates a milestone, runs `runArchitect` with the capture operator, asserts the instruction contains `"causes":["milestone-42"]`.
 
-### Tests added
+## Verification
 
-- `pkg/api/client_test.go` — 5 tests: `CreateTask`/`CreateDocument`/`AssertClaim` send causes; nil causes omit field; `PostOp` string fields preserved
-- `pkg/runner/critic_test.go` — `TestReviewCommitFixTaskHasCauses`: verifies REVISE verdict creates fix task with `causes:["<critique-claim-id>"]`
+```
+go.exe build -buildvcs=false ./...   ✓ no errors
+go.exe test -buildvcs=false ./...    ✓ all pass
+```
 
-All tests pass. Build passes.
+New test: `TestRunArchitectOperateInstructionIncludesCauses` — PASS
+Existing test: `TestRunArchitectSubtasksHaveCauses` — PASS (fallback path unaffected)

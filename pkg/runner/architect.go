@@ -51,7 +51,11 @@ func (r *Runner) runArchitect(ctx context.Context) {
 	// No text parsing — tasks are structured entities created via HTTP POST.
 	op, canOperate := r.cfg.Provider.(decision.IOperator)
 	if canOperate {
-		instruction := buildArchitectOperateInstruction(context, r.cfg.SpaceSlug)
+		var milestoneID string
+		if milestone != nil {
+			milestoneID = milestone.ID
+		}
+		instruction := buildArchitectOperateInstruction(context, r.cfg.SpaceSlug, milestoneID)
 		result, err := op.Operate(ctx, decision.OperateTask{
 			WorkDir:     r.cfg.RepoPath,
 			Instruction: instruction,
@@ -211,8 +215,14 @@ type architectSubtask struct {
 // buildArchitectOperateInstruction creates the instruction for the Architect
 // when using Operate(). The agent creates tasks directly via HTTP POST to the
 // lovyou.ai API — no text parsing needed.
-func buildArchitectOperateInstruction(context, spaceSlug string) string {
+// milestoneID, when non-empty, is embedded in the curl payload as "causes":[milestoneID]
+// so every created task declares its causal parent (Invariant 2: CAUSALITY).
+func buildArchitectOperateInstruction(context, spaceSlug, milestoneID string) string {
 	apiKey := os.Getenv("LOVYOU_API_KEY")
+	causesSuffix := ""
+	if milestoneID != "" {
+		causesSuffix = fmt.Sprintf(`,"causes":["%s"]`, milestoneID)
+	}
 	return fmt.Sprintf(`You are the Architect. Read the milestone below and create 2-4 specific tasks for the Builder.
 
 ## Milestone
@@ -223,7 +233,7 @@ func buildArchitectOperateInstruction(context, spaceSlug string) string {
 Create each task by running a curl command. Do NOT output formatted text — execute the commands directly.
 
 For each task, run:
-curl -s -X POST -H "Authorization: Bearer %s" -H "Content-Type: application/json" -H "Accept: application/json" "https://lovyou.ai/app/%s/op" -d '{"op":"intend","kind":"task","title":"<TITLE>","description":"<DESCRIPTION>","priority":"high"}'
+curl -s -X POST -H "Authorization: Bearer %s" -H "Content-Type: application/json" -H "Accept: application/json" "https://lovyou.ai/app/%s/op" -d '{"op":"intend","kind":"task","title":"<TITLE>","description":"<DESCRIPTION>","priority":"high"%s}'
 
 Create 2-4 tasks. Each should:
 - Change 1-3 files maximum
@@ -234,7 +244,7 @@ Create 2-4 tasks. Each should:
 After creating all tasks, verify by listing the board:
 curl -s -H "Authorization: Bearer %s" -H "Accept: application/json" "https://lovyou.ai/app/%s/board" | head -200
 
-Do NOT explain your plan in text. Just create the tasks.`, context, apiKey, spaceSlug, apiKey, spaceSlug)
+Do NOT explain your plan in text. Just create the tasks.`, context, apiKey, spaceSlug, causesSuffix, apiKey, spaceSlug)
 }
 
 func buildArchitectPrompt(sharedCtx, repoCtx, scoutReport string) string {

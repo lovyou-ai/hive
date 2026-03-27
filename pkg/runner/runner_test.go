@@ -2,7 +2,9 @@ package runner
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -433,6 +435,76 @@ func TestWorkTaskBuildVerifyFailureWritesDiagnostic(t *testing.T) {
 	}
 	if !strings.Contains(body, `"error"`) {
 		t.Errorf("diagnostics.jsonl missing error field:\n%s", body)
+	}
+}
+
+// TestWriteBuildArtifactDocumentCauses verifies that writeBuildArtifact calls
+// CreateDocument with causes: [task.ID], satisfying Invariant 2 (CAUSALITY).
+// The build document is causally linked to the task that triggered the build.
+func TestWriteBuildArtifactDocumentCauses(t *testing.T) {
+	var bodies []map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		data, _ := io.ReadAll(r.Body)
+		var m map[string]any
+		if json.Unmarshal(data, &m) == nil {
+			bodies = append(bodies, m)
+		}
+		_, _ = w.Write([]byte(`{"op":"intend","node":{"id":"doc-1","kind":"document","title":"Build: task","created_at":"","updated_at":""}}`))
+	}))
+	defer srv.Close()
+
+	repoDir := t.TempDir()
+	runGit := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repoDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	runGit("init")
+	runGit("config", "user.email", "test@test.com")
+	runGit("config", "user.name", "Test")
+	if err := os.WriteFile(filepath.Join(repoDir, "file.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runGit("add", ".")
+	runGit("commit", "-m", "Add feature")
+
+	hiveDir := makeHiveDir(t, "# State\n", nil)
+	r := New(Config{
+		HiveDir:   hiveDir,
+		RepoPath:  repoDir,
+		SpaceSlug: "hive",
+		APIClient: api.New(srv.URL, "test-key"),
+	})
+
+	task := api.Node{ID: "task-42", Title: "Add feature", Kind: "task"}
+	r.writeBuildArtifact(task, 0.001, "summary")
+
+	// Find the document creation request.
+	var docBody map[string]any
+	for _, b := range bodies {
+		if kind, _ := b["kind"].(string); kind == "document" {
+			docBody = b
+			break
+		}
+	}
+	if docBody == nil {
+		t.Fatal("no document creation request found — writeBuildArtifact did not call CreateDocument")
+	}
+
+	rawCauses, ok := docBody["causes"]
+	if !ok {
+		t.Fatal("build document missing 'causes' field — Invariant 2 violated")
+	}
+	causes, ok := rawCauses.([]any)
+	if !ok || len(causes) == 0 {
+		t.Fatalf("causes is empty or wrong type: %v", rawCauses)
+	}
+	if causes[0] != "task-42" {
+		t.Errorf("document causes[0] = %v, want %q (the task that triggered the build)", causes[0], "task-42")
 	}
 }
 

@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -153,6 +154,143 @@ func TestRunArchitectErrorFieldContainsLLMResponse(t *testing.T) {
 	}
 	if got.Error != llmResponse {
 		t.Errorf("Error field = %q, want %q", got.Error, llmResponse)
+	}
+}
+
+// TestRunArchitectSubtasksHaveCauses verifies that when the Architect decomposes
+// a milestone into subtasks, each subtask is created with causes: [milestoneID],
+// satisfying Invariant 2 (CAUSALITY): decomposition traces to the milestone.
+func TestRunArchitectSubtasksHaveCauses(t *testing.T) {
+	milestone := api.Node{
+		ID:       "milestone-77",
+		Kind:     "task",
+		State:    "open",
+		Priority: "high",
+		Title:    "Build auth layer",
+		Body:     strings.Repeat("x", 201), // > 200 chars triggers findMilestone detection
+	}
+
+	var bodies []map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet {
+			resp := api.BoardResponse{Nodes: []api.Node{milestone}}
+			_ = json.NewEncoder(w).Encode(resp)
+			return
+		}
+		// POST /op — subtask creation or milestone completion.
+		data, _ := io.ReadAll(r.Body)
+		var m map[string]any
+		if json.Unmarshal(data, &m) == nil {
+			bodies = append(bodies, m)
+		}
+		_, _ = w.Write([]byte(`{"op":"intend","node":{"id":"subtask-1","kind":"task","title":"Subtask","created_at":"","updated_at":""}}`))
+	}))
+	defer srv.Close()
+
+	hiveDir := makeHiveDir(t, "# State\n", nil)
+	r := New(Config{
+		HiveDir:   hiveDir,
+		RepoPath:  t.TempDir(),
+		SpaceSlug: "hive",
+		APIClient: api.New(srv.URL, "test-key"),
+		Provider: &mockProvider{
+			response: `SUBTASK_TITLE: Implement token validation
+SUBTASK_PRIORITY: high
+SUBTASK_DESCRIPTION: Add pkg/auth/token.go with ValidateJWT function.`,
+		},
+		OneShot: true,
+	})
+
+	r.runArchitect(context.Background())
+
+	// Find the intend (task creation) calls — filter out milestone completion (op=complete).
+	var taskBodies []map[string]any
+	for _, b := range bodies {
+		if op, _ := b["op"].(string); op == "intend" {
+			taskBodies = append(taskBodies, b)
+		}
+	}
+	if len(taskBodies) == 0 {
+		t.Fatal("no task creation requests found — subtasks were not created")
+	}
+
+	for i, b := range taskBodies {
+		rawCauses, ok := b["causes"]
+		if !ok {
+			t.Fatalf("subtask[%d] missing 'causes' field — Invariant 2 violated. body: %v", i, b)
+		}
+		causes, ok := rawCauses.([]any)
+		if !ok || len(causes) == 0 {
+			t.Fatalf("subtask[%d] causes is empty or wrong type: %v", i, rawCauses)
+		}
+		if causes[0] != "milestone-77" {
+			t.Errorf("subtask[%d] causes[0] = %v, want %q (the milestone being decomposed)", i, causes[0], "milestone-77")
+		}
+	}
+}
+
+// mockCaptureOperator implements intelligence.Provider + decision.IOperator.
+// It captures the OperateTask instruction so tests can assert on its content.
+type mockCaptureOperator struct {
+	capturedInstruction string
+}
+
+func (m *mockCaptureOperator) Reason(_ context.Context, _ string, _ []event.Event) (decision.Response, error) {
+	score, _ := types.NewScore(0.9)
+	return decision.NewResponse("", score, decision.TokenUsage{}), nil
+}
+func (m *mockCaptureOperator) Name() string  { return "mock-capture-operator" }
+func (m *mockCaptureOperator) Model() string { return "mock-model" }
+func (m *mockCaptureOperator) Operate(_ context.Context, task decision.OperateTask) (decision.OperateResult, error) {
+	m.capturedInstruction = task.Instruction
+	return decision.OperateResult{Summary: "done"}, nil
+}
+
+// TestRunArchitectOperateInstructionIncludesCauses verifies that when the Architect
+// uses the Operate path and a milestone is present, the curl template embedded in
+// the instruction includes causes:[milestoneID] — satisfying Invariant 2 (CAUSALITY).
+func TestRunArchitectOperateInstructionIncludesCauses(t *testing.T) {
+	milestone := api.Node{
+		ID:       "milestone-42",
+		Kind:     "task",
+		State:    "open",
+		Priority: "high",
+		Title:    "Build auth layer",
+		Body:     strings.Repeat("x", 201),
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet {
+			resp := api.BoardResponse{Nodes: []api.Node{milestone}}
+			_ = json.NewEncoder(w).Encode(resp)
+			return
+		}
+		_, _ = w.Write([]byte(`{"op":"ok"}`))
+	}))
+	defer srv.Close()
+
+	op := &mockCaptureOperator{}
+	hiveDir := makeHiveDir(t, "# State\n", nil)
+	r := New(Config{
+		HiveDir:   hiveDir,
+		RepoPath:  t.TempDir(),
+		SpaceSlug: "hive",
+		APIClient: api.New(srv.URL, "test-key"),
+		Provider:  op,
+		OneShot:   true,
+	})
+
+	r.runArchitect(context.Background())
+
+	if op.capturedInstruction == "" {
+		t.Fatal("Operate was not called — Architect did not use Operate path")
+	}
+	want := `"causes":["milestone-42"]`
+	if !strings.Contains(op.capturedInstruction, want) {
+		t.Errorf("Operate instruction missing causes — Invariant 2 violated.\nwant substring: %s\nInstruction:\n%s",
+			want, op.capturedInstruction)
 	}
 }
 

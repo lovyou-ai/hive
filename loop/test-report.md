@@ -1,55 +1,57 @@
-# Test Report: PipelineStateMachine fixes
+# Test Report: Zero causes links — Invariant 2 causality chain
+
+**Build ref:** 8a13ac7f2f2fc395041446e39413b2cb3ea9ce09
+**Tester:** hive:tester
+**Timestamp:** 2026-03-28
 
 ## What Was Tested
 
-Three gaps in `pkg/runner/pipeline_state_test.go` after the Builder's fixes to `PipelineStateMachine`.
+The iteration added `causes []string` to `CreateTask`, `CreateDocument`, and `AssertClaim`, then wired causality through the critic→fix-task and build-document→task chains.
 
-### 1. `TestPipelineTransitionFromUnknownState`
-- **What:** `Transition()` called from a state not in `pipelineTransitions` (the first `!ok` branch at line 115-117 of `pipeline_state.go`)
-- **Verified:** Returns an error; state is unchanged
-- **Why it matters:** The existing `TestPipelineTransitionInvalid` only tested an invalid *event* from a valid state. This tests an invalid *state* entirely — a distinct code path that was unexercised.
+## Tests Already Present (Builder-written)
 
-### 2. `TestInferEventCriticRevise`
-- **What:** `inferEvent("critic")` with `critique.md` containing `VERDICT: REVISE`
-- **Verified:** Returns `EventCritiqueRevise`
-- **Why it matters:** The REVISE→StateBuilding loop is the fix cycle. It was untested — no test confirmed the critic verdict influenced the next state.
+| Test | File | Verdict |
+|------|------|---------|
+| `TestCreateTaskSendsCauses` | `pkg/api/client_test.go` | PASS |
+| `TestCreateTaskNilCausesOmitted` | `pkg/api/client_test.go` | PASS |
+| `TestCreateDocumentSendsCauses` | `pkg/api/client_test.go` | PASS |
+| `TestAssertClaimSendsCauses` | `pkg/api/client_test.go` | PASS |
+| `TestPostOpStringFieldsPreserved` | `pkg/api/client_test.go` | PASS |
+| `TestReviewCommitFixTaskHasCauses` | `pkg/runner/critic_test.go` | PASS |
 
-### 3. `TestInferEventCriticPass`
-- **What:** `inferEvent("critic")` with `critique.md` containing `VERDICT: PASS`
-- **Verified:** Returns `EventCritiquePass`
-- **Why it matters:** Completes the critic verdict coverage; confirms the default pass path.
+## Coverage Gaps Found
 
-## Side Note: `hasFixes` Dead Code
+Two paths were untested: `writeBuildArtifact` calling `CreateDocument` with causes, and `runArchitect` creating subtasks with causes when a milestone exists. Both are Invariant 2 violations if wrong.
 
-The `hasFixes` variable in `Run()` can never be true without `hasOpen` also being true (the `hasFixes` condition is a strict subset of the `hasOpen` condition). The `hasOpen || hasFixes` guard is therefore equivalent to just `hasOpen`. Not a correctness bug, but dead code worth cleaning up.
+## Tests Added
 
-## Results
+### `TestWriteBuildArtifactDocumentCauses` — `pkg/runner/runner_test.go`
+
+Verifies that `writeBuildArtifact` calls `CreateDocument` with `causes: [task.ID]`. Previously the three existing build artifact tests used `Config` with no `APIClient`, so the `CreateDocument` call was silently skipped. This test wires a mock HTTP server and confirms the causality field is present and contains the triggering task ID.
+
+**Result:** PASS
+
+### `TestRunArchitectSubtasksHaveCauses` — `pkg/runner/architect_test.go`
+
+Verifies that when the Architect decomposes a milestone into subtasks (via the `Reason()` fallback path), each created subtask carries `causes: [milestoneID]`. Previously only failure paths were tested (no parseable subtasks). This test provides a milestone with a >200-char body, a provider returning valid `SUBTASK_TITLE:` format, and verifies all `intend` ops include the milestone ID in `causes`.
+
+**Result:** PASS
+
+## Full Suite Results
 
 ```
-=== RUN   TestPipelineTransitionValid              PASS
-=== RUN   TestPipelineTransitionInvalid            PASS
-=== RUN   TestRunBoardClearStartsAtDirecting       PASS
-=== RUN   TestRunExistingTasksStartsAtBuilding     PASS
-=== RUN   TestPipelineTransitionFromUnknownState   PASS  [new]
-=== RUN   TestInferEventCriticRevise               PASS  [new]
-=== RUN   TestInferEventCriticPass                 PASS  [new]
-
-go test ./pkg/runner/ → ok (3.054s, all tests pass)
+ok  github.com/lovyou-ai/hive/pkg/api     (all 5 tests)
+ok  github.com/lovyou-ai/hive/pkg/runner  (all tests, including 2 new)
 ```
 
-## Coverage
+## Coverage Notes
 
-- Valid transitions: all 13 covered ✓
-- Invalid event in valid state: covered ✓
-- Invalid state (no transitions): covered ✓ [new]
-- Board clear → StateDirecting: covered ✓
-- Open tasks → StateBuilding: covered ✓
-- Critic REVISE verdict: covered ✓ [new]
-- Critic PASS verdict: covered ✓ [new]
-- `makeRunner` error propagation (main.go): not unit-testable (CLI integration point)
+- `writeBuildArtifact` with `APIClient = nil` (causes skipped) is implicitly covered by existing tests — no gap there
+- Architect `Operate()` path (canOperate=true) creates tasks via curl in the LLM — not unit-testable without a real operator; causality in that path relies on the Architect's prompt instruction
+- Multiple-cause scenarios (len(causes) > 1) not tested; the mechanism is identical to single-cause and covered by the API-layer tests
 
-## Status
+## Verdict
 
-PASS — all tests clean.
+**PASS** — causality chain is fully wired and verified for the three paths added in this iteration.
 
-@Critic ready for review.
+@Critic
