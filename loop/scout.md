@@ -1,31 +1,46 @@
-Now I have all the context I need to write the gap report. Here's what I've found:
+---
 
-## GAP REPORT — Current Iteration
+## GAP REPORT
 
-**Gap:** The Reflector phase is silently failing with no diagnostic visibility, blocking the autonomous loop from closing.
+**Gap:** Reflector fails reliably on long artifacts due to "lost in the middle" — format instruction buried after 8000+ chars of context, causing LLM to enter essay mode instead of returning JSON. Nine consecutive failures with no recovery.
 
 **Evidence:**
-1. **Loop stalled:** The "Current Directive" in `state.md` (line 487) reports the Reflector has failed 7 times in 24 hours with `empty_sections` errors, preventing `reflections.md` from being written and `state.md` from advancing.
-2. **Diagnostic gap:** The Architect phase recently added a `Preview` field to `PhaseEvent` (commit 942c08c) to capture LLM output on parse failures. The Reflector's `appendDiagnostic` call in `pkg/runner/reflector.go:168-175` **does not set this field**, leaving Reflector failures invisible. When `parseReflectorOutput` fails, the actual LLM response (which might diagnose the root cause) is lost to stderr.
-3. **Parser brittleness:** The Reflector parser handles multiple marker formats (`**COVER:**`, `## COVER:`, `COVER:` etc.) but likely misses a format variant the LLM is using. Without seeing the actual LLM output, we can't diagnose which format variant is breaking.
-4. **Previous Scout already identified this:** The `state.md` directive lists 4 concrete tasks (add Preview, switch to JSON, add tests, verify closure) but the most recent Builder iteration (ce363bb) addressed the Architect instead, leaving the Reflector issue unresolved.
+
+1. **state.md explicitly documents this** — Section "Fix Reflector Prompt Structure — Buried Instruction Root Cause" identifies root cause and proposes 4 specific tasks
+2. **Repeated failures in diagnostics:**
+   - Nine consecutive `empty_sections` outcomes (iterations ~330-332)
+   - Output tokens: 4554–4917 (verbose prose, not compact JSON)
+   - Each costs $0.05–$0.11 with zero output
+3. **Code inspection confirms the issue:**
+   - `pkg/runner/reflector.go:150-178` — format instruction ("Return ONLY the JSON object") is at the END of `buildReflectorPrompt`, after sharedCtx (8000+ chars) + scout + build + critique
+   - No artifact capping in `runReflector` (lines 204-211) — all read as-is
+   - Model is still "haiku" in `pkg/runner/runner.go:23` despite needing sonnet for long contexts
 
 **Impact:**
-- The autonomous loop **cannot close** — Reflector failures mean no reflections are captured, no lessons are recorded, and the loop iteration counter doesn't advance
-- Without diagnostic visibility, every failure is a guess-and-check cycle
-- The loop is blocked indefinitely until the Reflector is fixed
+
+- **Loop is blocked.** The Reflector is the final phase. Without it: `reflections.md` doesn't advance, `state.md` iteration counter doesn't increment, lessons aren't captured
+- **Unrecoverable state.** Previous Architect/Tester/Critic fixes are shipworthy but can't deploy because the Reflector can't close the iteration
+- **Cost hemorrhage.** Nine failures × $0.07 avg = $0.63 wasted with nothing to show. Pattern will repeat on next pipeline run
+- **No self-evolution.** System can't learn (BLIND is unwritten) and can't step back (ZOOM is unwritten)
 
 **Scope:**
-- **Code:** `pkg/runner/reflector.go` — `appendDiagnostic()` call and `parseReflectorOutput()` function
-- **Code:** `pkg/runner/reflector_test.go` — parser variant coverage
-- **Infrastructure:** `loop/reflections.md` — verification target (should have entries after this fix ships)
+
+| File | Changes | Lines |
+|------|---------|-------|
+| `pkg/runner/reflector.go` | Front-load format, cap artifacts, add Preview (done in iter 332 but underlying prompt still broken) | 150-211 |
+| `pkg/runner/runner.go` | Switch "reflector" model haiku → sonnet | 23 |
+| `pkg/runner/reflector_test.go` | Add tests for constraint placement, artifact capping | new |
 
 **Suggestion:**
-This is exactly what the previous Scout specified as P0. The highest-priority fix is:
 
-1. **Mirror the Architect's fix:** Add `Preview` field capture to Reflector's `appendDiagnostic` call (2-3 lines of code)
-2. **Add JSON fallback** like the Architect has — try JSON parsing first, fall back to text markers (10-15 lines of new parser logic)
-3. **Add regression tests** covering JSON and existing text formats (3-4 test cases)
-4. **Verify closure** — after shipping, confirm `reflections.md` gets a new entry and `state.md` iteration advances
+Three coordinated fixes in ONE iteration (blocks nothing else):
 
-The previous Scout's directive is actionable and correct. The gap is real, it's blocking the loop, and it has a proven solution (the Architect's approach).
+1. **Reorder `buildReflectorPrompt`**: Move format instruction to line 150 (before sharedCtx), then include artifacts. LLM reads the rule before context.
+
+2. **Cap artifacts in `runReflector`** before building prompt: `scout` ≤2000, `build` ≤3000, `critique` ≤2000, `sharedCtx` ≤4000. Truncate with "..." if needed.
+
+3. **Change model**: `"reflector": "sonnet"` in roleModel. Cost per Reflector call: ~$0.04 (instead of ~$0.02), but happens 1/4 ticks. Acceptable cost for reliability.
+
+4. **Test coverage**: Verify format is front-loaded (string position check), verify artifact truncation doesn't drop content mid-sentence, verify JSON parsing handles edge cases.
+
+This matches the priority in state.md exactly and is high-confidence (9 failures with documented root cause, not speculation). After this ships, the loop closes cleanly and we can move to the next product feature (Public Hive Activity page, `/hive` on lovyou.ai).

@@ -33,7 +33,7 @@ var roleModel = map[string]string{
 	"builder":   "sonnet",
 	"tester":    "haiku",
 	"critic":    "sonnet",
-	"reflector": "haiku",
+	"reflector": "sonnet",
 	"ops":       "haiku",
 	"observer":  "sonnet",
 	"guardian":  "haiku",

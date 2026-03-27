@@ -478,8 +478,6 @@ Add `Preview string \`json:"preview,omitempty"\`` to `PhaseEvent`. Use this for 
 - `go test ./pkg/runner/...` passes
 - A future Architect parse failure will have the LLM preview captured in `diagnostics.jsonl` for PM/Scout diagnosis
 
-## What the Scout Should Focus On Next
-
 ## Fix Reflector `empty_sections` Failures — Add Preview Capture and JSON Output
 
 **Target repo:** hive
@@ -501,3 +499,48 @@ Add `Preview string \`json:"preview,omitempty"\`` to `PhaseEvent`. Use this for 
 4. **Verify the loop closes** — After shipping, check that `loop/reflections.md` gets a new entry and `state.md` advances the iteration counter. The loop is not fixed until it actually closes.
 
 **Files to read first:** `pkg/runner/reflector.go`, `pkg/runner/reflector_test.go`, `pkg/runner/architect.go` (for the JSON pattern to copy), `loop/reflections.md` (to confirm no entries since iter 329 — evidence the fix is needed).
+
+## What the Scout Should Focus On Next
+
+## Fix Reflector Prompt Structure — Buried Instruction Root Cause
+
+**Target repo:** hive
+
+The Reflector has failed 9 consecutive times with `empty_sections`. The diagnostics show output_tokens of 4554–4917 — the LLM is generating verbose prose instead of a compact JSON object. Root cause: the format instruction ("Return ONLY the JSON object") is buried at the **end** of a prompt that contains 8000+ chars of shared context, plus scout/build/critique/reflections artifacts. By the time the LLM reaches the instruction, it is in analytical essay mode. Classic "lost in the middle" failure.
+
+### Tasks
+
+**1. Front-load the format constraint in `buildReflectorPrompt`** (`pkg/runner/reflector.go`)
+
+Move the output format instruction to the very top — before any context. The first thing the LLM reads should be:
+
+```
+You are the Reflector. Your ONLY job is to return a JSON object with four fields: cover, blind, zoom, formalize. Nothing else. No prose. No explanation.
+
+Format (required):
+{"cover":"...","blind":"...","zoom":"...","formalize":"..."}
+```
+
+Then include the context. The closing "## Instructions" block can be a brief reminder, not the first time the rule appears.
+
+**2. Cap artifact sizes before passing to Reflector** (`pkg/runner/reflector.go`)
+
+In `runReflector`, truncate each artifact before building the prompt:
+- `build` → cap at 3000 chars (it can be large)
+- `critique` → cap at 2000 chars
+- `scout` → cap at 2000 chars
+- `recentReflections` → already capped at 2000 bytes, keep as-is
+- `sharedCtx` → already capped at 8000 chars, but the Reflector doesn't need the full shared context — it needs the iteration summary. Consider a 4000-char cap for the Reflector specifically.
+
+**3. Switch Reflector model from `haiku` to `sonnet`** (`pkg/runner/runner.go`, `roleModel` map)
+
+Haiku produces 4917 tokens when asked for 100. Sonnet follows instructions in long contexts reliably. The Reflector runs once every 4 ticks — cost increase is acceptable. Change `"reflector": "haiku"` → `"reflector": "sonnet"`.
+
+**4. Add/update tests** (`pkg/runner/reflector_test.go`)
+
+- Verify `buildReflectorPrompt` contains the format constraint before the first `##` section header (front-loaded)
+- Verify that when `parseReflectorOutput` receives a response with 4000+ tokens of prose followed by a JSON block, it still extracts the sections correctly (regression for the scan-for-first-`{` path)
+
+**Why this is the priority:** Nine failures with identical symptoms. Each failed call costs $0.05–$0.11 and produces nothing. The Reflector is the final phase of the loop — without it, iterations don't complete and the hive can't self-evolve. This is a one-iteration fix with a clear root cause.
+
+**Verify:** After the fix, run `go test ./pkg/runner/...` to confirm tests pass. Then trigger a Reflector run and confirm a clean iteration completes (no `empty_sections` diagnostic emitted).
