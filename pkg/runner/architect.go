@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/lovyou-ai/eventgraph/go/pkg/decision"
 	"github.com/lovyou-ai/hive/pkg/api"
 )
 
@@ -46,9 +47,56 @@ func (r *Runner) runArchitect(ctx context.Context) {
 		return
 	}
 
+	// Use Operate() so the Architect can create tasks directly via the lovyou.ai API.
+	// No text parsing — tasks are structured entities created via HTTP POST.
+	op, canOperate := r.cfg.Provider.(decision.IOperator)
+	if canOperate {
+		instruction := buildArchitectOperateInstruction(context, r.cfg.SpaceSlug)
+		result, err := op.Operate(ctx, decision.OperateTask{
+			WorkDir:     r.cfg.RepoPath,
+			Instruction: instruction,
+		})
+		if err != nil {
+			log.Printf("[architect] Operate error: %v", err)
+			r.appendDiagnostic(PhaseEvent{Phase: "architect", Outcome: "failure", Error: err.Error()})
+			if r.cfg.OneShot {
+				r.done = true
+			}
+			return
+		}
+		r.cost.Record(result.Usage)
+		r.dailyBudget.Record(result.Usage.CostUSD)
+		log.Printf("[architect] Operate done (cost=$%.4f)", result.Usage.CostUSD)
+
+		// Count tasks created by checking the board.
+		tasks, _ := r.cfg.APIClient.GetTasks(r.cfg.SpaceSlug, "")
+		openCount := 0
+		for _, t := range tasks {
+			if t.Kind == "task" && t.State != "done" && t.State != "closed" {
+				openCount++
+			}
+		}
+		if openCount > 0 {
+			log.Printf("[architect] %d open tasks on board after Operate", openCount)
+		} else {
+			log.Printf("[architect] no tasks created")
+			r.appendDiagnostic(PhaseEvent{Phase: "architect", Outcome: "failure", Error: "Operate produced no tasks"})
+		}
+
+		// Complete the milestone.
+		if milestone != nil {
+			_ = r.cfg.APIClient.CompleteTask(r.cfg.SpaceSlug, milestone.ID)
+			log.Printf("[architect] milestone completed: %s", milestone.Title)
+		}
+		if r.cfg.OneShot {
+			r.done = true
+		}
+		return
+	}
+
+	// Fallback: Reason() with text parsing (legacy path).
 	sharedCtx := LoadSharedContext(r.cfg.HiveDir)
 	repoCtx := r.readRepoContext()
-
 	prompt := buildArchitectPrompt(sharedCtx, repoCtx, context)
 
 	resp, err := r.cfg.Provider.Reason(ctx, prompt, nil)
@@ -149,6 +197,35 @@ type architectSubtask struct {
 	title    string
 	desc     string
 	priority string
+}
+
+// buildArchitectOperateInstruction creates the instruction for the Architect
+// when using Operate(). The agent creates tasks directly via HTTP POST to the
+// lovyou.ai API — no text parsing needed.
+func buildArchitectOperateInstruction(context, spaceSlug string) string {
+	apiKey := os.Getenv("LOVYOU_API_KEY")
+	return fmt.Sprintf(`You are the Architect. Read the milestone below and create 2-4 specific tasks for the Builder.
+
+## Milestone
+%s
+
+## How to Create Tasks
+
+Create each task by running a curl command. Do NOT output formatted text — execute the commands directly.
+
+For each task, run:
+curl -s -X POST -H "Authorization: Bearer %s" -H "Content-Type: application/json" -H "Accept: application/json" "https://lovyou.ai/app/%s/op" -d '{"op":"intend","kind":"task","title":"<TITLE>","description":"<DESCRIPTION>","priority":"high"}'
+
+Create 2-4 tasks. Each should:
+- Change 1-3 files maximum
+- Be implementable in under 10 minutes
+- Be specific: name the files, the functions, the changes
+- The FIRST task should be the foundation the others build on
+
+After creating all tasks, verify by listing the board:
+curl -s -H "Authorization: Bearer %s" -H "Accept: application/json" "https://lovyou.ai/app/%s/board" | head -200
+
+Do NOT explain your plan in text. Just create the tasks.`, context, apiKey, spaceSlug, apiKey, spaceSlug)
 }
 
 func buildArchitectPrompt(sharedCtx, repoCtx, scoutReport string) string {
