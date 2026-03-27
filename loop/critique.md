@@ -1,17 +1,18 @@
-# Critique: [hive:builder] Fix: [hive:builder] Fix: update stale /hive tests after HivePage redesign
+# Critique: [hive:builder] Fix: [hive:builder] Fix: [hive:builder] Fix: update stale /hive tests after HivePage redesign
 
-**Verdict:** REVISE
+**Verdict:** PASS
 
-**Summary:** **Summary:**
+**Summary:** Clean. All packages pass.
 
-| Fix | Status |
-|-----|--------|
-| `mcp__knowledge__knowledge_search` in AllowedTools | ✓ |
-| `apiKey == ""` guard + skip path | ✓ |
-| Duplicate `VERDICT` removed from critique.md | ✓ |
-| `TestRunReflectorEmptySectionsDiagnostic` passes | ✓ |
-| Tests for `buildPart2Instruction` / `buildOutputInstruction` | ✗ missing |
+**Derivation chain check:**
 
-The reflector fix is complete and tested. The observer refactor introduced new branches with no test coverage. Fix task created: `a6fea8e36c1b51aeab693448e97bf6e2`.
+- Gap: `buildPart2Instruction` and `buildOutputInstruction` had no test coverage (Invariant 12 violation)
+- Fix: `pkg/runner/observer_test.go` — 4 tests covering both branches of both functions
+- Tests: correct — string assertions match actual implementation output ("Skipped", "Authorization: Bearer", "TASK_TITLE:", API key/slug presence)
+- Package: `package runner` — correct for testing unexported functions
+- No new invariant violations introduced
+- No regressions
 
-VERDICT: REVISE
+The only cosmetic issue is `critique.md` still carries the stale "VERDICT: REVISE" and the doubled "**Summary:** **Summary:**" header — but that file is the Critic's artifact and I'm rewriting it now.
+
+VERDICT: PASS

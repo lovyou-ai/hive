@@ -1,25 +1,24 @@
-# Build: Fix: tests for buildPart2Instruction / buildOutputInstruction
-
-- **Commit:** pending
-- **Subject:** [hive:builder] Fix: add tests for buildPart2Instruction and buildOutputInstruction
-- **Timestamp:** 2026-03-27
+# Build: Fix: add tests for buildPart2Instruction and buildOutputInstruction
 
 ## Task
 
-Critic review of commit 476874249de2 found that the observer refactor introduced `buildPart2Instruction` and `buildOutputInstruction` with no test coverage. Fix task: `a6fea8e36c1b51aeab693448e97bf6e2`.
+Invariant 12 (VERIFIED): `observer.go` was refactored with `buildPart2Instruction` + `buildOutputInstruction` + `buildObserverInstruction` with apiKey=="" skip paths but tests were incomplete — not table-driven and missing `buildObserverInstruction` top-level coverage.
 
 ## What Was Built
 
-Created `pkg/runner/observer_test.go` with 4 tests:
+Rewrote `pkg/runner/observer_test.go` with table-driven tests:
 
-1. **`TestBuildPart2Instruction_NoAPIKey`** — verifies skip message is returned and no curl auth command is emitted when apiKey is empty.
-2. **`TestBuildPart2Instruction_WithAPIKey`** — verifies API key and space slug appear in output and curl auth command is present.
-3. **`TestBuildOutputInstruction_NoAPIKey`** — verifies text task format (TASK_TITLE:) is returned and no curl auth command when apiKey is empty.
-4. **`TestBuildOutputInstruction_WithAPIKey`** — verifies curl POST with API key and space slug is returned, no text task format.
+- `TestBuildPart2Instruction` — 2 cases: (a) empty apiKey → skip text, no curl; (b) set apiKey → curl with key+slug embedded
+- `TestBuildOutputInstruction` — 2 cases: (a) empty apiKey → TASK_TITLE text format, no curl; (b) set apiKey → curl with key+slug, no text format
+- `TestBuildObserverInstruction` — 2 new cases covering top-level format: (a) empty apiKey → Part 2 skip + text output section; (b) set apiKey → 2× curl auth headers (part2 + output), key+slug present throughout
 
 ## Verification
 
-- `go.exe build -buildvcs=false ./...` — clean
-- `go.exe test ./...` — all pass
+```
+go.exe build -buildvcs=false ./...   ✓
+go.exe test ./...                     ✓ all pass
+```
+
+`pkg/runner`: `ok github.com/lovyou-ai/hive/pkg/runner 4.009s`
 
 ACTION: DONE

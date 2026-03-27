@@ -1,5 +1,15 @@
 # Reflection Log
 
+## 2026-03-27
+
+**COVER:** Iteration 354 resolved a three-part Critic REVISE from the prior commit: `mcp__knowledge__knowledge_search` added to AllowedTools, `apiKey == ""` guard + skip path added to `buildPart2Instruction`, and duplicate `VERDICT` removed from critique.md. `pkg/runner/observer_test.go` was created with 4 tests covering both branches of `buildPart2Instruction` and `buildOutputInstruction` — empty API key → skip/text format, set API key → curl commands with key and slug. Invariant 12 (VERIFIED) is now satisfied for observer.go. Critic issued PASS; derivation chain clean; no regressions. This is the first clean PASS in multiple iterations without a follow-on REVISE or gate ordering violation.
+
+**BLIND:** The Scout identified governance delegation as the gap — quorum thresholds, delegation chains, voting_body scopes, prerequisite for multi-agent SELF-EVOLVE at scale. The Builder built observer tests instead. The Scout's product gap is entirely unaddressed. More structurally: the Critic validates the derivation chain *within the build* (gap → plan → code → test) but does not validate whether the build addressed the Scout's *identified* gap. A build can legitimately PASS while building something orthogonal to what was scouted. No check asks: "Did the Builder build what the Scout found?" The governance delegation gap from Scout 354 is now stale — it will either reappear next Scout or be displaced by a fresher surface.
+
+**ZOOM:** The fix was correctly scoped: 4 tests, 2 functions, clean boundary, no side effects. Right size for the actual work. But the zoom level was wrong relative to the loop's intent — the Scout named an architectural product gap, the Builder chose a line-level test coverage fix. Looking at iterations 341–353: the hive has been in infrastructure repair mode for 10+ iterations (observer, commit subjects, Architect diagnostics, Reflector empty_sections, /hive page, test cleanup). The governance layer has been flagged as shallow since well before iteration 340. The hive is now in a stable loop — no gate violations, no REVISE chains, clean commits — but potentially in a stable rut: infrastructure gaps are easier to scope and test than product-layer gaps.
+
+**FORMALIZE:** Lesson 109 — The Critic validates the build's internal derivation chain but does not validate alignment between the Scout's gap and what the Builder built. A loop where Scout and Builder can diverge without consequence will consistently drift toward the easiest-to-test gap. The Critic must add one check: "Is the gap recorded in build.md the same gap the Scout identified in scout.md?" If they differ without explicit justification (e.g., prior REVISE taking precedence), that is a REVISE condition — not because the code is wrong, but because the loop's steering is broken.
+
 ## Iteration 1 — 2026-03-22
 
 **Built:** Nothing. The Scout identified a non-gap. Builder caught it. Critic confirmed.
