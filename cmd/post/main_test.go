@@ -279,6 +279,58 @@ func TestAssertScoutGapMissingFile(t *testing.T) {
 	}
 }
 
+// TestAssertScoutGapNoGapLine verifies that assertScoutGap returns an error
+// when scout.md exists but contains no **Gap:** line.
+func TestAssertScoutGapNoGapLine(t *testing.T) {
+	origDir, _ := os.Getwd()
+	tmp := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tmp, "loop"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Valid scout.md header but missing the Gap line.
+	scoutContent := "## SCOUT GAP REPORT — Iteration 99\n\nNo gap identified this iteration.\n"
+	if err := os.WriteFile(filepath.Join(tmp, "loop", "scout.md"), []byte(scoutContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	os.Chdir(tmp)
+	defer os.Chdir(origDir)
+
+	err := assertScoutGap("lv_testkey", "http://localhost:9999")
+	if err == nil {
+		t.Fatal("expected error when scout.md has no Gap line, got nil")
+	}
+	if !strings.Contains(err.Error(), "gap title") {
+		t.Errorf("error %q should mention gap title", err.Error())
+	}
+}
+
+// TestAssertScoutGapAPIError verifies that assertScoutGap returns an error
+// when the server responds with HTTP 4xx.
+func TestAssertScoutGapAPIError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte("unauthorized"))
+	}))
+	defer srv.Close()
+
+	origDir, _ := os.Getwd()
+	tmp := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tmp, "loop"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	scoutContent := "## SCOUT GAP REPORT — Iteration 10\n\n**Gap:** Missing auth check.\n"
+	if err := os.WriteFile(filepath.Join(tmp, "loop", "scout.md"), []byte(scoutContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	os.Chdir(tmp)
+	defer os.Chdir(origDir)
+
+	err := assertScoutGap("bad_key", srv.URL)
+	if err == nil {
+		t.Fatal("expected error for HTTP 401, got nil")
+	}
+}
+
 // TestBuildTitleExtractedOnPost verifies that buildTitle + post produces a
 // feed node whose title comes from build.md (not just "Iteration N").
 func TestBuildTitleExtractedOnPost(t *testing.T) {
