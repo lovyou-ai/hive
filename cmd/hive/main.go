@@ -291,7 +291,7 @@ func runPipeline(space, apiBase, repoPath string, budget float64, agentID string
 	// Always check state.md for target repo — even when tasks exist.
 	// The PM wrote "Target repo: X" in a prior cycle; use it.
 	if len(repoMap) > 0 {
-		if resolved := resolveTargetRepo(hiveDir, repoMap); resolved != "" {
+		if resolved := resolveTargetRepo(hiveDir, repoMap, client, space); resolved != "" {
 			activeRepo = resolved
 			log.Printf("[pipeline] target repo from directive: %s", filepath.Base(activeRepo))
 		}
@@ -307,7 +307,7 @@ func runPipeline(space, apiBase, repoPath string, budget float64, agentID string
 
 		// After PM or Scout runs, check if the directive specifies a target repo.
 		if (role == "scout" || role == "architect") && len(repoMap) > 0 {
-			if resolved := resolveTargetRepo(hiveDir, repoMap); resolved != "" {
+			if resolved := resolveTargetRepo(hiveDir, repoMap, client, space); resolved != "" {
 				if resolved != activeRepo {
 					log.Printf("[pipeline] target repo changed: %s", resolved)
 					activeRepo = resolved
@@ -570,23 +570,53 @@ func parseRepos(reposFlag, defaultRepo string) map[string]string {
 // resolveTargetRepo reads the current Scout directive from state.md and
 // looks for "Target repo: <name>" (case-insensitive). Returns the absolute
 // path if found in repoMap, or "" if not found.
-func resolveTargetRepo(hiveDir string, repoMap map[string]string) string {
-	if hiveDir == "" || len(repoMap) == 0 {
+// resolveTargetRepo determines which repo the pipeline should target.
+// Reads from the graph first (latest milestone body), falls back to state.md.
+func resolveTargetRepo(hiveDir string, repoMap map[string]string, apiClient *api.Client, spaceSlug string) string {
+	if len(repoMap) == 0 {
 		return ""
 	}
-	data, err := os.ReadFile(filepath.Join(hiveDir, "loop", "state.md"))
-	if err != nil {
-		return ""
+
+	// Graph-first: check latest milestone on the board for "target repo:" in body or title.
+	if apiClient != nil {
+		tasks, err := apiClient.GetTasks(spaceSlug, "")
+		if err == nil {
+			for _, t := range tasks {
+				if t.Kind != "task" || t.State == "done" || t.State == "closed" {
+					continue
+				}
+				// Check title and body for repo name.
+				if repo := extractRepoName(t.Title, repoMap); repo != "" {
+					return repo
+				}
+				if repo := extractRepoName(t.Body, repoMap); repo != "" {
+					return repo
+				}
+			}
+		}
 	}
-	s := strings.ToLower(string(data))
-	// Look for "target repo:" or "**target repo:**" patterns.
+
+	// Fallback: read state.md.
+	if hiveDir != "" {
+		data, err := os.ReadFile(filepath.Join(hiveDir, "loop", "state.md"))
+		if err == nil {
+			if repo := extractRepoName(string(data), repoMap); repo != "" {
+				return repo
+			}
+		}
+	}
+	return ""
+}
+
+// extractRepoName finds "target repo: <name>" in text and resolves to an absolute path.
+func extractRepoName(text string, repoMap map[string]string) string {
+	lower := strings.ToLower(text)
 	for _, prefix := range []string{"target repo:", "**target repo:**", "target repo: `", "**target repo:** `"} {
-		idx := strings.Index(s, prefix)
+		idx := strings.Index(lower, prefix)
 		if idx < 0 {
 			continue
 		}
-		rest := strings.TrimSpace(string(data)[idx+len(prefix):])
-		// Extract the repo name (first word, strip backticks).
+		rest := strings.TrimSpace(text[idx+len(prefix):])
 		name := strings.TrimLeft(rest, " `")
 		if end := strings.IndexAny(name, " \t\n\r`"); end > 0 {
 			name = name[:end]
