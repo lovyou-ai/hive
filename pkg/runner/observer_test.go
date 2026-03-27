@@ -3,6 +3,8 @@ package runner
 import (
 	"strings"
 	"testing"
+
+	"github.com/lovyou-ai/hive/pkg/api"
 )
 
 func TestBuildPart2Instruction(t *testing.T) {
@@ -10,11 +12,13 @@ func TestBuildPart2Instruction(t *testing.T) {
 		name           string
 		spaceSlug      string
 		apiKey         string
+		claimsSummary  string
 		wantSkip       bool
 		wantCurl       bool
 		wantKeyInBody  bool
 		wantSlugInURL  bool
 		wantClaimsURL  bool
+		wantGroundTruth bool
 	}{
 		{
 			name:          "empty apiKey returns skip text, no curl",
@@ -34,11 +38,30 @@ func TestBuildPart2Instruction(t *testing.T) {
 			wantSlugInURL: true,
 			wantClaimsURL: true,
 		},
+		{
+			name:            "claimsSummary injected as ground truth when apiKey set",
+			spaceSlug:       "hive",
+			apiKey:          "lv_testkey",
+			claimsSummary:   "65 claims exist. Titles: \"Lesson 1\"",
+			wantSkip:        false,
+			wantCurl:        true,
+			wantGroundTruth: true,
+			wantClaimsURL:   true,
+		},
+		{
+			name:            "claimsSummary not shown when apiKey empty",
+			spaceSlug:       "hive",
+			apiKey:          "",
+			claimsSummary:   "65 claims exist. Titles: \"Lesson 1\"",
+			wantSkip:        true,
+			wantCurl:        false,
+			wantGroundTruth: false,
+		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := buildPart2Instruction(tc.spaceSlug, tc.apiKey)
+			got := buildPart2Instruction(tc.spaceSlug, tc.apiKey, tc.claimsSummary)
 
 			if tc.wantSkip && !strings.Contains(got, "Skipped") {
 				t.Errorf("expected skip message, got: %q", got)
@@ -63,6 +86,15 @@ func TestBuildPart2Instruction(t *testing.T) {
 			}
 			if !tc.wantClaimsURL && strings.Contains(got, "knowledge?tab=claims") {
 				t.Errorf("unexpected claims URL in output, got: %q", got)
+			}
+			if tc.wantGroundTruth && !strings.Contains(got, "Ground truth") {
+				t.Errorf("expected ground truth section in output, got: %q", got)
+			}
+			if tc.wantGroundTruth && !strings.Contains(got, tc.claimsSummary) {
+				t.Errorf("expected claimsSummary %q in output, got: %q", tc.claimsSummary, got)
+			}
+			if !tc.wantGroundTruth && strings.Contains(got, "Ground truth") {
+				t.Errorf("unexpected ground truth section in output, got: %q", got)
 			}
 		})
 	}
@@ -122,6 +154,208 @@ func TestBuildOutputInstruction(t *testing.T) {
 	}
 }
 
+func TestBuildPart2InstructionBoardAndClaims(t *testing.T) {
+	// When apiKey is set, both the /board and /knowledge?tab=claims URLs must appear.
+	got := buildPart2Instruction("hive", "lv_key", "")
+
+	if !strings.Contains(got, "/board") {
+		t.Errorf("expected /board URL in part2 instruction, got: %q", got)
+	}
+	if !strings.Contains(got, "knowledge?tab=claims") {
+		t.Errorf("expected knowledge?tab=claims URL in part2 instruction, got: %q", got)
+	}
+	if !strings.Contains(got, "limit=50") {
+		t.Errorf("expected limit=50 on claims URL in part2 instruction, got: %q", got)
+	}
+	// There should be exactly 2 Authorization headers: one for board, one for claims.
+	authCount := strings.Count(got, "Authorization: Bearer")
+	if authCount != 2 {
+		t.Errorf("expected 2 curl auth headers (board + claims), got %d in: %q", authCount, got)
+	}
+}
+
+func TestParseObserverTasks(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		want  []observerTask
+	}{
+		{
+			name:  "empty input returns empty slice",
+			input: "",
+			want:  nil,
+		},
+		{
+			name:  "no issue found text returns empty slice",
+			input: "No issues found.",
+			want:  nil,
+		},
+		{
+			name: "single complete task",
+			input: `TASK_TITLE: Fix the bug
+TASK_PRIORITY: high
+TASK_DESCRIPTION: The login button is broken`,
+			want: []observerTask{
+				{title: "Fix the bug", priority: "high", desc: "The login button is broken"},
+			},
+		},
+		{
+			name: "two tasks",
+			input: `TASK_TITLE: First task
+TASK_PRIORITY: urgent
+TASK_DESCRIPTION: First description
+TASK_TITLE: Second task
+TASK_PRIORITY: low
+TASK_DESCRIPTION: Second description`,
+			want: []observerTask{
+				{title: "First task", priority: "urgent", desc: "First description"},
+				{title: "Second task", priority: "low", desc: "Second description"},
+			},
+		},
+		{
+			name: "invalid priority defaults to medium",
+			input: `TASK_TITLE: Bad priority task
+TASK_PRIORITY: critical
+TASK_DESCRIPTION: Something urgent`,
+			want: []observerTask{
+				{title: "Bad priority task", priority: "medium", desc: "Something urgent"},
+			},
+		},
+		{
+			name: "missing priority defaults to medium",
+			input: `TASK_TITLE: No priority task
+TASK_DESCRIPTION: Missing priority`,
+			want: []observerTask{
+				{title: "No priority task", priority: "medium", desc: "Missing priority"},
+			},
+		},
+		{
+			name: "all valid priorities are accepted",
+			input: `TASK_TITLE: Urgent task
+TASK_PRIORITY: urgent
+TASK_DESCRIPTION: u
+TASK_TITLE: High task
+TASK_PRIORITY: high
+TASK_DESCRIPTION: h
+TASK_TITLE: Medium task
+TASK_PRIORITY: medium
+TASK_DESCRIPTION: m
+TASK_TITLE: Low task
+TASK_PRIORITY: low
+TASK_DESCRIPTION: l`,
+			want: []observerTask{
+				{title: "Urgent task", priority: "urgent", desc: "u"},
+				{title: "High task", priority: "high", desc: "h"},
+				{title: "Medium task", priority: "medium", desc: "m"},
+				{title: "Low task", priority: "low", desc: "l"},
+			},
+		},
+		{
+			name: "title with surrounding whitespace is trimmed",
+			input: `TASK_TITLE:   Padded title
+TASK_PRIORITY:   high
+TASK_DESCRIPTION:   Padded desc   `,
+			want: []observerTask{
+				{title: "Padded title", priority: "high", desc: "Padded desc"},
+			},
+		},
+		{
+			name: "task with title only, no other fields",
+			input: `TASK_TITLE: Title only`,
+			want: []observerTask{
+				{title: "Title only", priority: "medium", desc: ""},
+			},
+		},
+		{
+			name: "unrecognised lines are ignored",
+			input: `Some preamble text.
+TASK_TITLE: Real task
+Random middle line
+TASK_PRIORITY: low
+More noise
+TASK_DESCRIPTION: The real description`,
+			want: []observerTask{
+				{title: "Real task", priority: "low", desc: "The real description"},
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := parseObserverTasks(tc.input)
+
+			if len(got) != len(tc.want) {
+				t.Fatalf("got %d tasks, want %d: %+v", len(got), len(tc.want), got)
+			}
+			for i, w := range tc.want {
+				g := got[i]
+				if g.title != w.title {
+					t.Errorf("task[%d].title = %q, want %q", i, g.title, w.title)
+				}
+				if g.priority != w.priority {
+					t.Errorf("task[%d].priority = %q, want %q", i, g.priority, w.priority)
+				}
+				if g.desc != w.desc {
+					t.Errorf("task[%d].desc = %q, want %q", i, g.desc, w.desc)
+				}
+			}
+		})
+	}
+}
+
+func TestBuildClaimsSummary(t *testing.T) {
+	cases := []struct {
+		name   string
+		claims []api.Node
+		want   string
+	}{
+		{
+			name:   "empty returns empty string",
+			claims: nil,
+			want:   "",
+		},
+		{
+			name:   "single claim",
+			claims: []api.Node{{Title: "Lesson 1"}},
+			want:   `1 claims exist. Titles: "Lesson 1"`,
+		},
+		{
+			name: "five claims shows all",
+			claims: []api.Node{
+				{Title: "A"}, {Title: "B"}, {Title: "C"}, {Title: "D"}, {Title: "E"},
+			},
+			want: `5 claims exist. Titles: "A", "B", "C", "D", "E"`,
+		},
+		{
+			name: "six claims shows five and remainder count",
+			claims: []api.Node{
+				{Title: "A"}, {Title: "B"}, {Title: "C"}, {Title: "D"}, {Title: "E"}, {Title: "F"},
+			},
+			want: `6 claims exist (and 1 more). Titles: "A", "B", "C", "D", "E"`,
+		},
+		{
+			name: "ten claims shows five and remainder count",
+			claims: func() []api.Node {
+				nodes := make([]api.Node, 10)
+				for i := range nodes {
+					nodes[i] = api.Node{Title: string(rune('A' + i))}
+				}
+				return nodes
+			}(),
+			want: `10 claims exist (and 5 more). Titles: "A", "B", "C", "D", "E"`,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := buildClaimsSummary(tc.claims)
+			if got != tc.want {
+				t.Errorf("buildClaimsSummary() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestBuildObserverInstruction(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -175,7 +409,7 @@ func TestBuildObserverInstruction(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := buildObserverInstruction(tc.repoPath, tc.spaceSlug, tc.apiKey)
+			got := buildObserverInstruction(tc.repoPath, tc.spaceSlug, tc.apiKey, "")
 
 			for _, part := range tc.wantParts {
 				if !strings.Contains(got, part) {

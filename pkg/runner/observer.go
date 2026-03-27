@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/lovyou-ai/eventgraph/go/pkg/decision"
+	"github.com/lovyou-ai/hive/pkg/api"
 )
 
 // runObserver looks at the product from a human's perspective.
@@ -21,18 +22,33 @@ func (r *Runner) runObserver(ctx context.Context) {
 
 	log.Printf("[observer] tick %d: observing product", r.tick)
 
+	// Pre-fetch claims so the Observer has ground-truth count injected into context.
+	// Without this, the Observer only calls /board (kind=task only) and concludes zero claims.
+	var claimsSummary string
+	if r.cfg.APIClient != nil {
+		claims, err := r.cfg.APIClient.GetClaims(r.cfg.SpaceSlug, 50)
+		if err != nil {
+			log.Printf("[observer] could not pre-fetch claims: %v", err)
+		} else {
+			claimsSummary = buildClaimsSummary(claims)
+			if claimsSummary != "" {
+				log.Printf("[observer] pre-fetched %d claims for context injection", len(claims))
+			}
+		}
+	}
+
 	// Build the observation instruction.
 	apiKey := os.Getenv("LOVYOU_API_KEY")
 	if apiKey == "" {
 		log.Printf("[observer] LOVYOU_API_KEY not set; graph integrity audit will be skipped")
 	}
-	instruction := buildObserverInstruction(r.cfg.RepoPath, r.cfg.SpaceSlug, apiKey)
+	instruction := buildObserverInstruction(r.cfg.RepoPath, r.cfg.SpaceSlug, apiKey, claimsSummary)
 
 	// Use Operate() — the Observer needs file access to grep patterns, read templates, etc.
 	op, ok := r.cfg.Provider.(decision.IOperator)
 	if !ok {
 		log.Printf("[observer] provider does not support Operate, falling back to Reason")
-		r.runObserverReason(ctx)
+		r.runObserverReason(ctx, claimsSummary)
 		return
 	}
 
@@ -59,11 +75,16 @@ func (r *Runner) runObserver(ctx context.Context) {
 
 // runObserverReason is a fallback when Operate() isn't available.
 // Gathers context manually and uses Reason().
-func (r *Runner) runObserverReason(ctx context.Context) {
+func (r *Runner) runObserverReason(ctx context.Context, claimsSummary string) {
 	// Gather what we can without tool access.
 	routes := r.grepRoutes()
 	kinds := r.grepEntityKinds()
 	health := r.checkLiveHealth()
+
+	claimsSection := ""
+	if claimsSummary != "" {
+		claimsSection = fmt.Sprintf("\n## Claims (ground truth, pre-fetched)\n%s\n", claimsSummary)
+	}
 
 	prompt := fmt.Sprintf(`You are the Observer. Analyze this product for gaps.
 
@@ -75,13 +96,13 @@ func (r *Runner) runObserverReason(ctx context.Context) {
 
 ## Live health check
 %s
-
+%s
 Report findings as:
 TASK_TITLE: <title>
 TASK_PRIORITY: <priority>
 TASK_DESCRIPTION: <description>
 
-You may report up to 2 findings. If everything looks good, say "No issues found."`, routes, kinds, health)
+You may report up to 2 findings. If everything looks good, say "No issues found."`, routes, kinds, health, claimsSection)
 
 	resp, err := r.cfg.Provider.Reason(ctx, prompt, nil)
 	if err != nil {
@@ -146,8 +167,29 @@ func parseObserverTasks(content string) []observerTask {
 	return tasks
 }
 
-func buildObserverInstruction(repoPath, spaceSlug, apiKey string) string {
-	part2 := buildPart2Instruction(spaceSlug, apiKey)
+// buildClaimsSummary formats pre-fetched claims as a grounding context string.
+// Returns empty string if no claims — callers should handle the empty case gracefully.
+func buildClaimsSummary(claims []api.Node) string {
+	if len(claims) == 0 {
+		return ""
+	}
+	const maxSample = 5
+	var titles []string
+	for i := range claims {
+		if i >= maxSample {
+			break
+		}
+		titles = append(titles, fmt.Sprintf("%q", claims[i].Title))
+	}
+	suffix := ""
+	if len(claims) > maxSample {
+		suffix = fmt.Sprintf(" (and %d more)", len(claims)-maxSample)
+	}
+	return fmt.Sprintf("%d claims exist%s. Titles: %s", len(claims), suffix, strings.Join(titles, ", "))
+}
+
+func buildObserverInstruction(repoPath, spaceSlug, apiKey, claimsSummary string) string {
+	part2 := buildPart2Instruction(spaceSlug, apiKey, claimsSummary)
 	return fmt.Sprintf(`You are the Observer. Audit both the product AND the hive's own graph for integrity.
 
 ## Your repo: %s
@@ -172,14 +214,20 @@ Also use mcp__knowledge__knowledge_search to check:
 If everything looks good, say "No issues found."`, repoPath, part2, buildOutputInstruction(spaceSlug, apiKey))
 }
 
-func buildPart2Instruction(spaceSlug, apiKey string) string {
+func buildPart2Instruction(spaceSlug, apiKey, claimsSummary string) string {
 	if apiKey == "" {
 		return `## Part 2: Graph Integrity Audit
 
 (Skipped — LOVYOU_API_KEY not set. Authenticated requests require an API key.)`
 	}
-	return fmt.Sprintf(`## Part 2: Graph Integrity Audit
 
+	groundTruth := ""
+	if claimsSummary != "" {
+		groundTruth = fmt.Sprintf("\n**Ground truth (pre-fetched by runner — do not contradict):**\n%s\n", claimsSummary)
+	}
+
+	return fmt.Sprintf(`## Part 2: Graph Integrity Audit
+%s
 Check the hive's own data on the board for structural issues:
 
 curl -s -H "Authorization: Bearer %s" -H "Accept: application/json" "https://lovyou.ai/app/%s/board"
@@ -194,7 +242,7 @@ Look for:
 3. **Title compounding** — tasks with "Fix: Fix: Fix:..." prefixes (should be stripped)
 4. **Schema violations** — any field using display names where IDs should be used (Invariant 11)
 5. **Orphaned milestones** — PM milestones still open after their subtasks completed
-6. **Claim integrity** — claims with no body, no causes, or stuck in challenged state with no resolution`, apiKey, spaceSlug, apiKey, spaceSlug)
+6. **Claim integrity** — claims with no body, no causes, or stuck in challenged state with no resolution`, groundTruth, apiKey, spaceSlug, apiKey, spaceSlug)
 }
 
 func buildOutputInstruction(spaceSlug, apiKey string) string {

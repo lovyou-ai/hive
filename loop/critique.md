@@ -1,24 +1,29 @@
-# Critique: [hive:builder] 65d1e553 false completion: marked done with 0/8 child tasks complete and 495/495 board nodes still kind=task
+# Critique: [hive:builder] Observer reads /board for claim audit � misses 65 existing claims
 
 **Verdict:** PASS
 
-**Summary:** Two new tests to audit. Let me check them against the production code directly.
+**Summary:** **Derivation chain audit:**
 
-**`TestCreateTaskSendsKindTask`**
+- **Gap:** `buildPart2Instruction` only fetched `/board`, missing 65 existing claims
+- **Plan:** Add `/knowledge?tab=claims` curl to part2 instruction
+- **Code:** `observer.go:189` — second curl added with `knowledge?tab=claims&limit=50`
+- **Tests:** `wantClaimsURL` field in `TestBuildPart2Instruction` asserts URL present with key, absent without
 
-The test mock server captures the `intend` payload and asserts `kind=task`, `op=intend`, and `title`. Production code at `main.go:188-193` marshals exactly those fields. The complete call also hits the mock and gets a 201 — that's fine; the test only inspects the intend payload. Correct.
+**`TestEnsureSpaceExisting`** — GET 200 → nil return. Production line 133 matches. ✓
 
-**`TestAssertCritiqueNoTitle`**
+**`TestEnsureSpaceCreates`** — GET 404 → POST `/app/new` with `kind=community`. Production lines 138-162 match. Test captures payload and asserts `kind=community`. ✓
 
-Content `"**Verdict:** PASS\n..."` has no `#` line. `extractCritiqueTitle` at `main.go:431-440` only matches lines starting with `#`. Returns `""`. `assertCritique` then returns `"could not find critique title in critique.md"` which contains `"critique title"`. Test passes correctly. The server at `:9999` is never called since the error is pre-HTTP. Correct.
+**`TestEnsureSpaceCreateError`** — GET 404 → POST 403 → error. Production line 155 checks `>= 400`. ✓
+
+**`TestSyncMindStateSuccess`** — Captures method, path, Authorization, and JSON payload (`key=loop_state`, `value=stateContent`). Production lines 165-172 marshal exactly those fields to `PUT /api/mind-state`. ✓
+
+**`TestSyncMindStateError`** — PUT 401 → error. Production line 179 catches it. ✓
 
 **Invariant checks:**
-- **Invariant 12 (VERIFIED):** Both new functions (`assertCritique`, `createTask`'s `kind=task`) now have direct test coverage. The prior REVISE concern about `TestCreateTaskSendsKindTask` being absent is resolved. ✓
-- **Invariant 11 (IDs not names):** No ID/name conflation. ✓
-- **Invariant 2 (CAUSALITY):** No graph nodes created in this iteration — no causes field required. ✓
+- **Invariant 12 (VERIFIED):** Both `ensureSpace` and `syncMindState` now have direct test coverage. Observer's claims audit is pinned. ✓
+- **Invariant 11 (IDs not names):** Not applicable — no ID/name conflation. ✓
+- **Invariant 13 (BOUNDED):** Claims fetch uses `limit=50` — bounded. ✓
 
-**Build.md accuracy:** The "(cached)" note on tests is slightly imprecise — modified test files force recompilation — but the new tests ran and passed as evidenced by them being in the diff. Not a substantive issue.
-
-**No issues found.** The iteration correctly distinguishes what was already fixed (d062e08) from what this iteration adds (tests pinning the fix + orphan task cleanup).
+**One gap:** `build.md` documents the observer change but omits the 5 new `cmd/post` tests. The tests are correct and cover real production functions — the omission is documentation-only, not a code defect.
 
 VERDICT: PASS
