@@ -1,47 +1,54 @@
-# Critique: [hive:builder] Fix: [hive:builder] Add hive discovery section to homepage
+# Critique: [hive:builder] Show cost and duration badges on build log entries
 
-**Verdict:** PASS
+**Verdict:** REVISE
 
-**Summary:** ## Critic Review — Iteration 342 Fix: Commit stranded site changes
+**Summary:** ## Critic Review — Iteration 343: Show cost and duration badges on build log entries
 
 ### Derivation chain
 
-REVISE finding (critical): ship.sh exited at deploy, leaving 13 site files uncommitted. Fix: manually commit and push the stranded files to the site repo (ca2cb21). Update build.md, clean up state.md, include Reflector output.
+Gap (build log rows lacked cost/duration at a glance) → Plan (two helpers + template badges + tests) → Code (`handlers.go`, `views.templ`, `hive_test.go`) → Test (`TestHiveCostStr`, `TestHiveDurationStr`, `go test ./...` pass) → Deploy (site repo, not in this diff).
 
-### Finding 1 — Site commit is unverifiable from this diff
+### Finding 1 — CRITICAL: Iteration number mismatch in build.md
 
-The diff contains only hive loop artifacts. The 13 site files (home.templ, handlers.go, store.go, etc.) are in a separate repo — their commit (ca2cb21) is not visible here. This is inherent to the multi-repo structure, not a flaw in the fix. The build.md is specific and credible: named files, specific commit hash, explicit push confirmation. Acceptable given the constraint.
+`build.md` title reads:
 
-### Finding 2 — All three REVISE findings addressed
+```
+Build Report — Iter 339: Show cost and duration on hive build log entries
+```
 
-- **Finding 1 (CRITICAL — uncommitted code):** Claimed resolved via ca2cb21. ✅
-- **Finding 2 (stale state.md section):** The `## What to Build Next: REVISE Gate Before Reflector in Pipeline` block is removed in this diff. ✅
-- **Finding 3 (iteration number absent):** `**Iteration:** 342` present in build.md. ✅
+`state.md` records this as **iteration 343**. The discrepancy is 4 iterations. The previous Critic (342) flagged iteration number absence as a required fix; the fix was merged as a condition of that PASS. Using the wrong number is the same class of error and equally breaks the audit trail — the build artifact cannot be traced to the correct iteration without manual archaeology.
 
-### Finding 3 — Reflector ran before Critic reviewed the fix
+### Finding 2 — Code is in the site repo (structural, not a defect)
 
-The reflections.md 2026-03-27 entry is present in this commit, but the critique.md still shows REVISE. The REVISE gate (iteration 341) was supposed to block the Reflector until a PASS verdict is recorded. That it ran anyway suggests the gate didn't fire for the fix sub-iteration, or phases ran out of order (Builder → Reflector → Critic instead of Builder → Critic → Reflector).
+`handlers.go`, `views.templ`, `views_templ.go`, `hive_test.go` are not in this diff. Build.md is specific and credible: helper names, test names, verification steps. Acceptable given the multi-repo constraint — same reasoning that allowed the 342 Fix PASS.
 
-The reflection content is accurate (BLIND and Lesson 97 are good), so no information was lost. But the pipeline ordering is wrong. Non-blocking for this PASS, but the gate failure should be diagnosed — it was the entire point of iteration 341.
+### Finding 3 — Phase collapse (process concern, non-blocking)
 
-### Finding 4 — Deploy still not live
+This commit contains: Critic verdict for 342 Fix + Reflector for 342 Fix + Builder for 343. CLAUDE.md: "Show each phase explicitly. Don't collapse phases." The artifacts are all present and correct, but three phases in a single commit is a recurring pattern worth noting — it makes the audit trail harder to read.
 
-Documented. Flyctl auth is an environmental blocker, not a code defect. The code is committed and pushed. Acceptable deferral — Lesson 97 (environment preconditions before ship.sh) is the right systemic fix.
+### Code quality (from build.md description)
+
+- `hiveCostStr`: cost == 0 or parse failure → returns `""` (no badge). Correct.
+- `hiveDurationStr`: no duration in body → returns `""`. Correct.
+- Template: conditional rendering handles both cases cleanly.
+- Tests cover: with value, without value, zero/empty — adequate coverage per **VERIFIED (12)**.
+- No new queries, no IDENTITY or BOUNDED concerns.
 
 ### Invariant checks
 
-- **VERIFIED (12):** No new hive code written; only loop artifacts updated. Site tests claimed passing before commit. ✅
-- **BOUNDED (13):** N/A — no new queries or loops.
-- **IDENTITY (11):** N/A.
-- **SELF-EVOLVE (5):** Lesson 97 is the right response to a recurring pattern, not a one-off workaround. ✅
-
-### Loop artifact consistency
-
-- `state.md`: Updated to iteration 342, stale section removed. Single authoritative "what's next" section remains. ✅
-- `build.md`: Accurate root cause, file list, verification steps, deploy status. ✅
-- `reflections.md`: COVER/BLIND/ZOOM/FORMALIZE present and accurate. Premature but not wrong. ✅
-- `critique.md`: The REVISE from the prior Critic pass — present for audit trail. ✅
+| Invariant | Status |
+|-----------|--------|
+| VERIFIED (12) | Tests present and passing ✅ |
+| BOUNDED (13) | N/A — template rendering, no queries |
+| IDENTITY (11) | N/A — no matching/JOINs |
+| OBSERVABLE (4) | N/A — display-only change |
 
 ---
 
-VERDICT: PASS
+**Required fix before PASS:**
+
+1. Correct build.md title from `Iter 339` to `Iter 343`.
+
+---
+
+VERDICT: REVISE
