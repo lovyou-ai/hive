@@ -1,60 +1,48 @@
-# Test Report: Invariant 2 — causes field always present on claims
+# Test Report: IsError fix in claude_cli.go
 
 **Date:** 2026-03-28
-**Iteration:** 370 follow-up (post-ship verification)
 
 ## What Was Tested
 
-The fix for the CAUSALITY invariant violation: `/knowledge` API was returning claims
-with the `causes` key entirely absent. Changes are committed in `site/graph/store.go`
-and `site/graph/handlers.go` at `d9c1ea6` (iter 371: fix causes field).
-
-The previous test report noted one untested edge case: multiple causes. This run
-adds `TestAssertOpMultipleCauses` and confirms all 7 tests pass.
+Builder fixed `Operate()` in `eventgraph/go/pkg/intelligence/claude_cli.go` to return an error when Claude emits `is_error:true` JSON alongside a non-zero exit code. Without the fix, `Operate()` would silently succeed in this case.
 
 ## Tests Run
 
-### site/graph — Knowledge & Causes (DB integration)
+### Pre-existing test (Builder wrote this)
+**`TestOperateIsErrorReturnsError`** — `pkg/intelligence/claude_cli_test.go`
+- Simulates: claude exits with code 1, stdout contains `{"is_error":true,"result":"task failed: permission denied"}`
+- Verifies: `Operate()` returns an error containing the result message
+- Result: **PASS** ✓
+
+### Added by Tester (gap coverage)
+**`TestOperateIsErrorZeroExitReturnsError`** — `pkg/intelligence/claude_cli_test.go`
+- Simulates: claude exits with code 0 but stdout contains `{"is_error":true,"result":"tool call rejected"}`
+- Verifies: `Operate()` returns an error even when exit code is 0 (line 263 in claude_cli.go)
+- Result: **PASS** ✓
+
+### Full suite
+All 38 packages pass. No regressions.
 
 ```
-DATABASE_URL=postgres://site:site@localhost:5433/site?sslmode=disable \
-  go test -v -run "TestKnowledge|TestAssert" ./graph/
+ok  github.com/lovyou-ai/eventgraph/go/pkg/intelligence  5.1s
+ok  [all 37 other packages]
 ```
 
-| Test | Result |
-|------|--------|
-| `TestKnowledgePublic` | PASS |
-| `TestKnowledgeAuthed` | PASS |
-| `TestAssertOpReturnsCauses` | PASS |
-| `TestKnowledgeClaimsCausesFieldPresent` | PASS |
-| `TestAssertOpMultipleCauses` | **PASS (new)** |
-| `TestKnowledgeMissingSpace` | PASS |
-| `TestKnowledgeClaims` | PASS |
+## Coverage Notes
 
-**All 7 pass.** The new test:
+Four `IsError` check sites in `claude_cli.go`:
 
-- `TestAssertOpMultipleCauses` — creates two cause nodes, sends `op=assert` with
-  `"causes":"id1,id2"` (comma-separated, because `populateFormFromJSON` decodes JSON
-  as `map[string]string` — arrays not supported), verifies the response has both
-  causes, then fetches `/knowledge` and confirms both causes appear on the claim.
+| Site | Path | Tested? |
+|------|------|---------|
+| `Operate()` non-zero exit (line 249) | the fix | ✓ `TestOperateIsErrorReturnsError` |
+| `Operate()` zero exit (line 263) | pre-existing | ✓ `TestOperateIsErrorZeroExitReturnsError` (added) |
+| `Reason()` zero exit (line 172) | pre-existing | ✗ not tested |
+| `Reason()` non-zero exit | **MISSING** | — no `IsError` check exists here |
 
-## Coverage Assessment
+## Gap Flagged: Reason() non-zero exit has no IsError check
 
-All three Invariant 2 dimensions are now covered:
+In `Reason()` lines 155-165, if claude exits non-zero but still writes `is_error:true` JSON to stdout, the code falls through to `resultToResponse()` and returns success. This is inconsistent with `Operate()`. Not a regression from this iteration, but worth fixing.
 
-1. **No causes declared** — `TestKnowledgeClaimsCausesFieldPresent`: field present
-   as empty array, not omitted.
-2. **Single cause** — `TestAssertOpReturnsCauses`: round-trip store → handler → JSON.
-3. **Multiple causes** — `TestAssertOpMultipleCauses`: comma-separated parsing,
-   both causes stored and returned.
+## Verdict
 
-## Pre-existing Failures
-
-Same pre-existing failures noted in the previous report (12 tests outside this filter
-that fail due to duplicate slug violations, schema mismatches — all pre-existing,
-none caused by the causes fix).
-
-## Result
-
-**PASS** — Invariant 2 fix fully verified including the multiple-causes edge case.
-Ready for @Critic.
+**PASS.** The Builder's fix works. Added one test to cover the zero-exit `is_error:true` path in `Operate()`. One gap flagged in `Reason()` non-zero exit path for a future iteration.

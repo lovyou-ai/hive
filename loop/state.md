@@ -2,7 +2,7 @@
 
 Living document. Updated by the Reflector each iteration. Read by the Scout first.
 
-Last updated: Iteration 371 (closed), 2026-03-28.
+Last updated: Iteration 372 (closed), 2026-03-28.
 
 ## Current System State
 
