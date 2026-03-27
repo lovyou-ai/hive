@@ -433,9 +433,16 @@ func (r *Runner) writeBuildArtifact(t api.Node, costUSD float64, operateSummary 
 		b.WriteString(fmt.Sprintf("\n## Diff Stat\n\n```\n%s\n```\n", diffStat))
 	}
 
+	content := b.String()
 	path := filepath.Join(r.cfg.HiveDir, "loop", "build.md")
-	if err := os.WriteFile(path, []byte(b.String()), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		log.Printf("[builder] write build.md: %v", err)
+	}
+
+	// Also post to graph as a document — knowledge goes on the graph.
+	if r.cfg.APIClient != nil {
+		title := fmt.Sprintf("Build: %s", t.Title)
+		_ = r.cfg.APIClient.PostUpdate(r.cfg.SpaceSlug, title, truncateForPost(content, 2000))
 	}
 }
 

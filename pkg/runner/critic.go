@@ -114,7 +114,7 @@ func (r *Runner) reviewCommit(ctx context.Context, c commit) {
 	log.Printf("[critic] verdict: %s", verdict)
 
 	// Write critique artifact.
-	if writeErr := writeCritiqueArtifact(r.cfg.HiveDir, c.subject, verdict, content); writeErr != nil {
+	if writeErr := r.writeCritiqueArtifact(c.subject, verdict, content); writeErr != nil {
 		log.Printf("[critic] write critique artifact error: %v", writeErr)
 	}
 
@@ -222,8 +222,17 @@ func extractIssues(content string) string {
 }
 
 // writeCritiqueArtifact writes loop/critique.md with a structured review record.
-func writeCritiqueArtifact(hiveDir, subject, verdict, summary string) error {
+func (r *Runner) writeCritiqueArtifact(subject, verdict, summary string) error {
 	content := fmt.Sprintf("# Critique: %s\n\n**Verdict:** %s\n\n**Summary:** %s\n", subject, verdict, summary)
-	path := filepath.Join(hiveDir, "loop", "critique.md")
-	return os.WriteFile(path, []byte(content), 0644)
+	path := filepath.Join(r.cfg.HiveDir, "loop", "critique.md")
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		return err
+	}
+
+	// Also post to graph as a document.
+	if r.cfg.APIClient != nil {
+		title := fmt.Sprintf("Critique: %s — %s", verdict, subject)
+		_ = r.cfg.APIClient.PostUpdate(r.cfg.SpaceSlug, title, truncateForPost(content, 2000))
+	}
+	return nil
 }

@@ -271,7 +271,7 @@ func (r *Runner) runReflector(ctx context.Context) {
 		sections["ZOOM"],
 		sections["FORMALIZE"],
 	)
-	if err := appendReflection(r.cfg.HiveDir, entry); err != nil {
+	if err := r.appendReflection(entry); err != nil {
 		log.Printf("[reflector] append reflections error: %v", err)
 	}
 
@@ -307,15 +307,23 @@ func readRecentReflections(hiveDir string) string {
 }
 
 // appendReflection appends an entry to loop/reflections.md (creates if absent).
-func appendReflection(hiveDir, entry string) error {
-	path := filepath.Join(hiveDir, "loop", "reflections.md")
+func (r *Runner) appendReflection(entry string) error {
+	path := filepath.Join(r.cfg.HiveDir, "loop", "reflections.md")
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	_, err = f.WriteString("\n" + entry)
-	return err
+	if _, err := f.WriteString("\n" + entry); err != nil {
+		return err
+	}
+
+	// Also post to graph as a document.
+	if r.cfg.APIClient != nil {
+		title := fmt.Sprintf("Reflection: %s", time.Now().UTC().Format("2006-01-02"))
+		_ = r.cfg.APIClient.PostUpdate(r.cfg.SpaceSlug, title, truncateForPost(entry, 2000))
+	}
+	return nil
 }
 
 // advanceIterationCounter reads state.md, increments "Last updated: Iteration N," and writes it back.
