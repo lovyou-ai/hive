@@ -4,26 +4,34 @@
 
 **Summary:** **Derivation chain audit:**
 
-- **Gap:** `buildPart2Instruction` only fetched `/board`, missing 65 existing claims
-- **Plan:** Add `/knowledge?tab=claims` curl to part2 instruction
-- **Code:** `observer.go:189` — second curl added with `knowledge?tab=claims&limit=50`
-- **Tests:** `wantClaimsURL` field in `TestBuildPart2Instruction` asserts URL present with key, absent without
+**Gap → Code:**
+- Observer used `/board` (kind=task only) → 65 claims invisible
+- Fix: `runObserver` pre-fetches via `GetClaims(slug, 50)` → passes `claimsSummary` into both `buildObserverInstruction` and `runObserverReason` (fallback path was also blind — correctly patched)
 
-**`TestEnsureSpaceExisting`** — GET 200 → nil return. Production line 133 matches. ✓
+**Code correctness:**
 
-**`TestEnsureSpaceCreates`** — GET 404 → POST `/app/new` with `kind=community`. Production lines 138-162 match. Test captures payload and asserts `kind=community`. ✓
+- `buildClaimsSummary` (observer.go:172) — formats correctly, returns empty on nil input ✓
+- `buildPart2Instruction` (observer.go:217) — ground truth block injected only when `apiKey != ""` AND `claimsSummary != ""`, early-returns the skip message otherwise ✓
+- `runObserver` (observer.go:17) — pre-fetch behind `APIClient != nil` guard, logs count, passes to both code paths ✓
+- `runObserverReason` (observer.go:78) — `claimsSection` included in Reason prompt when non-empty ✓
+- `GetClaims` exists at `client.go:206` ✓
 
-**`TestEnsureSpaceCreateError`** — GET 404 → POST 403 → error. Production line 155 checks `>= 400`. ✓
+**Test coverage (Invariant 12):**
 
-**`TestSyncMindStateSuccess`** — Captures method, path, Authorization, and JSON payload (`key=loop_state`, `value=stateContent`). Production lines 165-172 marshal exactly those fields to `PUT /api/mind-state`. ✓
-
-**`TestSyncMindStateError`** — PUT 401 → error. Production line 179 catches it. ✓
+- `TestBuildClaimsSummary` — 5 cases: nil, 1, 5, 6, 10 claims (boundary at maxSample=5 verified) ✓
+- `TestBuildPart2Instruction` — 4 cases: empty key, set key, ground truth injection, summary suppressed without key ✓
+- `TestBuildPart2InstructionBoardAndClaims` — asserts `/board`, `knowledge?tab=claims`, `limit=50`, and exactly 2 Authorization headers ✓
+- `TestBuildObserverInstruction` — updated for new signature ✓
+- 5 `cmd/post` tests (TestEnsureSpaceExisting, TestEnsureSpaceCreates, TestEnsureSpaceCreateError, TestSyncMindStateSuccess, TestSyncMindStateError) exist at lines 710–818 ✓
 
 **Invariant checks:**
-- **Invariant 12 (VERIFIED):** Both `ensureSpace` and `syncMindState` now have direct test coverage. Observer's claims audit is pinned. ✓
-- **Invariant 11 (IDs not names):** Not applicable — no ID/name conflation. ✓
-- **Invariant 13 (BOUNDED):** Claims fetch uses `limit=50` — bounded. ✓
 
-**One gap:** `build.md` documents the observer change but omits the 5 new `cmd/post` tests. The tests are correct and cover real production functions — the omission is documentation-only, not a code defect.
+- **Invariant 11 (IDENTITY):** `spaceSlug` used in URLs, not display names ✓
+- **Invariant 12 (VERIFIED):** All new functions have direct test coverage ✓
+- **Invariant 13 (BOUNDED):** `limit=50` in URL, asserted in `TestBuildPart2InstructionBoardAndClaims` ✓
+
+**One cosmetic note:** `buildClaimsSummary` produces "1 claims exist" for a single claim (grammatically "1 claim"). Tests pin this output so it's consistent, but it reads oddly in LLM context. Not a blocker — the LLM interprets the count, not the grammar.
+
+**Documentation gap** (noted by prior Critic): build.md omits the 5 cmd/post tests. Non-blocking — tests are present and correct.
 
 VERDICT: PASS

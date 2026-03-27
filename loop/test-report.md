@@ -1,43 +1,36 @@
-# Test Report: Observer reads /board for claim audit
-
-- **Date:** 2026-03-28
-- **Build commit:** 165d4f0
+# Test Report: Fix: Knowledge API omits causes field on claim nodes
 
 ## What Was Tested
 
-The build added a second curl to `/knowledge?tab=claims&limit=50` in `buildPart2Instruction` so the Observer sees existing claims instead of always reporting zero.
+The Builder added `causeIDs` propagation to `post()`, `assertScoutGap()`, `assertCritique()`, and `assertLatestReflection()`. The prior tests covered causes for scout gap and critique, but three gaps remained.
 
-### New tests added in `pkg/runner/observer_test.go`
+## Gaps Found and Filled
 
-#### `TestBuildPart2InstructionBoardAndClaims`
-Verifies that when an API key is set, the instruction includes **both** the `/board` URL and the `knowledge?tab=claims` URL (with `limit=50`), and that exactly 2 `Authorization: Bearer` headers appear (one per curl command).
+### 1. `assertLatestReflection` had no SendsCauses test
+All three assert functions were updated to carry `causes` in this iteration, but only `assertScoutGap` and `assertCritique` had `SendsCauses` tests. `assertLatestReflection` was missing one.
 
-#### `TestParseObserverTasks` (10 sub-tests)
-`parseObserverTasks` had zero tests. Full coverage added:
+**Added:** `TestAssertLatestReflectionSendsCauses` — verifies `causes` field is present when `causeIDs` is non-empty.
 
-| Sub-test | What it checks |
-|----------|---------------|
-| empty input | Returns nil, not a zero-value task |
-| no issue found text | Unrecognised text produces no tasks |
-| single complete task | Title, priority, description parsed correctly |
-| two tasks | Second task flushed when third TASK_TITLE: encountered |
-| invalid priority → medium | "critical" normalised to "medium" |
-| missing priority → medium | Zero-value priority normalised to "medium" |
-| all valid priorities accepted | urgent/high/medium/low pass through unchanged |
-| whitespace trimmed | Leading/trailing spaces on all fields stripped |
-| title only (no other fields) | Task emitted with empty desc and defaulted priority |
-| unrecognised lines ignored | Noise between directives doesn't corrupt parse |
+### 2. Multiple causeIDs never tested joined
+The implementation uses `strings.Join(causeIDs, ",")` to build the CSV value. No test covered the multi-ID case — a regression could break the join separator without any test failing.
+
+**Added:** `TestAssertCauseIDsMultipleJoined` — passes `["id-aaa", "id-bbb", "id-ccc"]` and asserts the payload receives `"id-aaa,id-bbb,id-ccc"`.
+
+### 3. `post()` empty response returns empty ID untested
+`post()` silently ignores JSON decode failures and returns `("", nil)`. `main()` guards on this (`if buildDocID != ""`). The path was untested — a regression here would silently drop all causal links.
+
+**Added:** `TestPostEmptyResponseReturnsEmptyID` — server returns `{}` (no `node.id`), asserts `("", nil)` is returned without error.
 
 ## Results
 
 ```
-ok  github.com/lovyou-ai/hive/pkg/runner  3.661s
+ok  github.com/lovyou-ai/hive/cmd/post  0.606s
 ```
 
-All 11 new tests pass. No regressions across the full runner package (28 total tests).
+33 tests total (30 pre-existing + 3 new). All pass.
 
 ## Coverage Notes
 
-- `parseObserverTasks` was completely untested; now covered across all branches.
-- The "exactly 2 curls" assertion catches future regressions where the claims fetch is dropped from the instruction.
-- `buildObserverInstruction`, `buildOutputInstruction` were already covered; no changes needed.
+- All new functions from this iteration have tests.
+- `syncClaims` returning `causes` in the markdown is not tested here — that's `site/graph/knowledge_test.go` territory (covered by `TestAssertOpReturnsCauses` per the build report).
+- No database tests needed — `cmd/post` is pure HTTP client code with no DB calls.

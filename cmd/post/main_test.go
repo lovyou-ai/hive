@@ -53,9 +53,12 @@ func TestPostCreatesDocument(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	err := post("lv_testkey", srv.URL, "Fix: some bug", "## What Was Built\nFixed the bug.")
+	nodeID, err := post("lv_testkey", srv.URL, "Fix: some bug", "## What Was Built\nFixed the bug.")
 	if err != nil {
 		t.Fatalf("post() error: %v", err)
+	}
+	if nodeID != "test-id" {
+		t.Errorf("post() nodeID = %q, want %q", nodeID, "test-id")
 	}
 
 	if received["op"] != "intend" {
@@ -248,7 +251,7 @@ func TestAssertScoutGapCreatesClaimNode(t *testing.T) {
 	os.Chdir(tmp)
 	defer os.Chdir(origDir)
 
-	if err := assertScoutGap("lv_testkey", srv.URL); err != nil {
+	if err := assertScoutGap("lv_testkey", srv.URL, nil); err != nil {
 		t.Fatalf("assertScoutGap() error: %v", err)
 	}
 
@@ -277,7 +280,7 @@ func TestAssertScoutGapMissingFile(t *testing.T) {
 	os.Chdir(tmp)
 	defer os.Chdir(origDir)
 
-	err := assertScoutGap("lv_testkey", "http://localhost:9999")
+	err := assertScoutGap("lv_testkey", "http://localhost:9999", nil)
 	if err == nil {
 		t.Fatal("expected error for missing scout.md, got nil")
 	}
@@ -299,7 +302,7 @@ func TestAssertScoutGapNoGapLine(t *testing.T) {
 	os.Chdir(tmp)
 	defer os.Chdir(origDir)
 
-	err := assertScoutGap("lv_testkey", "http://localhost:9999")
+	err := assertScoutGap("lv_testkey", "http://localhost:9999", nil)
 	if err == nil {
 		t.Fatal("expected error when scout.md has no Gap line, got nil")
 	}
@@ -329,7 +332,7 @@ func TestAssertScoutGapAPIError(t *testing.T) {
 	os.Chdir(tmp)
 	defer os.Chdir(origDir)
 
-	err := assertScoutGap("bad_key", srv.URL)
+	err := assertScoutGap("bad_key", srv.URL, nil)
 	if err == nil {
 		t.Fatal("expected error for HTTP 401, got nil")
 	}
@@ -362,7 +365,7 @@ func TestAssertScoutGapSendsAuthHeader(t *testing.T) {
 	os.Chdir(tmp)
 	defer os.Chdir(origDir)
 
-	if err := assertScoutGap("lv_mykey", srv.URL); err != nil {
+	if err := assertScoutGap("lv_mykey", srv.URL, nil); err != nil {
 		t.Fatalf("assertScoutGap() error: %v", err)
 	}
 
@@ -453,7 +456,7 @@ func TestBuildTitleExtractedOnPost(t *testing.T) {
 		t.Fatal("buildTitle returned empty for valid build.md")
 	}
 
-	if err := post("lv_testkey", srv.URL, title, string(buildMD)); err != nil {
+	if _, err := post("lv_testkey", srv.URL, title, string(buildMD)); err != nil {
 		t.Fatalf("post() error: %v", err)
 	}
 
@@ -526,7 +529,7 @@ func TestAssertCritiqueCreatesClaimNode(t *testing.T) {
 	os.Chdir(tmp)
 	defer os.Chdir(origDir)
 
-	if err := assertCritique("lv_testkey", srv.URL); err != nil {
+	if err := assertCritique("lv_testkey", srv.URL, nil); err != nil {
 		t.Fatalf("assertCritique() error: %v", err)
 	}
 
@@ -552,7 +555,7 @@ func TestAssertCritiqueMissingFile(t *testing.T) {
 	os.Chdir(tmp)
 	defer os.Chdir(origDir)
 
-	err := assertCritique("lv_testkey", "http://localhost:9999")
+	err := assertCritique("lv_testkey", "http://localhost:9999", nil)
 	if err == nil {
 		t.Fatal("expected error for missing critique.md, got nil")
 	}
@@ -625,7 +628,7 @@ func TestAssertLatestReflectionCreatesDocument(t *testing.T) {
 	os.Chdir(tmp)
 	defer os.Chdir(origDir)
 
-	if err := assertLatestReflection("lv_testkey", srv.URL); err != nil {
+	if err := assertLatestReflection("lv_testkey", srv.URL, nil); err != nil {
 		t.Fatalf("assertLatestReflection() error: %v", err)
 	}
 
@@ -651,7 +654,7 @@ func TestAssertLatestReflectionMissingFile(t *testing.T) {
 	os.Chdir(tmp)
 	defer os.Chdir(origDir)
 
-	err := assertLatestReflection("lv_testkey", "http://localhost:9999")
+	err := assertLatestReflection("lv_testkey", "http://localhost:9999", nil)
 	if err == nil {
 		t.Fatal("expected error for missing reflections.md, got nil")
 	}
@@ -825,6 +828,210 @@ func TestSyncMindStateError(t *testing.T) {
 	}
 }
 
+// TestAssertCritiqueSendsCauses verifies that assertCritique includes the
+// causes field in the JSON payload when causeIDs are provided.
+// This ensures claim nodes are causally linked to the build that generated them
+// (Invariant 2: CAUSALITY).
+func TestAssertCritiqueSendsCauses(t *testing.T) {
+	var received map[string]string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/app/hive/op" {
+			http.NotFound(w, r)
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		json.Unmarshal(body, &received)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		w.Write([]byte(`{"node":{"id":"claim-456"}}`))
+	}))
+	defer srv.Close()
+
+	origDir, _ := os.Getwd()
+	tmp := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tmp, "loop"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	critiqueContent := "# Critique: Fix: causes field missing\n\n**Verdict:** PASS\n\nAll tests pass.\n"
+	if err := os.WriteFile(filepath.Join(tmp, "loop", "critique.md"), []byte(critiqueContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	os.Chdir(tmp)
+	defer os.Chdir(origDir)
+
+	if err := assertCritique("lv_testkey", srv.URL, []string{"build-doc-id-123"}); err != nil {
+		t.Fatalf("assertCritique() error: %v", err)
+	}
+
+	if received["causes"] != "build-doc-id-123" {
+		t.Errorf("causes = %q, want %q", received["causes"], "build-doc-id-123")
+	}
+}
+
+// TestAssertScoutGapSendsCauses verifies that assertScoutGap includes the
+// causes field in the JSON payload when causeIDs are provided.
+func TestAssertScoutGapSendsCauses(t *testing.T) {
+	var received map[string]string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/app/hive/op" {
+			http.NotFound(w, r)
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		json.Unmarshal(body, &received)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		w.Write([]byte(`{"node":{"id":"claim-789"}}`))
+	}))
+	defer srv.Close()
+
+	origDir, _ := os.Getwd()
+	tmp := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tmp, "loop"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	scoutContent := "## SCOUT GAP REPORT — Iteration 99\n\n**Gap:** Causes field missing on claims.\n"
+	if err := os.WriteFile(filepath.Join(tmp, "loop", "scout.md"), []byte(scoutContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	os.Chdir(tmp)
+	defer os.Chdir(origDir)
+
+	if err := assertScoutGap("lv_testkey", srv.URL, []string{"build-doc-id-456"}); err != nil {
+		t.Fatalf("assertScoutGap() error: %v", err)
+	}
+
+	if received["causes"] != "build-doc-id-456" {
+		t.Errorf("causes = %q, want %q", received["causes"], "build-doc-id-456")
+	}
+}
+
+// TestPostReturnsBuildDocID verifies that post() returns the node ID from
+// the server response, so it can be used as a cause for subsequent claims.
+func TestPostReturnsBuildDocID(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		w.Write([]byte(`{"node":{"id":"build-doc-abc"},"op":"intend"}`))
+	}))
+	defer srv.Close()
+
+	nodeID, err := post("lv_testkey", srv.URL, "Fix: causality gap", "build details")
+	if err != nil {
+		t.Fatalf("post() error: %v", err)
+	}
+	if nodeID != "build-doc-abc" {
+		t.Errorf("post() nodeID = %q, want %q", nodeID, "build-doc-abc")
+	}
+}
+
+// TestAssertLatestReflectionSendsCauses verifies that assertLatestReflection
+// includes the causes field in the JSON payload when causeIDs are provided.
+// The build updated all three assert functions to carry causes; this pins the
+// reflection path (the other two have their own SendsCauses tests).
+func TestAssertLatestReflectionSendsCauses(t *testing.T) {
+	var received map[string]string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/app/hive/op" {
+			http.NotFound(w, r)
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		json.Unmarshal(body, &received)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		w.Write([]byte(`{"node":{"id":"doc-789"}}`))
+	}))
+	defer srv.Close()
+
+	origDir, _ := os.Getwd()
+	tmp := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tmp, "loop"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	reflContent := "# Reflection Log\n\n## 2026-03-28\n\n**COVER:** Causes wired up.\n"
+	if err := os.WriteFile(filepath.Join(tmp, "loop", "reflections.md"), []byte(reflContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	os.Chdir(tmp)
+	defer os.Chdir(origDir)
+
+	if err := assertLatestReflection("lv_testkey", srv.URL, []string{"build-doc-id-999"}); err != nil {
+		t.Fatalf("assertLatestReflection() error: %v", err)
+	}
+
+	if received["causes"] != "build-doc-id-999" {
+		t.Errorf("causes = %q, want %q", received["causes"], "build-doc-id-999")
+	}
+}
+
+// TestAssertCauseIDsMultipleJoined verifies that when multiple causeIDs are
+// provided they are comma-joined in the payload (the server expects a CSV
+// string, not a JSON array).
+func TestAssertCauseIDsMultipleJoined(t *testing.T) {
+	var received map[string]string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/app/hive/op" {
+			http.NotFound(w, r)
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		json.Unmarshal(body, &received)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		w.Write([]byte(`{"node":{"id":"claim-multi"}}`))
+	}))
+	defer srv.Close()
+
+	origDir, _ := os.Getwd()
+	tmp := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tmp, "loop"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	critiqueContent := "# Critique: Multi-cause test\n\n**Verdict:** PASS\n"
+	if err := os.WriteFile(filepath.Join(tmp, "loop", "critique.md"), []byte(critiqueContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	os.Chdir(tmp)
+	defer os.Chdir(origDir)
+
+	causeIDs := []string{"id-aaa", "id-bbb", "id-ccc"}
+	if err := assertCritique("lv_testkey", srv.URL, causeIDs); err != nil {
+		t.Fatalf("assertCritique() error: %v", err)
+	}
+
+	want := "id-aaa,id-bbb,id-ccc"
+	if received["causes"] != want {
+		t.Errorf("causes = %q, want %q", received["causes"], want)
+	}
+}
+
+// TestPostEmptyResponseReturnsEmptyID verifies that post() returns ("", nil)
+// when the server responds with 200 but no node in the JSON body. This happens
+// when the server is an older version that doesn't return node IDs. main()
+// guards against this (skips causeIDs when buildDocID == ""), so the path
+// must not error.
+func TestPostEmptyResponseReturnsEmptyID(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		w.Write([]byte(`{}`)) // no node.id
+	}))
+	defer srv.Close()
+
+	nodeID, err := post("lv_testkey", srv.URL, "Fix: something", "body")
+	if err != nil {
+		t.Fatalf("post() unexpected error: %v", err)
+	}
+	if nodeID != "" {
+		t.Errorf("post() nodeID = %q, want empty string when response has no node", nodeID)
+	}
+}
+
 // TestAssertCritiqueNoTitle verifies that assertCritique returns an error
 // when critique.md exists but contains no heading (no title to extract).
 func TestAssertCritiqueNoTitle(t *testing.T) {
@@ -841,11 +1048,50 @@ func TestAssertCritiqueNoTitle(t *testing.T) {
 	os.Chdir(tmp)
 	defer os.Chdir(origDir)
 
-	err := assertCritique("lv_testkey", "http://localhost:9999")
+	err := assertCritique("lv_testkey", "http://localhost:9999", nil)
 	if err == nil {
 		t.Fatal("expected error when critique.md has no heading, got nil")
 	}
 	if !strings.Contains(err.Error(), "critique title") {
 		t.Errorf("error %q should mention critique title", err.Error())
+	}
+}
+
+// TestSyncClaimsWritesCauses verifies that syncClaims includes the causes field
+// in claims.md when the API returns claims with causes populated.
+func TestSyncClaimsWritesCauses(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"claims": []map[string]any{
+				{
+					"title":      "Ship what you build",
+					"body":       "Every build iteration should deploy.",
+					"state":      "verified",
+					"author":     "Builder",
+					"created_at": "2026-03-01T00:00:00Z",
+					"causes":     []string{"build-doc-abc123"},
+				},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	outPath := filepath.Join(t.TempDir(), "claims.md")
+	if err := syncClaims("lv_testkey", srv.URL, outPath); err != nil {
+		t.Fatalf("syncClaims() error: %v", err)
+	}
+
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("claims.md not written: %v", err)
+	}
+	content := string(data)
+
+	if !strings.Contains(content, "build-doc-abc123") {
+		t.Error("claims.md missing causes — agents cannot trace claim provenance without them")
+	}
+	if !strings.Contains(content, "**Causes:**") {
+		t.Error("claims.md missing **Causes:** label")
 	}
 }

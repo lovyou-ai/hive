@@ -73,10 +73,18 @@ func main() {
 		title = fmt.Sprintf("Iteration %s", iteration)
 	}
 
-	// Post build report as KindDocument.
-	if err := post(apiKey, baseURL, title, string(build)); err != nil {
+	// Post build report as KindDocument. The returned node ID is used as a
+	// cause for subsequent claim nodes (Invariant 2: CAUSALITY).
+	buildDocID, err := post(apiKey, baseURL, title, string(build))
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "post: %v\n", err)
 		os.Exit(1)
+	}
+
+	// causeIDs links subsequent claims back to the build document that generated them.
+	var causeIDs []string
+	if buildDocID != "" {
+		causeIDs = []string{buildDocID}
 	}
 
 	// Create task on Board and mark complete.
@@ -99,19 +107,19 @@ func main() {
 
 	// Assert the Scout's gap as a KindClaim node so gaps are searchable
 	// via knowledge_search and survive scout.md being overwritten next iteration.
-	if err := assertScoutGap(apiKey, baseURL); err != nil {
+	if err := assertScoutGap(apiKey, baseURL, causeIDs); err != nil {
 		fmt.Fprintf(os.Stderr, "assert scout gap: %v\n", err)
 		// Non-fatal — post succeeded.
 	}
 
 	// Assert the critique verdict as a KindClaim node.
-	if err := assertCritique(apiKey, baseURL); err != nil {
+	if err := assertCritique(apiKey, baseURL, causeIDs); err != nil {
 		fmt.Fprintf(os.Stderr, "assert critique: %v\n", err)
 		// Non-fatal — post succeeded.
 	}
 
 	// Post the latest reflection entry as a KindDocument node.
-	if err := assertLatestReflection(apiKey, baseURL); err != nil {
+	if err := assertLatestReflection(apiKey, baseURL, causeIDs); err != nil {
 		fmt.Fprintf(os.Stderr, "assert reflection: %v\n", err)
 		// Non-fatal — post succeeded.
 	}
@@ -286,11 +294,12 @@ func syncClaims(apiKey, baseURL, outPath string) error {
 
 	var result struct {
 		Claims []struct {
-			Title     string `json:"title"`
-			Body      string `json:"body"`
-			State     string `json:"state"`
-			Author    string `json:"author"`
-			CreatedAt string `json:"created_at"`
+			Title     string   `json:"title"`
+			Body      string   `json:"body"`
+			State     string   `json:"state"`
+			Author    string   `json:"author"`
+			CreatedAt string   `json:"created_at"`
+			Causes    []string `json:"causes"`
 		} `json:"claims"`
 	}
 	data, err := io.ReadAll(resp.Body)
@@ -317,6 +326,9 @@ func syncClaims(apiKey, baseURL, outPath string) error {
 			}
 			sb.WriteString("\n\n")
 		}
+		if len(c.Causes) > 0 {
+			sb.WriteString("**Causes:** " + strings.Join(c.Causes, ", ") + "\n\n")
+		}
 		if c.Body != "" {
 			sb.WriteString(c.Body + "\n\n")
 		}
@@ -335,7 +347,10 @@ func syncClaims(apiKey, baseURL, outPath string) error {
 // and creates a KindClaim node on the graph via op=assert. This makes Scout gaps
 // searchable via knowledge_search and preserves them across iterations (scout.md
 // is overwritten each iteration; graph nodes are permanent).
-func assertScoutGap(apiKey, baseURL string) error {
+//
+// causeIDs should contain the build document node ID so the claim is causally
+// linked to the iteration that generated it (Invariant 2: CAUSALITY).
+func assertScoutGap(apiKey, baseURL string, causeIDs []string) error {
 	data, err := os.ReadFile("loop/scout.md")
 	if err != nil {
 		return fmt.Errorf("read scout.md: %w", err)
@@ -349,12 +364,16 @@ func assertScoutGap(apiKey, baseURL string) error {
 
 	body := fmt.Sprintf("Iteration %s\n\n%s", iteration, gapTitle)
 
-	payload, _ := json.Marshal(map[string]string{
+	p := map[string]string{
 		"op":    "assert",
 		"kind":  "claim",
 		"title": gapTitle,
 		"body":  body,
-	})
+	}
+	if len(causeIDs) > 0 {
+		p["causes"] = strings.Join(causeIDs, ",")
+	}
+	payload, _ := json.Marshal(p)
 	req, _ := http.NewRequest("POST", baseURL+"/app/hive/op", bytes.NewReader(payload))
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Accept", "application/json")
@@ -388,7 +407,10 @@ func extractIterationFromScout(data []byte) string {
 // assertCritique reads loop/critique.md and creates a KindClaim node so
 // critique verdicts are searchable via knowledge_search and survive
 // critique.md being overwritten next iteration.
-func assertCritique(apiKey, baseURL string) error {
+//
+// causeIDs should contain the build document node ID so the claim is causally
+// linked to the iteration that generated it (Invariant 2: CAUSALITY).
+func assertCritique(apiKey, baseURL string, causeIDs []string) error {
 	data, err := os.ReadFile("loop/critique.md")
 	if err != nil {
 		return fmt.Errorf("read critique.md: %w", err)
@@ -399,12 +421,16 @@ func assertCritique(apiKey, baseURL string) error {
 		return fmt.Errorf("could not find critique title in critique.md")
 	}
 
-	payload, _ := json.Marshal(map[string]string{
+	p := map[string]string{
 		"op":    "assert",
 		"kind":  "claim",
 		"title": title,
 		"body":  string(data),
-	})
+	}
+	if len(causeIDs) > 0 {
+		p["causes"] = strings.Join(causeIDs, ",")
+	}
+	payload, _ := json.Marshal(p)
 	req, _ := http.NewRequest("POST", baseURL+"/app/hive/op", bytes.NewReader(payload))
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Accept", "application/json")
@@ -442,7 +468,10 @@ func extractCritiqueTitle(data []byte) string {
 // assertLatestReflection reads loop/reflections.md, extracts the most recent
 // entry (the first ## section), and creates a KindDocument node so reflections
 // are persistent and browsable in the Documents lens.
-func assertLatestReflection(apiKey, baseURL string) error {
+//
+// causeIDs should contain the build document node ID so the reflection is
+// causally linked to the iteration that generated it (Invariant 2: CAUSALITY).
+func assertLatestReflection(apiKey, baseURL string, causeIDs []string) error {
 	data, err := os.ReadFile("loop/reflections.md")
 	if err != nil {
 		return fmt.Errorf("read reflections.md: %w", err)
@@ -453,12 +482,16 @@ func assertLatestReflection(apiKey, baseURL string) error {
 		return fmt.Errorf("could not find reflection entry in reflections.md")
 	}
 
-	payload, _ := json.Marshal(map[string]string{
+	p := map[string]string{
 		"op":          "intend",
 		"kind":        "document",
 		"title":       "Reflection: " + title,
 		"description": body,
-	})
+	}
+	if len(causeIDs) > 0 {
+		p["causes"] = strings.Join(causeIDs, ",")
+	}
+	payload, _ := json.Marshal(p)
 	req, _ := http.NewRequest("POST", baseURL+"/app/hive/op", bytes.NewReader(payload))
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Accept", "application/json")
@@ -522,7 +555,8 @@ func extractGapTitle(data []byte) string {
 // post creates a KindDocument node for the build report via the intend op.
 // Build reports are structured documents (not casual posts) and belong in the
 // Documents lens, not the Feed.
-func post(apiKey, baseURL, title, body string) error {
+// Returns the created node ID so it can be used as a cause for subsequent claims.
+func post(apiKey, baseURL, title, body string) (string, error) {
 	payload, _ := json.Marshal(map[string]string{
 		"op":          "intend",
 		"kind":        "document",
@@ -536,13 +570,20 @@ func post(apiKey, baseURL, title, body string) error {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
 		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, b)
+		return "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, b)
 	}
-	return nil
+
+	var result struct {
+		Node struct {
+			ID string `json:"id"`
+		} `json:"node"`
+	}
+	json.NewDecoder(resp.Body).Decode(&result)
+	return result.Node.ID, nil
 }
