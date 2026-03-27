@@ -23,6 +23,9 @@ func (r *Runner) runObserver(ctx context.Context) {
 
 	// Build the observation instruction.
 	apiKey := os.Getenv("LOVYOU_API_KEY")
+	if apiKey == "" {
+		log.Printf("[observer] LOVYOU_API_KEY not set; graph integrity audit will be skipped")
+	}
 	instruction := buildObserverInstruction(r.cfg.RepoPath, r.cfg.SpaceSlug, apiKey)
 
 	// Use Operate() — the Observer needs file access to grep patterns, read templates, etc.
@@ -34,9 +37,9 @@ func (r *Runner) runObserver(ctx context.Context) {
 	}
 
 	result, err := op.Operate(ctx, decision.OperateTask{
-		WorkDir:     r.cfg.RepoPath,
-		Instruction: instruction,
-		AllowedTools: []string{"Read", "Glob", "Grep", "Bash"},
+		WorkDir:      r.cfg.RepoPath,
+		Instruction:  instruction,
+		AllowedTools: []string{"Read", "Glob", "Grep", "Bash", "mcp__knowledge__knowledge_search"},
 	})
 	if err != nil {
 		log.Printf("[observer] Operate error: %v", err)
@@ -144,6 +147,7 @@ func parseObserverTasks(content string) []observerTask {
 }
 
 func buildObserverInstruction(repoPath, spaceSlug, apiKey string) string {
+	part2 := buildPart2Instruction(spaceSlug, apiKey)
 	return fmt.Sprintf(`You are the Observer. Audit both the product AND the hive's own graph for integrity.
 
 ## Your repo: %s
@@ -154,7 +158,27 @@ func buildObserverInstruction(repoPath, spaceSlug, apiKey string) string {
 2. **Route health:** curl key pages — https://lovyou.ai/, /discover, /hive — check status codes.
 3. **User flow:** Is there a clear path from landing → sign in → create space → use product?
 
-## Part 2: Graph Integrity Audit
+%s
+
+Also use mcp__knowledge__knowledge_search to check:
+- Are lessons (claims) being asserted? Or just documents?
+- Are reflections searchable? Or only in flat files?
+- Do agents use the right entity kind for each artifact?
+
+## Output
+
+%s
+
+If everything looks good, say "No issues found."`, repoPath, part2, buildOutputInstruction(spaceSlug, apiKey))
+}
+
+func buildPart2Instruction(spaceSlug, apiKey string) string {
+	if apiKey == "" {
+		return `## Part 2: Graph Integrity Audit
+
+(Skipped — LOVYOU_API_KEY not set. Authenticated requests require an API key.)`
+	}
+	return fmt.Sprintf(`## Part 2: Graph Integrity Audit
 
 Check the hive's own data on the board for structural issues:
 
@@ -165,20 +189,19 @@ Look for:
 2. **Stale data** — open tasks that have been active for days with no progress
 3. **Title compounding** — tasks with "Fix: Fix: Fix:..." prefixes (should be stripped)
 4. **Schema violations** — any field using display names where IDs should be used (Invariant 11)
-5. **Orphaned milestones** — PM milestones still open after their subtasks completed
+5. **Orphaned milestones** — PM milestones still open after their subtasks completed`, apiKey, spaceSlug)
+}
 
-Also use knowledge.search to check:
-- Are lessons (claims) being asserted? Or just documents?
-- Are reflections searchable? Or only in flat files?
-- Do agents use the right entity kind for each artifact?
+func buildOutputInstruction(spaceSlug, apiKey string) string {
+	if apiKey == "" {
+		return `Report the most important findings (max 2) as:
+TASK_TITLE: <title>
+TASK_PRIORITY: <priority>
+TASK_DESCRIPTION: <description>`
+	}
+	return fmt.Sprintf(`Create tasks directly for the most important findings (max 2):
 
-## Output
-
-Create tasks directly for the most important findings (max 2):
-
-curl -s -X POST -H "Authorization: Bearer %s" -H "Content-Type: application/json" -H "Accept: application/json" "https://lovyou.ai/app/%s/op" -d '{"op":"intend","kind":"task","title":"<TITLE>","description":"<DESCRIPTION>","priority":"<PRIORITY>"}'
-
-If everything looks good, say "No issues found."`, repoPath, apiKey, spaceSlug, apiKey, spaceSlug)
+curl -s -X POST -H "Authorization: Bearer %s" -H "Content-Type: application/json" -H "Accept: application/json" "https://lovyou.ai/app/%s/op" -d '{"op":"intend","kind":"task","title":"<TITLE>","description":"<DESCRIPTION>","priority":"<PRIORITY>"}'`, apiKey, spaceSlug)
 }
 
 // Helper: grep registered routes from handlers.go.

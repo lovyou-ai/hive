@@ -1,18 +1,20 @@
-# Fix: update stale /hive tests after HivePage redesign
+# Build: Fix Critic REVISE items (observer + reflector diagnostics)
 
-## What changed
+**Status:** DONE
 
-**`site/graph/hive_test.go`**
-- Removed `TestGetHive_ContainsCivilizationBuilds` — asserted old tagline "The Civilization Builds" that HivePage no longer renders; replaced with `TestGetHive_ContainsHiveFeed` which checks for the `hive-feed` element that HivePage always renders
-- Removed `TestGetHive_RendersMetrics` — asserted old stat card labels ("Features shipped", "Total autonomous spend", "Avg cost") that HivePage no longer renders
-- Removed `TestGetHive_RendersCurrentlyBuilding` — asserted "Currently building" section with "Idle" text and task title; this section no longer exists in HivePage
-- Removed unused `"fmt"` import (was only used by the dropped metrics test)
+## Changes
 
-## Why
+### `pkg/runner/observer.go`
+- Added `"mcp__knowledge__knowledge_search"` to `AllowedTools` in `runObserver` so the instruction's `knowledge.search` reference is valid (was a lie — tool not in allowed list).
+- Added `if apiKey == ""` guard in `runObserver` — logs a warning when `LOVYOU_API_KEY` is not set.
+- Refactored `buildObserverInstruction` into three functions: `buildObserverInstruction`, `buildPart2Instruction`, `buildOutputInstruction`. When `apiKey == ""`, Part 2 and the output section skip authenticated curl commands and substitute a skip notice or text-format fallback.
 
-The new `HivePage` renders: iteration counter, phase pill, last build title, phase timeline (`hive-feed` HTMX element), and recent commits. It no longer fetches posts for stat cards or tasks for a "currently building" section. `TestHiveDashboard` already covers the core HivePage content assertions (iteration number, phase, build title).
+### `pkg/runner/reflector.go`
+- Added `r.appendDiagnostic(PhaseEvent{Phase: "reflector", Outcome: "empty_sections", Preview: ...})` in the `emptySections` early-return path in `runReflectorReason`. This was missing — `TestRunReflectorEmptySectionsDiagnostic` expected `diagnostics.jsonl` to be written on partial LLM output but the early return was silent.
+
+### `loop/critique.md`
+- Removed duplicate bare `VERDICT: REVISE` line at bottom. The `**Verdict:** REVISE` header at the top is the canonical location.
 
 ## Verification
-
 - `go.exe build -buildvcs=false ./...` — clean
-- `go.exe test -buildvcs=false ./...` — all pass (graph tests skip without DB, as expected)
+- `go.exe test -buildvcs=false ./...` — all pass (7 packages with tests)

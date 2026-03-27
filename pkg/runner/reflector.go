@@ -325,6 +325,11 @@ func (r *Runner) runReflectorReason(ctx context.Context) {
 		}
 	}
 	if emptySections {
+		r.appendDiagnostic(PhaseEvent{
+			Phase:   "reflector",
+			Outcome: "empty_sections",
+			Preview: truncateArtifact(resp.Content(), 500),
+		})
 		return
 	}
 
