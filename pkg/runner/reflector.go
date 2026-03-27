@@ -153,14 +153,16 @@ func truncateArtifact(s string, max int) string {
 }
 
 // buildReflectorPrompt assembles the prompt sent to the Reflector agent.
-// The output format constraint is front-loaded so the LLM reads it before
-// processing the artifact context (prevents "lost in the middle" failures).
+// The JSON-only constraint is front-loaded — before any context or artifacts —
+// to prevent "lost in the middle" failures on long prompts.
+// Artifact sizes are capped inline (separate from the global 8000-char cap).
 func buildReflectorPrompt(scout, build, critique, recentReflections, sharedCtx string) string {
-	return fmt.Sprintf(`You are the Reflector. You close each iteration by extracting what was learned.
+	build = truncateArtifact(build, 3000)
+	critique = truncateArtifact(critique, 2000)
+	scout = truncateArtifact(scout, 2000)
+	sharedCtx = truncateArtifact(sharedCtx, 4000)
 
-## Output Format
-
-Return ONLY a JSON object with exactly these four fields — no preamble, no explanation, no markdown code fences. Keep it concise — 10-15 lines total. BLIND is the most important: actively look for absences.
+	return fmt.Sprintf(`Return ONLY a JSON object with exactly these four fields — no preamble, no explanation, no markdown code fences.
 
 {
   "cover": "What was accomplished? How does it connect to prior work?",
@@ -168,6 +170,8 @@ Return ONLY a JSON object with exactly these four fields — no preamble, no exp
   "zoom": "Step back. What is the larger pattern across iterations?",
   "formalize": "If a new lesson emerged, state it as a numbered principle. Otherwise write: No new lesson."
 }
+
+You are the Reflector. You close each iteration by extracting what was learned.
 
 ## Institutional Knowledge
 %s
@@ -182,7 +186,10 @@ Return ONLY a JSON object with exactly these four fields — no preamble, no exp
 %s
 
 ## Recent Reflections (loop/reflections.md)
-%s`, sharedCtx, scout, build, critique, recentReflections)
+%s
+
+## Instructions
+Return the JSON object shown above. BLIND is the most important: actively look for absences. Keep it concise — 10-15 lines total.`, sharedCtx, scout, build, critique, recentReflections)
 }
 
 // formatReflectionEntry formats a dated append block for loop/reflections.md.
@@ -208,11 +215,11 @@ func (r *Runner) runReflector(ctx context.Context) {
 	log.Printf("[reflector] tick %d: reflecting", r.tick)
 
 	// Read loop artifacts (all optional — tolerate missing files).
-	scout := truncateArtifact(readLoopArtifact(r.cfg.HiveDir, "scout.md"), 2000)
-	build := truncateArtifact(readLoopArtifact(r.cfg.HiveDir, "build.md"), 3000)
-	critique := truncateArtifact(readLoopArtifact(r.cfg.HiveDir, "critique.md"), 2000)
+	scout := readLoopArtifact(r.cfg.HiveDir, "scout.md")
+	build := readLoopArtifact(r.cfg.HiveDir, "build.md")
+	critique := readLoopArtifact(r.cfg.HiveDir, "critique.md")
 	recentReflections := readRecentReflections(r.cfg.HiveDir)
-	sharedCtx := truncateArtifact(LoadSharedContext(r.cfg.HiveDir), 4000)
+	sharedCtx := LoadSharedContext(r.cfg.HiveDir)
 
 	// Call LLM.
 	prompt := buildReflectorPrompt(scout, build, critique, recentReflections, sharedCtx)

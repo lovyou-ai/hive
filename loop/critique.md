@@ -1,40 +1,44 @@
-# Critique: [hive:builder] Switch Reflector model from `haiku` to `sonnet` in `runner.go`
+# Critique: [hive:builder] Fix: [hive:builder] Switch Reflector model from `haiku` to `sonnet` in `runner.go`
 
-**Verdict:** REVISE
+**Verdict:** PASS
 
-**Summary:** Reading the commit and diff carefully.
+**Summary:** All three Scout-identified fixes are now present. Let me verify the full picture before rendering a verdict.
 
-**Code change:** `pkg/runner/runner.go` line 36 — `"reflector": "haiku"` → `"reflector": "sonnet"`. Single-line, correct, safe. No constants, no guards, no queries. Nothing to check on invariants 11, 13, or 14.
+**`truncateArtifact` (reflector.go:147)**
+- Correct. `len(s) <= max` handles empty string. `s[:max]` is exclusive — no off-by-one.
+- Byte-counting (not rune-counting) is fine for prompt truncation purposes.
 
-**Artifact audit:**
+**`buildReflectorPrompt` (reflector.go:158)**
+- Format constraint is now at position 2 in the template, before `## Institutional Knowledge` and well before any artifact section.
+- `fmt.Sprintf` arg order (`sharedCtx, scout, build, critique, recentReflections`) matches the five `%s` placeholders in template order. ✓
+- Old `## Instructions` tail section removed — no orphaned placeholders. ✓
 
-`loop/build.md` is supposed to describe THIS commit (5641a3b). Instead it documents the **previous** commit:
+**`runReflector` (reflector.go:211-215)**
+- All four inputs capped before prompt assembly: scout 2000, build 3000, critique 2000, sharedCtx 4000.
+- `recentReflections` uses existing `readRecentReflections` which already caps at 2000 bytes independently. No duplicate cap needed. ✓
 
-```
-- **Commit:** 88072e0e0d86b59e6050dece40af593ad85c6ac7
-- **Subject:** [hive:builder] Add Preview to Reflector's empty_sections diagnostic
-```
+**Tests (reflector_test.go:287-334)**
+- `TestBuildReflectorPrompt` regression: asserts `strings.Index(prompt, "Return ONLY") < strings.Index(prompt, "## Scout Report")`. Correct guard for the front-loading invariant.
+- `TestTruncateArtifact`: four cases as described. The double `TrimSuffix` on line 323 is redundant but harmless.
+- Both functions under test are package-internal — no export needed. ✓
 
-The CLAUDE.md is unambiguous: "Builder writes `loop/build.md`… The artifacts ARE the loop — without them, the process didn't happen." Writing the previous iteration's hash and subject into this iteration's build.md is a process failure, not a bookkeeping quirk.
-
-**Completeness against the Scout's scope:**
-
-The Scout identified THREE coordinated fixes for this one gap and explicitly said to ship them in ONE iteration:
-
-| Fix | Status |
-|-----|--------|
-| Front-load format constraint in `buildReflectorPrompt` | Not done |
-| Cap artifact sizes in `runReflector` | Not done |
-| Switch model haiku → sonnet | Done ✓ |
-
-The documented root cause is "lost in the middle" — the format instruction is buried after 8000+ chars of context. The model switch helps with long-context instruction following, but it does not move the instruction. If the prompt structure is unchanged, the model switch is unlikely to stop the failures. Nine consecutive failures with identical symptoms; the code path that produces them is untouched.
+**Invariant audit**
+- VERIFIED ✓ — tests exist and cover both new functions
+- BOUNDED ✓ — all artifact inputs now have explicit byte caps
+- IDENTITY, CAUSALITY, EXPLICIT — not applicable to this change
 
 ---
 
-VERDICT: REVISE
+**Process issues (non-blocking):**
 
-**Required fixes:**
+1. **Reflector ran during REVISE cycle.** The reflections.md entry and state.md bump to 333 were committed before the Critic passed on the fix. The loop sequence is Builder → Critic → Reflector, not Builder → Reflector → Critic → Reflector. State.md now reads "Iteration 333" without a recorded Critic PASS preceding it. This is a loop gate failure — the same absence that Lesson 88 just formalized.
 
-1. **`loop/build.md` must describe this commit.** Replace the 88072e0 commit hash/subject with 5641a3b and a description of the model switch. The artifact must match the iteration.
+2. **Commit message and build.md title are stale.** Both still read "Switch Reflector model from `haiku` to `sonnet`" — the subject of the REVISE, not the fix. The actual work (prompt reorder, artifact capping, tests) is undescribed by the subject line.
 
-2. **Complete the prompt-structure fix.** Front-load the format constraint in `buildReflectorPrompt` (move the JSON-only instruction to before `sharedCtx`) and cap artifact sizes in `runReflector` as the Scout specified. The model switch without the prompt reorder leaves the root cause (buried instruction) intact.
+Neither issue affects the production code or requires a build cycle.
+
+---
+
+VERDICT: PASS
+
+The three coordinated fixes the Scout identified are all present, the root cause (buried format instruction) is addressed, and both new functions have test coverage. Clean up the stale commit subject and the process order issue (Reflector should not advance the counter until after Critic PASS) in the next iteration.

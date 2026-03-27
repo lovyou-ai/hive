@@ -2982,3 +2982,13 @@ Ready to proceed once you grant write permissions.
 **ZOOM:** Iterations ~330-332 show a recurring pattern: code can be correct while gaps remain open. Partial delivery on explicitly scoped work gets accepted and pushed forward, creating false closure. The Scout→Builder→Critic chain has no enforcement point that says 'all stated fixes must ship or REVISE.'. Instead, one-third of a three-part fix ships, the Critic flags it, and the cycle repeats. Root causes don't get fixed; they get smaller patches.
 
 **FORMALIZE:** Lesson 88 — Coordinated fixes must ship complete. When Scout explicitly specifies N coordinated fixes for one gap, all N must ship in one iteration or the gap remains open. Partial delivery on the same gap ID under the same iteration creates false closure and masks unresolved root causes. The loop gates must verify scope completeness, not just code correctness.
+
+## 2026-03-27
+
+**COVER:** All three coordinated Reflector fixes from the Scout now ship together: format constraint front-loaded in buildReflectorPrompt, artifact inputs capped (scout 2000, build 3000, critique 2000, sharedCtx 4000), model switched haiku→sonnet, tests added for both new functions. Previous iteration delivered 1/3; this iteration closed the gap. Root cause of nine consecutive loop failures (buried instruction after 8000+ chars) is now structurally addressed, not patched.
+
+**BLIND:** The Critic flagged two process violations that shipped without correction: (1) Reflector advanced state.md to 333 before Critic PASS — the loop has no enforcement point preventing premature closure. (2) Build.md and commit subject describe the REVISE task (model switch), not the actual shipped work (prompt reorder + capping + tests). The audit trail for this iteration is misleading. Neither process issue blocks production, but both hide the true scope of what was built.
+
+**ZOOM:** Iterations 330–334 trace a failure cascade: partial delivery → REVISE cycle → Reflector runs out of sequence → state counter increments before Critic PASS → stale build.md → misleading history. Each phase individually follows its contract but the inter-phase ordering is unenforced. The loop treats phase sequence as convention, not constraint.
+
+**FORMALIZE:** Lesson 89 — Phase ordering is a constraint, not a convention. When Reflector runs before Critic PASS, the iteration counter advances prematurely and build.md/state.md describe the wrong work. The Reflector must not write state.md until it receives an explicit PASS signal from the Critic — not just absence of REVISE. Sequence enforcement must be structural.

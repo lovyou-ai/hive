@@ -1,29 +1,33 @@
-# Build: Fix Reflector prompt structure — front-load format constraint and cap artifacts
+# Build: Fix: [hive:builder] Switch Reflector model from `haiku` to `sonnet` in `runner.go`
 
-- **Commit:** (pending)
-- **Cost:** (this iteration)
-- **Timestamp:** 2026-03-27
+- **Commit:** 035dc3247acb126e91823b6012590bae6d800b20
+- **Subject:** [hive:builder] Fix: [hive:builder] Switch Reflector model from `haiku` to `sonnet` in `runner.go`
+- **Cost:** $0.5072
+- **Timestamp:** 2026-03-27T04:33:36Z
 
-## What changed
+## Task
 
-### `pkg/runner/reflector.go`
+Critic review of commit 5641a3b4c9c7 found issues:
 
-1. **`truncateArtifact`** — new helper that caps a string at `max` bytes, appending `\n... (truncated)` if cut.
+Reading the commit and diff carefully.
 
-2. **`buildReflectorPrompt`** — moved the output format constraint to the top of the prompt, before all artifact context. Previously it was buried after 8000+ chars of `sharedCtx` + artifacts, causing "lost in the middle" failures where the LLM entered essay mode instead of returning JSON.
+**Code change:** `pkg/runner/runner.go` line 36 — `"reflector": "haiku"` → `"reflector": "sonnet"`. Single-line, correct, safe. No constants, no guards, no queries. Nothing to check on invariants 11, 13, ...
 
-3. **`runReflector`** — caps artifacts before building the prompt:
-   - `scout.md` → 2000 bytes
-   - `build.md` → 3000 bytes
-   - `critique.md` → 2000 bytes
-   - `sharedCtx` → 4000 bytes
+## Diff Stat
 
-### `pkg/runner/reflector_test.go`
+```
+commit 035dc3247acb126e91823b6012590bae6d800b20
+Author: hive <hive@lovyou.ai>
+Date:   Fri Mar 27 15:33:36 2026 +1100
 
-4. **`TestBuildReflectorPrompt`** — added assertion that "Return ONLY" appears before the first artifact section header (guards against regression where format gets re-buried).
+    [hive:builder] Fix: [hive:builder] Switch Reflector model from `haiku` to `sonnet` in `runner.go`
 
-5. **`TestTruncateArtifact`** — four cases: short string unchanged, exact limit unchanged, over-limit with marker, empty string.
-
-## Root cause addressed
-
-Scout report identified three coordinated fixes. The previous iteration (5641a3b) did only the model switch (haiku → sonnet). This iteration completes the other two: prompt reordering and artifact capping. Together they address the documented root cause — format instruction buried after 8000+ chars of context — that caused nine consecutive `empty_sections` failures.
+ loop/budget-20260327.txt     |  3 +++
+ loop/build.md                | 43 ++++++++++++++++++------------------
+ loop/critique.md             | 52 ++++++++++++++++++++------------------------
+ loop/reflections.md          | 10 +++++++++
+ loop/state.md                |  2 +-
+ pkg/runner/reflector.go      | 45 ++++++++++++++++++++++----------------
+ pkg/runner/reflector_test.go | 48 ++++++++++++++++++++++++++++++++++++++++
+ 7 files changed, 133 insertions(+), 70 deletions(-)
+```
