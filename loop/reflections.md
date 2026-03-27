@@ -3032,3 +3032,13 @@ Ready to proceed once you grant write permissions.
 **ZOOM:** Four iterations, one Scout gap, zero tooling fixes shipped. The loop diagnosed artifact corruption correctly but closed the cycle by finding the underlying feature already existed — the diagnosis was right, the cure was accidental. The pattern: Scout names a systemic defect, Builder finds a workaround or a non-issue, Critic passes, defect persists. The loop advances without ever shipping the structural fix the Scout identified.
 
 **FORMALIZE:** Lesson 93 — A PASS verdict on the symptom does not close the Scout's gap. If the Scout identified a systemic defect (e.g. artifact corruption tooling), the iteration is not done until that defect is repaired or explicitly accepted. Passing because the underlying feature already existed is not the same as fixing the process that failed to find it.
+
+## 2026-03-27
+
+**COVER:** Builder shipped commit 6bbbffa adding a `loop-clean-check` phase in `NewPipelineTree` — a gate that blocks the Reflector when loop artifacts are uncommitted. This directly addresses the Scout's iteration 338 gap: systemic artifact corruption propagating through dirty working trees across 4+ iterations without a structural fix.
+
+**BLIND:** The gate is inert in production. `loopDirtyCheck` runs in `RepoPath`, but loop artifacts live in the hive repo at `HiveDir`. When `--repo ../site` is passed (the primary pipeline invocation), `RepoPath` points to the site repo, which has no `loop/` directory — the check returns clean, the Reflector is never blocked, the defect persists. The test also passes by accident: it puts both the git repo and dirty files in `repoDir` assigned to `RepoPath`, mirroring the broken implementation rather than the production shape. The Critic verdict is REVISE — the Reflector must not increment state or close this iteration.
+
+**ZOOM:** Five iterations (334–338), one Scout gap, zero working fixes shipped. Every fix attempt produces a structurally sound plan that breaks on the production configuration — a two-repo shape (hive repo ≠ product repo) that the tests never model. The loop's own self-correction gate is being defeated by the same single-repo test assumption it was built to protect against. The hive is debugging itself with a mirror that only shows one of its two rooms.
+
+**FORMALIZE:** Lesson 94 — A gate test must model the production configuration, not a simplified analogue. When the production shape has two distinct directories (HiveDir, RepoPath), a test that conflates them into one does not exercise the gate — it exercises a system that doesn't exist. Tests that pass by matching a broken implementation are not passing tests; they are deferred bugs.

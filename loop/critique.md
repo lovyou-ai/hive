@@ -1,50 +1,53 @@
-# Critique: [hive:builder] Fix: [hive:builder] Fix: [hive:builder] Add GET /hive route and handler
+# Critique: [hive:builder] Add dirty-loop-artifacts gate before Reflector in Execute()
 
-**Verdict:** PASS
+**Verdict:** REVISE
 
-**Summary:** ## Critique: Fix — Verify GET /hive route and handler (iteration 336 correction, commit 21a091f)
-
-### Derivation chain
-
-The previous Critic issued REVISE on `6f7187d` because the commit subject claimed "Add GET /hive route and handler" but contained only loop files. This commit (`21a091f`) responds by:
-
-1. Updating `critique.md` to PASS, documenting that the Builder verified the route already exists (`graph/handlers.go:130`, handler at `:3661`, tests in `graph/hive_test.go`).
-2. Adding a `diagnostics.jsonl` entry showing the Reflector correctly refused to run on the prior REVISE verdict.
-
-### What this commit actually contains
-
-- `loop/budget-20260327.txt` — 4 new cost entries. Expected.
-- `loop/critique.md` — Critic issuing PASS with derivation chain explanation.
-- `loop/diagnostics.jsonl` — Reflector self-abort entry. Correct behavior; Lesson 92 held.
-
-### Issues
-
-**1. Commit subject compounding (cosmetic, not a blocker)**
-
-Subject: `[hive:builder] Fix: [hive:builder] Fix: [hive:builder] Add GET /hive route and handler`
-
-This is Critic work (updating `critique.md`), but the subject says `[hive:builder]` three times. The automated tooling is accumulating prefixes. Doesn't corrupt the audit trail — the diff is clear — but the convention is broken. Should be `[hive:critic]`. Flag for tooling fix; not blocking.
-
-**2. `M loop/build.md` in working tree**
-
-Git status at conversation start shows `build.md` still modified. The critique claims the correction landed in `65f80f0`, yet the working tree has further changes. The Reflector **must** commit this file as part of closing — not leave it dirty. If those working-tree changes contradict the PASS narrative, that's a blocker. If they're the same content that was reviewed, commit them cleanly.
-
-**3. Critic assertions about site code are not verifiable from this diff**
-
-`critique.md` cites `graph/handlers.go:130`, `:3661`, and `graph/hive_test.go` with 8 test functions. None of those files appear in this diff — they're in the site repo. The Critic is asserting existence; this review cannot independently confirm. Accepted on the Critic's authority, but the Reflector should spot-check `graph/handlers.go` line numbers before closing.
-
-### Invariant checks
-
-- **IDENTITY (11):** Not applicable.
-- **VERIFIED (12):** Critic claims 8 tests in `graph/hive_test.go`. No new code was shipped (route pre-existed), so no new tests are required. Acceptable.
-- **BOUNDED (13):** No queries. N/A.
-
-### Gate status
-
-The Reflector self-abort (diagnostics entry) confirms the gate held. The logical chain — verify existence → correct build.md → Critic reviews → PASS → Reflector may close — is sound.
+**Summary:** The bug is confirmed. Here is the full analysis:
 
 ---
 
-VERDICT: PASS
+## Analysis
 
-Reflector may close iteration 336 and advance to 337. Before committing: resolve `M loop/build.md` (commit it or confirm it matches the reviewed content), and verify `graph/handlers.go` line references are still accurate.
+### What the commit does
+
+Adds a `loop-clean-check` phase between `critic` and `reflector` in `NewPipelineTree`. When loop artifacts are uncommitted, `loopDirtyCheck` returns an error, `Execute` emits a diagnostic, and the reflector is blocked. The right idea, correctly placed.
+
+### Structural correctness of the gate
+
+The `NewPipelineTree` refactor (create `pt` first, then assign `pt.phases` so the closure can capture `pt`) is sound. `Execute`'s diagnostic emission path is already correct — any error from a phase that didn't write its own diagnostic gets one written automatically.
+
+### The bug: wrong directory
+
+`loopDirtyCheck` runs `git status --porcelain -- loop/` in `pt.cfg.RepoPath`. But `loop/` artifacts live in the **hive repo**, which is `pt.cfg.HiveDir`. These are different fields:
+
+- `HiveDir` = the hive repo (`/c/src/matt/lovyou3/hive`) — confirmed at `runner.go:428`: `filepath.Join(r.cfg.HiveDir, "loop", "build.md")`
+- `RepoPath` = the product repo being operated on (`--repo ../site` for site work, defaults to `.` from cwd)
+
+When `--repo ../site` is passed (the primary pipeline mode, shown in the cmd header comments), `RepoPath` points to the site repo, which has no `loop/` directory. The check returns clean, silently passing through dirty hive artifacts. The gate does nothing in the common pipeline invocation.
+
+The test is also affected: `Config{HiveDir: hiveDir, RepoPath: repoDir}` — it puts the git repo and dirty `loop/build.md` in `repoDir` which is assigned to `RepoPath`, not `HiveDir`. The test passes because the implementation accidentally matches the test's structure, not the production use case.
+
+**Fix required:**
+```go
+// loopDirtyCheck: change RepoPath → HiveDir
+func (pt *PipelineTree) loopDirtyCheck(_ context.Context) error {
+    if pt.cfg.HiveDir == "" {  // was: RepoPath
+        return nil
+    }
+    cmd := exec.Command("git", "status", "--porcelain", "--", "loop/")
+    cmd.Dir = pt.cfg.HiveDir   // was: RepoPath
+```
+
+**Test fix required:**
+```go
+pt := &PipelineTree{
+    cfg: Config{HiveDir: repoDir, RepoPath: ""},  // was: HiveDir: hiveDir, RepoPath: repoDir
+}
+```
+(And the test's `makeHiveDir` call for diagnostics still works independently.)
+
+---
+
+VERDICT: REVISE
+
+**Required fix:** In `loopDirtyCheck`, replace `pt.cfg.RepoPath` with `pt.cfg.HiveDir` (both the nil-guard and `cmd.Dir`). Update the test to set `HiveDir: repoDir` instead of `RepoPath: repoDir`. The loop artifacts are in the hive repo, not the product repo — using the wrong path silently bypasses the gate in all pipeline-mode invocations with `--repo <other-repo>`.

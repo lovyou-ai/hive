@@ -98,13 +98,13 @@ func (pt *PipelineTree) Execute(ctx context.Context) error {
 }
 
 // loopDirtyCheck returns an error if any loop/ files other than
-// loop/diagnostics.jsonl are uncommitted in cfg.RepoPath.
+// loop/diagnostics.jsonl are uncommitted in cfg.HiveDir.
 func (pt *PipelineTree) loopDirtyCheck(_ context.Context) error {
-	if pt.cfg.RepoPath == "" {
+	if pt.cfg.HiveDir == "" {
 		return nil
 	}
 	cmd := exec.Command("git", "status", "--porcelain", "--", "loop/")
-	cmd.Dir = pt.cfg.RepoPath
+	cmd.Dir = pt.cfg.HiveDir
 	out, err := cmd.Output()
 	if err != nil {
 		return fmt.Errorf("git status: %w", err)

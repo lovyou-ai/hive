@@ -224,7 +224,6 @@ func TestNewPipelineTreeHasSevenPhases(t *testing.T) {
 // reflector phase is never reached.
 func TestLoopDirtyCheckBlocksReflector(t *testing.T) {
 	repoDir := t.TempDir()
-	hiveDir := makeHiveDir(t, "# State\n", nil)
 
 	runGit := func(args ...string) {
 		t.Helper()
@@ -254,7 +253,7 @@ func TestLoopDirtyCheckBlocksReflector(t *testing.T) {
 
 	reflectorCalled := false
 	pt := &PipelineTree{
-		cfg: Config{HiveDir: hiveDir, RepoPath: repoDir},
+		cfg: Config{HiveDir: repoDir, RepoPath: ""},
 	}
 	pt.phases = []Phase{
 		{Name: "loop-clean-check", Run: func(ctx context.Context) error { return pt.loopDirtyCheck(ctx) }},
@@ -271,7 +270,7 @@ func TestLoopDirtyCheckBlocksReflector(t *testing.T) {
 	if reflectorCalled {
 		t.Error("reflector was called despite loop-clean-check failing")
 	}
-	if countDiagnostics(hiveDir) == 0 {
+	if countDiagnostics(repoDir) == 0 {
 		t.Error("no diagnostic emitted for loop-clean-check failure")
 	}
 }
