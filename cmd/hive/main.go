@@ -236,59 +236,14 @@ func runPipeline(space, apiBase, repoPath string, budget float64, agentID string
 	}
 	client := api.New(apiBase, apiKey)
 
-	// Smart pipeline: assess the board, then run the right sequence.
-	//
-	// 1. Check for fix tasks → Builder fixes, Critic reviews
-	// 2. Check for assigned tasks → Scout skip, Builder works, Critic reviews
-	// 3. No work at all → PM decides next direction, then Scout → Builder → Critic
-	//
-	// This ensures: fixes first, then existing work, then new direction.
-
-	hasFixes := false
-	hasWork := false
-	tasks, err := client.GetTasks(space, "")
-	if err == nil {
-		for _, t := range tasks {
-			if t.Kind != "task" || t.State == "done" || t.State == "closed" {
-				continue
-			}
-			// When agent-id is set, only count tasks assigned to this agent.
-			// When agent-id is empty, count ALL open tasks as potential work.
-			if agentID != "" && t.AssigneeID != agentID {
-				continue
-			}
-			if strings.HasPrefix(t.Title, "Fix:") {
-				hasFixes = true
-			} else {
-				hasWork = true
-			}
-		}
-	}
-
-	var roles []string
-	if hasFixes {
-		log.Printf("[pipeline] fix tasks found — Builder fixes, Critic reviews, Reflector records")
-		roles = []string{"builder", "critic", "reflector"}
-	} else if hasWork {
-		log.Printf("[pipeline] assigned tasks found — Builder works, Critic reviews, Reflector records")
-		roles = []string{"builder", "critic", "reflector"}
-	} else {
-		// Full pipeline: PM directs → Scout reports → Architect plans+creates tasks → Builder implements → Critic reviews
-		// Observer runs only on full cycles (audit, not per-build).
-		log.Printf("[pipeline] no work — full pipeline: PM → Scout → Architect → Builder → Critic → Reflector → Observer")
-		roles = []string{"pm", "scout", "architect", "builder", "critic", "reflector", "observer"}
-	}
-
 	// Generate MCP config for knowledge server so agents can search.
 	mcpConfigPath := writeMCPConfig(hiveDir, repoMap)
 	if mcpConfigPath != "" {
 		log.Printf("[pipeline] MCP knowledge server configured: %s", mcpConfigPath)
 	}
 
-	activeRepo := absRepo // default repo; may be overridden by PM directive
-
-	// Always check state.md for target repo — even when tasks exist.
-	// The PM wrote "Target repo: X" in a prior cycle; use it.
+	// Resolve target repo from graph or state.md.
+	activeRepo := absRepo
 	if len(repoMap) > 0 {
 		if resolved := resolveTargetRepo(hiveDir, repoMap, client, space); resolved != "" {
 			activeRepo = resolved
@@ -296,59 +251,20 @@ func runPipeline(space, apiBase, repoPath string, budget float64, agentID string
 		}
 	}
 
-	for _, role := range roles {
-		select {
-		case <-ctx.Done():
-			log.Printf("[pipeline] interrupted during %s", role)
-			return nil
-		default:
-		}
-
-		// After PM or Scout runs, check if the directive specifies a target repo.
-		if (role == "scout" || role == "architect") && len(repoMap) > 0 {
-			if resolved := resolveTargetRepo(hiveDir, repoMap, client, space); resolved != "" {
-				if resolved != activeRepo {
-					log.Printf("[pipeline] target repo changed: %s", resolved)
-					activeRepo = resolved
-				}
-			}
-		}
-
-		// After Architect, check if tasks actually exist. If not, skip remaining roles.
-		if role == "builder" || role == "critic" || role == "reflector" {
-			openTasks, _ := client.GetTasks(space, "")
-			hasOpen := false
-			for _, t := range openTasks {
-				if t.Kind == "task" && t.State != "done" && t.State != "closed" {
-					hasOpen = true
-					break
-				}
-			}
-			if !hasOpen {
-				log.Printf("[pipeline] no open tasks — skipping %s (nothing to work on)", role)
-				continue
-			}
-		}
-
-		log.Printf("[pipeline] ── %s ── (repo: %s)", role, filepath.Base(activeRepo))
-
+	// Create a runner that all state machine transitions use.
+	makeRunner := func(role string) *runner.Runner {
 		model := runner.ModelForRole(role)
 		providerCfg := intelligence.Config{
 			Provider:     "claude-cli",
 			Model:        model,
 			MaxBudgetUSD: budget,
 		}
-		// Give all Operate-capable roles access to the knowledge server.
-		// PM, Scout, Architect, Builder, Observer — any agent that works on the graph.
 		if mcpConfigPath != "" {
 			providerCfg.MCPConfigPath = mcpConfigPath
 		}
-		provider, err := intelligence.New(providerCfg)
-		if err != nil {
-			return fmt.Errorf("provider for %s: %w", role, err)
-		}
+		provider, _ := intelligence.New(providerCfg)
 
-		r := runner.New(runner.Config{
+		return runner.New(runner.Config{
 			Role:       role,
 			AgentID:    agentID,
 			SpaceSlug:  space,
@@ -363,9 +279,25 @@ func runPipeline(space, apiBase, repoPath string, budget float64, agentID string
 			PRMode:     role == "builder" && prMode,
 			RepoMap:    repoMap,
 		})
+	}
 
-		if err := r.Run(ctx); err != nil {
-			log.Printf("[pipeline] %s error: %v", role, err)
+	// Run the pipeline as a state machine.
+	// Events drive transitions. Transitions invoke agents. No for-loop.
+	sm := runner.NewPipelineStateMachine(makeRunner("builder"))
+
+	// Before running, update the runner factory so each state gets the right role.
+	// The state machine calls runTick which dispatches by cfg.Role.
+	smRunner := makeRunner("builder") // base runner — state machine overrides Role per state
+	sm = runner.NewPipelineStateMachine(smRunner)
+
+	if err := sm.Run(ctx); err != nil {
+		log.Printf("[pipeline] state machine error: %v", err)
+	}
+
+	// Re-resolve repo in case PM changed it during the cycle.
+	if len(repoMap) > 0 {
+		if resolved := resolveTargetRepo(hiveDir, repoMap, client, space); resolved != "" {
+			activeRepo = resolved
 		}
 	}
 

@@ -91,6 +91,12 @@ func main() {
 		// Non-fatal — post succeeded.
 	}
 
+	// Sync graph claims to loop/claims.md for MCP knowledge index.
+	if err := syncClaims(apiKey, baseURL, "loop/claims.md"); err != nil {
+		fmt.Fprintf(os.Stderr, "sync claims: %v\n", err)
+		// Non-fatal — post succeeded.
+	}
+
 	fmt.Printf("posted iteration %s to %s/app/hive/feed\n", iteration, baseURL)
 }
 
@@ -233,6 +239,76 @@ func buildTitle(build []byte) string {
 		return strings.TrimSpace(line)
 	}
 	return ""
+}
+
+// syncClaims fetches KindClaim nodes from the graph and writes them to outPath
+// as a markdown file. The MCP knowledge server indexes this file so that
+// knowledge_search can find claims asserted via the assert op.
+func syncClaims(apiKey, baseURL, outPath string) error {
+	u := baseURL + "/app/hive/knowledge?tab=claims&limit=200"
+	req, err := http.NewRequest("GET", u, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, b)
+	}
+
+	var result struct {
+		Claims []struct {
+			Title     string `json:"title"`
+			Body      string `json:"body"`
+			State     string `json:"state"`
+			Author    string `json:"author"`
+			CreatedAt string `json:"created_at"`
+		} `json:"claims"`
+	}
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read body: %w", err)
+	}
+	if err := json.Unmarshal(data, &result); err != nil {
+		return fmt.Errorf("decode claims: %w", err)
+	}
+
+	if len(result.Claims) == 0 {
+		return nil // nothing to write
+	}
+
+	var sb strings.Builder
+	sb.WriteString("# Knowledge Claims\n\n")
+	sb.WriteString("Asserted knowledge claims from the hive graph store.\n\n")
+	for _, c := range result.Claims {
+		sb.WriteString(fmt.Sprintf("## %s\n\n", c.Title))
+		if c.State != "" || c.Author != "" {
+			sb.WriteString("**State:** " + c.State)
+			if c.Author != "" {
+				sb.WriteString(" | **Author:** " + c.Author)
+			}
+			sb.WriteString("\n\n")
+		}
+		if c.Body != "" {
+			sb.WriteString(c.Body + "\n\n")
+		}
+		sb.WriteString("---\n\n")
+	}
+
+	if err := os.WriteFile(outPath, []byte(sb.String()), 0644); err != nil {
+		return fmt.Errorf("write %s: %w", outPath, err)
+	}
+
+	fmt.Printf("synced %d claims to %s\n", len(result.Claims), outPath)
+	return nil
 }
 
 func post(apiKey, baseURL, title, body string) error {

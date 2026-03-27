@@ -234,6 +234,7 @@ func (s *knowledgeServer) buildHiveLoop() topic {
 		{"build.md", "Latest build report"},
 		{"critique.md", "Latest critique report"},
 		{"council.md", "Latest council deliberation"},
+		{"claims.md", "Asserted knowledge claims — lessons, decisions, invariants from the graph store (synced by cmd/post)"},
 	}
 	for _, f := range files {
 		p := filepath.Join(s.hiveDir, "loop", f.name)

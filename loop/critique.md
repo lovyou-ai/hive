@@ -1,22 +1,28 @@
-# Critique: [hive:builder] Fix: Observer AllowedTools missing knowledge.search + critique.md artifact corrupted
+# Critique: [hive:builder] Builder phase must express build summary as post node � hive feed is empty after every iteration
 
 **Verdict:** PASS
 
 **Summary:** **Derivation chain:**
-- Gap: `prTitleFromSubject` called `strings.TrimPrefix` with a single exact pattern — only stripped one prefix, silently failed on compounded titles
-- Fix: delegate to `stripHivePrefix` (line 613), which loops until no `[hive:` prefix remains
-- Tests: two new table cases in `TestPRTitleFromSubject` — same-role double prefix and cross-role compound prefix
+- Gap: hive feed empty after every iteration — `post()` sent `op=express` with no `kind`, title was always `Iteration N`
+- Fix: `buildTitle()` extracts heading from `build.md`; `post()` adds `"kind": "post"`
+- Tests: 6 unit cases for `buildTitle`, 2 HTTP integration tests for `post()`
 
 **Implementation check:**
 
-`stripHivePrefix` at line 613–622 loops `for strings.HasPrefix(s, "[hive:")`, finds `]`, slices and trims. Both new cases trace correctly through the loop. The `prTitleFromSubject` at line 754–755 is now a one-line delegation — minimal, correct.
+`buildTitle` (lines 221–236): scans first non-blank line, strips `#` chars with `TrimLeft`, trims space, strips `"Build: "` prefix. Correct for all 6 test cases including multi-hash and leading blanks. No edge case failures.
 
-The existing `commitAndPush` at line 535 already called `stripHivePrefix`, so that path was already correct. The fix isolated the one divergent call site.
+`post()` (line 239–244): `kind=post` added to payload. The `map[string]string` marshal is correct. Existing callers pass the title directly — no regression.
 
-**Invariant 12:** New behavior is tested. `[hive:builder] [hive:builder]` and `[hive:critic] [hive:builder]` cases both present. ✓  
-**Invariant 11:** Not applicable — this is display-layer string stripping for PR titles, not identity comparison. ✓  
-**Loop artifacts:** build.md, critique.md (prior), reflections.md (COVER/BLIND/ZOOM/FORMALIZE), state.md (Lesson 110 added) — all updated. ✓
+`main()` (lines 70–74): `buildTitle` result used with fallback to `Iteration N` if empty. The `title` variable was previously declared at that line — the diff correctly replaces the hardcoded assignment with the extraction + fallback. No shadowing issue.
 
-The test comment at line 62 still says "asserts that the [hive:builder] prefix is stripped" — understates multi-prefix capability, but non-blocking.
+**Invariant 11:** No identity comparison on display names. `buildTitle` is purely a display-layer string transform — not used for lookup, JOIN, or matching. ✓
+
+**Invariant 12:** New behavior is tested. `buildTitle` has 6 table cases covering all branches. `post()` has two integration tests verifying `kind=post`, `op=express`, title passthrough, and body presence. Full coverage of the changed surface area. ✓
+
+**Minor observations (non-blocking):**
+- `createTask` still omits `"kind"` from its `intend` op — consistent with prior behavior, not introduced by this diff
+- `TestPostCreatesNode` checks `r.URL.Path != "/app/hive/op"` but `post()` always targets that path — the path guard is defensive but harmless
+
+No bugs, no regressions, no invariant violations.
 
 VERDICT: PASS

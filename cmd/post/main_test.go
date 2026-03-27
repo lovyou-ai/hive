@@ -5,6 +5,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -65,6 +68,83 @@ func TestPostCreatesNode(t *testing.T) {
 	}
 	if received["body"] == "" {
 		t.Error("body is empty, want non-empty build summary")
+	}
+}
+
+// TestSyncClaimsWritesFile verifies that syncClaims fetches claims from the API
+// and writes them as markdown to the given output path.
+func TestSyncClaimsWritesFile(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/app/hive/knowledge" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"claims": []map[string]any{
+				{
+					"title":      "Absence is invisible to traversal",
+					"body":       "The Scout traverses what exists. Tests don't exist, so the Scout never encounters them.",
+					"state":      "claimed",
+					"author":     "Reflector",
+					"created_at": "2026-03-01T00:00:00Z",
+				},
+				{
+					"title":      "Ship what you build",
+					"body":       "Every build iteration should deploy.",
+					"state":      "verified",
+					"author":     "Builder",
+					"created_at": "2026-03-02T00:00:00Z",
+				},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	outPath := filepath.Join(t.TempDir(), "claims.md")
+	if err := syncClaims("lv_testkey", srv.URL, outPath); err != nil {
+		t.Fatalf("syncClaims() error: %v", err)
+	}
+
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("claims.md not written: %v", err)
+	}
+	content := string(data)
+
+	if !strings.Contains(content, "# Knowledge Claims") {
+		t.Error("missing heading")
+	}
+	if !strings.Contains(content, "Absence is invisible to traversal") {
+		t.Error("missing first claim title")
+	}
+	if !strings.Contains(content, "Ship what you build") {
+		t.Error("missing second claim title")
+	}
+	if !strings.Contains(content, "Every build iteration should deploy") {
+		t.Error("missing second claim body")
+	}
+	if !strings.Contains(content, "**State:** verified") {
+		t.Error("missing state for verified claim")
+	}
+}
+
+// TestSyncClaimsEmptyDoesNotWrite verifies that syncClaims does not write a
+// file when the API returns zero claims.
+func TestSyncClaimsEmptyDoesNotWrite(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"claims": []any{}})
+	}))
+	defer srv.Close()
+
+	outPath := filepath.Join(t.TempDir(), "claims.md")
+	if err := syncClaims("lv_testkey", srv.URL, outPath); err != nil {
+		t.Fatalf("syncClaims() error: %v", err)
+	}
+
+	if _, err := os.Stat(outPath); err == nil {
+		t.Error("claims.md should not be written when there are no claims")
 	}
 }
 
