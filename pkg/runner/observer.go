@@ -101,6 +101,11 @@ Report findings as:
 TASK_TITLE: <title>
 TASK_PRIORITY: <priority>
 TASK_DESCRIPTION: <description>
+TASK_CAUSE: <node_id_of_triggering_graph_node_or_none>
+
+TASK_CAUSE must be the ID of the specific board node or claim that triggered this finding
+(Invariant 2: CAUSALITY — every created node must declare its cause). Use "none" only if
+there is genuinely no triggering node.
 
 You may report up to 2 findings. If everything looks good, say "No issues found."`, routes, kinds, health, claimsSection)
 
@@ -114,7 +119,11 @@ You may report up to 2 findings. If everything looks good, say "No issues found.
 
 	tasks := parseObserverTasks(resp.Content())
 	for _, t := range tasks {
-		task, err := r.cfg.APIClient.CreateTask(r.cfg.SpaceSlug, t.title, t.desc, t.priority, nil)
+		var causes []string
+		if t.causeID != "" {
+			causes = []string{t.causeID}
+		}
+		task, err := r.cfg.APIClient.CreateTask(r.cfg.SpaceSlug, t.title, t.desc, t.priority, causes)
 		if err != nil {
 			continue
 		}
@@ -133,6 +142,7 @@ type observerTask struct {
 	title    string
 	desc     string
 	priority string
+	causeID  string // node ID that triggered this finding (Invariant 2: CAUSALITY)
 }
 
 func parseObserverTasks(content string) []observerTask {
@@ -150,6 +160,11 @@ func parseObserverTasks(content string) []observerTask {
 			current.priority = strings.TrimSpace(strings.TrimPrefix(line, "TASK_PRIORITY:"))
 		} else if strings.HasPrefix(line, "TASK_DESCRIPTION:") {
 			current.desc = strings.TrimSpace(strings.TrimPrefix(line, "TASK_DESCRIPTION:"))
+		} else if strings.HasPrefix(line, "TASK_CAUSE:") {
+			id := strings.TrimSpace(strings.TrimPrefix(line, "TASK_CAUSE:"))
+			if id != "" && id != "none" && id != "N/A" {
+				current.causeID = id
+			}
 		}
 	}
 	if current.title != "" {
@@ -274,7 +289,11 @@ Heuristic: if you can fix it without writing code, fix it now. Do not defer.
 ### Category B — Code changes needed (create a task, max 2)
 Only create a task if the finding requires a Builder to write or change code:
 
-curl -s -X POST -H "Authorization: Bearer %s" -H "Content-Type: application/json" -H "Accept: application/json" "https://lovyou.ai/app/%s/op" -d '{"op":"intend","kind":"task","title":"<TITLE>","description":"<DESCRIPTION>","priority":"<PRIORITY>"}'
+curl -s -X POST -H "Authorization: Bearer %s" -H "Content-Type: application/json" -H "Accept: application/json" "https://lovyou.ai/app/%s/op" -d '{"op":"intend","kind":"task","title":"<TITLE>","description":"<DESCRIPTION>","priority":"<PRIORITY>","causes":["<NODE_ID>"]}'
+
+Replace <NODE_ID> with the ID of the specific board node, claim, or document that
+triggered this finding (Invariant 2: CAUSALITY — every intend op must declare its cause).
+Use the ID you found in the board or knowledge query above.
 
 **Rule:** Creating a task to close a task is always wrong. Close it yourself.`, apiKey, spaceSlug, apiKey, spaceSlug, apiKey, spaceSlug)
 }

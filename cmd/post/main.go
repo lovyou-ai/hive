@@ -90,10 +90,14 @@ func main() {
 		causeIDs = []string{buildDocID}
 	}
 
-	// Create task on Board and mark complete.
-	// taskNodeID is used as a cause for the critique claim so every critique is
-	// causally linked to the specific build task it reviews (Invariant 2: CAUSALITY).
-	taskNodeID, err := createTask(apiKey, baseURL, title, string(build))
+	// Create task on Board and mark complete, caused by the build document
+	// so every board task is causally linked to the iteration that produced it
+	// (Invariant 2: CAUSALITY).
+	var buildDocCauses []string
+	if buildDocID != "" {
+		buildDocCauses = []string{buildDocID}
+	}
+	taskNodeID, err := createTask(apiKey, baseURL, title, string(build), buildDocCauses)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "task: %v\n", err)
 		// Non-fatal — document post succeeded.
@@ -223,14 +227,19 @@ func syncMindState(apiKey, baseURL, state string) error {
 // createTask creates a task on the Board and marks it complete.
 // Returns the task node ID so callers can use it as a cause for subsequent
 // claims (Invariant 2: CAUSALITY — a critique of a task must cite that task).
-func createTask(apiKey, baseURL, title, description string) (string, error) {
+// causeIDs links this task to the nodes that triggered it (e.g. the build document).
+func createTask(apiKey, baseURL, title, description string, causeIDs []string) (string, error) {
 	// Create task (intend op with kind=task).
-	payload, _ := json.Marshal(map[string]string{
+	p := map[string]string{
 		"op":          "intend",
 		"kind":        "task",
 		"title":       title,
 		"description": description,
-	})
+	}
+	if len(causeIDs) > 0 {
+		p["causes"] = strings.Join(causeIDs, ",")
+	}
+	payload, _ := json.Marshal(p)
 	req, _ := http.NewRequest("POST", baseURL+"/app/hive/op", bytes.NewReader(payload))
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Accept", "application/json")

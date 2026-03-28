@@ -799,7 +799,7 @@ func TestCreateTaskSendsKindTask(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := createTask("lv_testkey", srv.URL, "Fix: observer audit", "build details here")
+	_, err := createTask("lv_testkey", srv.URL, "Fix: observer audit", "build details here", nil)
 	if err != nil {
 		t.Fatalf("createTask() error: %v", err)
 	}
@@ -836,7 +836,7 @@ func TestCreateTaskReturnsNodeID(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	nodeID, err := createTask("lv_testkey", srv.URL, "Fix: causality gap", "details")
+	nodeID, err := createTask("lv_testkey", srv.URL, "Fix: causality gap", "details", nil)
 	if err != nil {
 		t.Fatalf("createTask() error: %v", err)
 	}
@@ -858,7 +858,7 @@ func TestCreateTaskEmptyResponseIDReturnsEmpty(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	nodeID, err := createTask("lv_testkey", srv.URL, "Fix: something", "details")
+	nodeID, err := createTask("lv_testkey", srv.URL, "Fix: something", "details", nil)
 	if err != nil {
 		t.Fatalf("createTask() unexpected error: %v", err)
 	}
@@ -888,7 +888,7 @@ func TestCreateTaskSendsCompleteOp(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if _, err := createTask("lv_testkey", srv.URL, "Fix: task complete", "details"); err != nil {
+	if _, err := createTask("lv_testkey", srv.URL, "Fix: task complete", "details", nil); err != nil {
 		t.Fatalf("createTask() error: %v", err)
 	}
 
@@ -901,6 +901,41 @@ func TestCreateTaskSendsCompleteOp(t *testing.T) {
 	}
 	if complete["node_id"] != "task-888" {
 		t.Errorf("complete node_id = %q, want %q — must use the ID returned by intend", complete["node_id"], "task-888")
+	}
+}
+
+// TestCreateTaskSendsCauses verifies that createTask() includes the causes field
+// in the intend op payload when causeIDs is non-empty (Invariant 2: CAUSALITY).
+func TestCreateTaskSendsCauses(t *testing.T) {
+	var intendPayload map[string]string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/app/hive/op" {
+			http.NotFound(w, r)
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		var payload map[string]string
+		json.Unmarshal(body, &payload)
+		if payload["op"] == "intend" {
+			intendPayload = payload
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		w.Write([]byte(`{"node":{"id":"task-xyz"}}`))
+	}))
+	defer srv.Close()
+
+	_, err := createTask("lv_testkey", srv.URL, "Build title", "details", []string{"doc-node-123"})
+	if err != nil {
+		t.Fatalf("createTask() error: %v", err)
+	}
+	if intendPayload == nil {
+		t.Fatal("no intend request received")
+	}
+	if intendPayload["causes"] != "doc-node-123" {
+		t.Errorf("causes = %q, want %q — task must declare the build document as its cause (Invariant 2: CAUSALITY)",
+			intendPayload["causes"], "doc-node-123")
 	}
 }
 

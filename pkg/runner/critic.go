@@ -95,12 +95,26 @@ func (r *Runner) reviewCommit(ctx context.Context, c commit) {
 		diff = diff[:15000] + "\n... (truncated)"
 	}
 
+	// Look up the Build: document for this commit to use as a cause for the
+	// critique claim and any fix tasks (Invariant 2: CAUSALITY).
+	var buildCauses []string
+	if r.cfg.APIClient != nil {
+		subject := stripHivePrefix(c.subject)
+		if buildNode := r.cfg.APIClient.LatestByTitle(r.cfg.SpaceSlug, "Build: "+subject); buildNode != nil {
+			buildCauses = []string{buildNode.ID}
+		}
+	}
+
 	// Use Operate() if available — Critic can search knowledge for invariants,
 	// check primitives, and read prior critiques to ground the review.
 	op, canOperate := r.cfg.Provider.(decision.IOperator)
 	var content string
 	if canOperate {
 		apiKey := os.Getenv("LOVYOU_API_KEY")
+		causesSuffix := ""
+		if len(buildCauses) > 0 {
+			causesSuffix = fmt.Sprintf(`,"causes":["%s"]`, buildCauses[0])
+		}
 		instruction := fmt.Sprintf(`You are the Critic. Review this diff and decide: PASS or REVISE.
 
 ## Diff
@@ -121,9 +135,9 @@ End your response with exactly one of:
 VERDICT: PASS
 VERDICT: REVISE
 
-If REVISE, create a fix task:
-curl -s -X POST -H "Authorization: Bearer %s" -H "Content-Type: application/json" -H "Accept: application/json" "https://lovyou.ai/app/%s/op" -d '{"op":"intend","kind":"task","title":"Fix: <subject>","description":"<what needs fixing>","priority":"high"}'
-`, diff, apiKey, r.cfg.SpaceSlug)
+If REVISE, create a fix task (causes links to the build being reviewed — Invariant 2: CAUSALITY):
+curl -s -X POST -H "Authorization: Bearer %s" -H "Content-Type: application/json" -H "Accept: application/json" "https://lovyou.ai/app/%s/op" -d '{"op":"intend","kind":"task","title":"Fix: <subject>","description":"<what needs fixing>","priority":"high"%s}'
+`, diff, apiKey, r.cfg.SpaceSlug, causesSuffix)
 
 		result, err := op.Operate(ctx, decision.OperateTask{
 			WorkDir:     r.cfg.RepoPath,
@@ -155,8 +169,9 @@ curl -s -X POST -H "Authorization: Bearer %s" -H "Content-Type: application/json
 	verdict := parseVerdict(content)
 	log.Printf("[critic] verdict: %s", verdict)
 
-	// Write critique artifact. Returns the claim node ID for causality threading.
-	claimID, writeErr := r.writeCritiqueArtifact(c.subject, verdict, content)
+	// Write critique artifact, caused by the build document it reviews.
+	// Returns the claim node ID for causality threading of fix tasks.
+	claimID, writeErr := r.writeCritiqueArtifact(c.subject, verdict, content, buildCauses)
 	if writeErr != nil {
 		log.Printf("[critic] write critique artifact error: %v", writeErr)
 	}
@@ -276,8 +291,9 @@ func writeCritiqueArtifact(hiveDir, subject, verdict, summary string) error {
 }
 
 // writeCritiqueArtifact writes loop/critique.md and asserts a claim on the graph.
+// causeIDs should contain the build document node ID being reviewed (Invariant 2: CAUSALITY).
 // Returns the claim node ID (or "" if API unavailable or claim failed) for causality threading.
-func (r *Runner) writeCritiqueArtifact(subject, verdict, summary string) (string, error) {
+func (r *Runner) writeCritiqueArtifact(subject, verdict, summary string, causeIDs []string) (string, error) {
 	if err := writeCritiqueArtifact(r.cfg.HiveDir, subject, verdict, summary); err != nil {
 		return "", err
 	}
@@ -287,7 +303,7 @@ func (r *Runner) writeCritiqueArtifact(subject, verdict, summary string) (string
 	// Critique is a claim — a verifiable assertion about code quality.
 	content := fmt.Sprintf("**Verdict:** %s\n\n%s", verdict, summary)
 	title := fmt.Sprintf("Critique: %s — %s", verdict, subject)
-	node, err := r.cfg.APIClient.AssertClaim(r.cfg.SpaceSlug, title, content, nil)
+	node, err := r.cfg.APIClient.AssertClaim(r.cfg.SpaceSlug, title, content, causeIDs)
 	if err != nil || node == nil {
 		return "", nil // non-fatal: file was written, graph sync failed
 	}

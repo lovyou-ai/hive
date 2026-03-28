@@ -68,8 +68,10 @@ If it doesn't, you're drifting. The Director's intent persists across cycles.
 5. Check recent git commits: git log --oneline -20
 5. Read diagnostics for pipeline failures: cat loop/diagnostics.jsonl | tail -20
 6. Decide the MOST IMPORTANT thing to build next
-7. Create a milestone on the board:
-   curl -s -X POST -H "Authorization: Bearer %s" -H "Content-Type: application/json" -H "Accept: application/json" "https://lovyou.ai/app/%s/op" -d '{"op":"intend","kind":"task","title":"<MILESTONE TITLE>","description":"<FULL DIRECTIVE WITH TARGET REPO AND TASKS>","priority":"high"}'
+7. Create a milestone on the board, caused by the pinned goal you read in step 1
+   (Invariant 2: CAUSALITY — every intend op must declare its cause):
+   curl -s -X POST -H "Authorization: Bearer %s" -H "Content-Type: application/json" -H "Accept: application/json" "https://lovyou.ai/app/%s/op" -d '{"op":"intend","kind":"task","title":"<MILESTONE TITLE>","description":"<FULL DIRECTIVE WITH TARGET REPO AND TASKS>","priority":"high","causes":["<PINNED_GOAL_NODE_ID>"]}'
+   Replace <PINNED_GOAL_NODE_ID> with the ID of the pinned goal node from the board.
 8. Update state.md with the directive (for target repo resolution):
    Write the directive to loop/state.md in the "What the Scout Should Focus On Next" section.
    MUST include "**Target repo:** <name>" line.
@@ -128,7 +130,15 @@ func (r *Runner) runPMReason(ctx context.Context) {
 
 	title := extractDirectiveTitle(directive)
 	if title != "" {
-		if _, err := r.cfg.APIClient.CreateTask(r.cfg.SpaceSlug, title, directive, "high", nil); err != nil {
+		// Use the most recent completed task as a cause — the PM directive is a
+		// response to what was just built (Invariant 2: CAUSALITY).
+		var causes []string
+		if r.cfg.APIClient != nil {
+			if recent := r.cfg.APIClient.LatestByTitle(r.cfg.SpaceSlug, "Build:"); recent != nil {
+				causes = []string{recent.ID}
+			}
+		}
+		if _, err := r.cfg.APIClient.CreateTask(r.cfg.SpaceSlug, title, directive, "high", causes); err != nil {
 			log.Printf("[pm] create milestone error: %v", err)
 		} else {
 			log.Printf("[pm] milestone created on board: %s", title)

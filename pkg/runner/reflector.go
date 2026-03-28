@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/lovyou-ai/eventgraph/go/pkg/decision"
+	"github.com/lovyou-ai/hive/pkg/api"
 )
 
 // markerCandidates returns all format variants the LLM might use for a section key.
@@ -246,6 +247,25 @@ func (r *Runner) runReflector(ctx context.Context) {
 // runReflectorOperate uses Operate() — searches knowledge, reads graph, writes reflections.
 func (r *Runner) runReflectorOperate(ctx context.Context, op decision.IOperator) {
 	apiKey := os.Getenv("LOVYOU_API_KEY")
+
+	// Look up the build and critique node IDs to embed as causes in the curl templates.
+	// This satisfies Invariant 2 (CAUSALITY) for the reflection and lesson claims.
+	var causesSuffix string
+	if r.cfg.APIClient != nil {
+		critiqueNode := r.cfg.APIClient.LatestByTitle(r.cfg.SpaceSlug, "Critique:")
+		buildNode := r.cfg.APIClient.LatestByTitle(r.cfg.SpaceSlug, "Build:")
+		var causeIDs []string
+		if critiqueNode != nil {
+			causeIDs = append(causeIDs, `"`+critiqueNode.ID+`"`)
+		}
+		if buildNode != nil {
+			causeIDs = append(causeIDs, `"`+buildNode.ID+`"`)
+		}
+		if len(causeIDs) > 0 {
+			causesSuffix = `,"causes":[` + strings.Join(causeIDs, ",") + `]`
+		}
+	}
+
 	instruction := fmt.Sprintf(`You are the Reflector. Reflect on this iteration using COVER/BLIND/ZOOM/FORMALIZE.
 
 ## Your Tools
@@ -266,12 +286,12 @@ func (r *Runner) runReflectorOperate(ctx context.Context, op decision.IOperator)
    - **FORMALIZE** — lessons to extract as verifiable knowledge
 
 4. Write the reflection to loop/reflections.md (append)
-5. Assert each lesson as a claim on the graph:
-   curl -s -X POST -H "Authorization: Bearer %s" -H "Content-Type: application/json" -H "Accept: application/json" "https://lovyou.ai/app/%s/op" -d '{"op":"assert","title":"Lesson: <LESSON>","body":"<DETAILS>"}'
-6. Post the full reflection as a document:
-   curl -s -X POST -H "Authorization: Bearer %s" -H "Content-Type: application/json" -H "Accept: application/json" "https://lovyou.ai/app/%s/op" -d '{"op":"intend","kind":"document","title":"Reflection: <DATE>","description":"<FULL REFLECTION>"}'
+5. Assert each lesson as a claim on the graph (causes links to the iteration artifacts — Invariant 2: CAUSALITY):
+   curl -s -X POST -H "Authorization: Bearer %s" -H "Content-Type: application/json" -H "Accept: application/json" "https://lovyou.ai/app/%s/op" -d '{"op":"assert","title":"Lesson: <LESSON>","body":"<DETAILS>"%s}'
+6. Post the full reflection as a document (causes links to the iteration artifacts — Invariant 2: CAUSALITY):
+   curl -s -X POST -H "Authorization: Bearer %s" -H "Content-Type: application/json" -H "Accept: application/json" "https://lovyou.ai/app/%s/op" -d '{"op":"intend","kind":"document","title":"Reflection: <DATE>","description":"<FULL REFLECTION>"%s}'
 
-Search first. Reflect deeply. Assert what you learn.`, apiKey, r.cfg.SpaceSlug, apiKey, r.cfg.SpaceSlug)
+Search first. Reflect deeply. Assert what you learn.`, apiKey, r.cfg.SpaceSlug, causesSuffix, apiKey, r.cfg.SpaceSlug, causesSuffix)
 
 	result, err := op.Operate(ctx, decision.OperateTask{
 		WorkDir:     r.cfg.HiveDir,
@@ -288,17 +308,37 @@ Search first. Reflect deeply. Assert what you learn.`, apiKey, r.cfg.SpaceSlug, 
 
 // runReflectorReason is the legacy fallback.
 func (r *Runner) runReflectorReason(ctx context.Context) {
-	scout := r.readFromGraph("Scout Report:")
-	if scout == "" {
+	scoutNode := r.readFromGraphNode("Scout Report:")
+	scout := ""
+	if scoutNode != nil {
+		scout = scoutNode.Body
+	} else {
 		scout = readLoopArtifact(r.cfg.HiveDir, "scout.md")
 	}
-	build := r.readFromGraph("Build:")
-	if build == "" {
+
+	buildNode := r.readFromGraphNode("Build:")
+	build := ""
+	if buildNode != nil {
+		build = buildNode.Body
+	} else {
 		build = readLoopArtifact(r.cfg.HiveDir, "build.md")
 	}
-	critique := r.readFromGraph("Critique:")
-	if critique == "" {
+
+	critiqueNode := r.readFromGraphNode("Critique:")
+	critique := ""
+	if critiqueNode != nil {
+		critique = critiqueNode.Body
+	} else {
 		critique = readLoopArtifact(r.cfg.HiveDir, "critique.md")
+	}
+
+	// Collect cause IDs: the critique and build documents that this reflection
+	// is derived from (Invariant 2: CAUSALITY).
+	var iterationCauses []string
+	if critiqueNode != nil {
+		iterationCauses = append(iterationCauses, critiqueNode.ID)
+	} else if buildNode != nil {
+		iterationCauses = append(iterationCauses, buildNode.ID)
 	}
 
 	recentReflections := readRecentReflections(r.cfg.HiveDir)
@@ -335,13 +375,13 @@ func (r *Runner) runReflectorReason(ctx context.Context) {
 
 	date := time.Now().Format("2006-01-02")
 	entry := formatReflectionEntry(date, sections["COVER"], sections["BLIND"], sections["ZOOM"], sections["FORMALIZE"])
-	if err := r.appendReflection(entry); err != nil {
+	if err := r.appendReflection(entry, iterationCauses); err != nil {
 		log.Printf("[reflector] append error: %v", err)
 	}
 
 	if formalize := sections["FORMALIZE"]; formalize != "" && r.cfg.APIClient != nil {
 		title := fmt.Sprintf("Lesson: %s", date)
-		if _, err := r.cfg.APIClient.AssertClaim(r.cfg.SpaceSlug, title, formalize, nil); err != nil {
+		if _, err := r.cfg.APIClient.AssertClaim(r.cfg.SpaceSlug, title, formalize, iterationCauses); err != nil {
 			log.Printf("[reflector] assert lesson error: %v", err)
 		}
 	}
@@ -381,24 +421,37 @@ func readRecentReflections(hiveDir string) string {
 // Only returns nodes created within the last 2 hours (avoids stale data from prior cycles).
 // Returns body content, or "" if not found, stale, or API unavailable.
 func (r *Runner) readFromGraph(titlePrefix string) string {
-	if r.cfg.APIClient == nil {
+	n := r.readFromGraphNode(titlePrefix)
+	if n == nil {
 		return ""
+	}
+	return n.Body
+}
+
+// readFromGraphNode reads the latest node matching a title prefix from the graph.
+// Only returns nodes created within the last 2 hours (avoids stale data from prior cycles).
+// Returns the full node (for access to ID and body), or nil if not found, stale, or API unavailable.
+func (r *Runner) readFromGraphNode(titlePrefix string) *api.Node {
+	if r.cfg.APIClient == nil {
+		return nil
 	}
 	node := r.cfg.APIClient.LatestByTitle(r.cfg.SpaceSlug, titlePrefix)
 	if node == nil {
-		return ""
+		return nil
 	}
 	// Ignore stale nodes — only use data from the current cycle window.
 	if created, err := time.Parse(time.RFC3339, node.CreatedAt); err == nil {
 		if time.Since(created) > 2*time.Hour {
-			return ""
+			return nil
 		}
 	}
-	return node.Body
+	return node
 }
 
 // appendReflection appends an entry to loop/reflections.md (creates if absent).
-func (r *Runner) appendReflection(entry string) error {
+// causeIDs links the reflection document to the iteration artifacts it derives from
+// (Invariant 2: CAUSALITY).
+func (r *Runner) appendReflection(entry string, causeIDs []string) error {
 	path := filepath.Join(r.cfg.HiveDir, "loop", "reflections.md")
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
@@ -409,10 +462,10 @@ func (r *Runner) appendReflection(entry string) error {
 		return err
 	}
 
-	// Also post to graph as a document.
+	// Also post to graph as a document, causally linked to the iteration artifacts.
 	if r.cfg.APIClient != nil {
 		title := fmt.Sprintf("Reflection: %s", time.Now().UTC().Format("2006-01-02"))
-		_, _ = r.cfg.APIClient.CreateDocument(r.cfg.SpaceSlug, title, entry, nil)
+		_, _ = r.cfg.APIClient.CreateDocument(r.cfg.SpaceSlug, title, entry, causeIDs)
 	}
 	return nil
 }

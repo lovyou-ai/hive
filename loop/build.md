@@ -1,57 +1,58 @@
-# Build: Claims created without causes — CAUSALITY invariant fix
+# Build: Causality fix is narrow: Observer-created nodes still have causes=[] after commits 274999c and 8a13ac7
+
+- **Timestamp:** 2026-03-28T00:00:00Z
+
+## Task
+
+Causality fix tasks (1a90716f, 2f8fd5a0, ee651efd) were marked done, but 3 Observer-created board nodes still had causes=[]. The prior fix only covered the Architect Operate path (buildArchitectOperateInstruction). All other creation paths remained broken.
 
 ## What Was Built
 
-Verified and confirmed the CAUSALITY invariant fix for `cmd/post`. The implementation correctly propagates cause IDs to all claim nodes created during a hive iteration.
+Audited ALL `intend` op creation call sites and fixed each to declare causes:
 
-## What Changed
+### 1. `cmd/post/main.go` — `createTask()`
+- Added `causeIDs []string` parameter
+- Passes `causes` field in the JSON payload when non-empty
+- Caller now passes `buildDocID` so every board task is linked to the build document that triggered it
+- Added `TestCreateTaskSendsCauses` test to pin the invariant
 
-No new code was required. The fix was already implemented in `cmd/post/main.go`:
+### 2. `pkg/runner/observer.go` — Observer Operate path
+- Updated `buildOutputInstruction()` curl template to include `"causes":["<NODE_ID>"]`
+- Added instruction: "Replace <NODE_ID> with the ID of the specific board node, claim, or document that triggered this finding (Invariant 2: CAUSALITY)"
 
-1. **`assertScoutGap`** (line 431) — passes `taskCauseIDs` (the build task node ID) as `causes` when creating gap claim nodes via `op=assert`.
+### 3. `pkg/runner/observer.go` — Observer Reason path
+- Added `causeID string` field to `observerTask` struct
+- Updated `parseObserverTasks()` to parse `TASK_CAUSE:` lines from LLM output
+- Updated prompt to request `TASK_CAUSE: <node_id>` for each finding
+- Updated `runObserverReason()` to pass the parsed cause ID to `CreateTask`
 
-2. **`assertCritique`** (line 491) — passes `taskCauseIDs` as `causes` when creating critique claim nodes via `op=assert`.
+### 4. `pkg/runner/pm.go` — PM Operate path
+- Updated `runPMOperate()` curl template to include `"causes":["<PINNED_GOAL_NODE_ID>"]`
+- Instructs PM to use the pinned goal node it reads in step 1 as the cause
 
-3. **`assertLatestReflection`** (line 552) — passes `causeIDs` (the build document node ID) as `causes` when creating reflection document nodes via `op=intend`.
+### 5. `pkg/runner/pm.go` — PM Reason path
+- `runPMReason()` now looks up the most recent `Build:` document and uses its ID as cause when creating the milestone
 
-4. **`backfillClaimCauses`** (line 637) — fetches all `kind=claim` nodes from `/app/hive/knowledge?tab=claims&limit=200`, filters those with `causes=[]`, and patches each via `op=edit` with the current iteration's task node ID. This retroactively satisfies Invariant 2 for the 136 historical orphaned claims.
+### 6. `pkg/runner/critic.go` — Critic Operate path
+- Before calling Operate, looks up the `Build: {subject}` document for the commit being reviewed
+- Injects the build node ID into the Fix task curl template as `"causes":["{buildNodeID}"]`
 
-5. **Cause chain in `main()`**:
-   - `post()` → returns `buildDocID` → wrapped as `causeIDs`
-   - `createTask()` → returns `taskNodeID` → wrapped as `taskCauseIDs` (falls back to `causeIDs` if task creation failed)
-   - Both IDs flow into the assert functions above
+### 7. `pkg/runner/critic.go` — `writeCritiqueArtifact()`
+- Added `causeIDs []string` parameter
+- Passes causes to `AssertClaim()` so critique claims are linked to the build they review
 
-## Tests
+### 8. `pkg/runner/reflector.go` — Reflector Operate path
+- Looks up current `Critique:` and `Build:` node IDs before calling Operate
+- Injects them as `causes` in both the `assert` (lesson) and `intend` (document) curl templates
 
-All tests pass:
+### 9. `pkg/runner/reflector.go` — Reflector Reason path
+- Added `readFromGraphNode()` helper (returns full `*api.Node` including ID)
+- Refactored `readFromGraph()` to delegate to `readFromGraphNode()`
+- `runReflectorReason()` now collects `iterationCauses` from critique/build node IDs
+- `AssertClaim()` (lessons) and `CreateDocument()` (reflection) now pass `iterationCauses`
+- `appendReflection()` accepts `causeIDs []string` and forwards to `CreateDocument`
 
-```
-ok  github.com/lovyou-ai/hive/cmd/post  (all 30+ tests)
-ok  github.com/lovyou-ai/hive/pkg/api
-ok  github.com/lovyou-ai/hive/pkg/runner
-ok  github.com/lovyou-ai/hive/pkg/hive
-ok  github.com/lovyou-ai/hive/pkg/loop
-... (all 13 packages pass)
-```
-
-Key test coverage for this fix:
-- `TestBackfillClaimCausesUpdatesEmptyClaims` — verifies only empty-cause claims are patched
-- `TestBackfillClaimCausesSkipsAlreadyCaused` — verifies already-caused claims are untouched
-- `TestAssertCritiqueCarriesTaskNodeIDasCause` — verifies critique gets task ID as cause
-- `TestAssertScoutGapSendsCauses` — verifies gap claim gets cause ID
-- `TestAssertLatestReflectionSendsCauses` — verifies reflection gets cause ID
-- `TestAssertCauseIDsMultipleJoined` — verifies multiple causes are comma-joined
-
-## Build Verification
-
-```
-go.exe build -buildvcs=false ./...  ✓
-go.exe test -buildvcs=false ./...   ✓  (all 13 packages)
-```
-
-## Invariant Status
-
-**CAUSALITY (Invariant 2):**
-- New claims: satisfied — every `op=assert` from cmd/post carries `causes=[taskNodeID]`
-- Historical claims: backfill runs each iteration, patching up to 200 orphaned claims per run
-- 136 historical claims will be patched on the next `cmd/post` execution
+## Coverage
+- `go.exe build -buildvcs=false ./...` — passes
+- `go.exe test ./...` — all 13 packages pass
+- New test: `TestCreateTaskSendsCauses` in `cmd/post/main_test.go`
