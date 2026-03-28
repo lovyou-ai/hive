@@ -486,10 +486,16 @@ func syncClaims(apiKey, baseURL, outPath string) error {
 	return nil
 }
 
+// boardQueryLimit is the maximum number of nodes to request per board query.
+// The board API defaults to 65 without a limit parameter — Invariant 13 (BOUNDED):
+// every operation has defined scope, and the scope here is all claim nodes.
+// 500 is well above the current ~200 claim nodes and avoids client-side truncation.
+const boardQueryLimit = 500
+
 // fetchBoardByQuery fetches board nodes whose title or body contains q.
 // Returns only nodes whose title has a recognised claim prefix (client-side filter).
 func fetchBoardByQuery(apiKey, baseURL, q string) ([]boardNode, error) {
-	u := baseURL + "/app/hive/board?q=" + url.QueryEscape(q)
+	u := fmt.Sprintf("%s/app/hive/board?q=%s&limit=%d", baseURL, url.QueryEscape(q), boardQueryLimit)
 	req, err := http.NewRequest("GET", u, nil)
 	if err != nil {
 		return nil, err

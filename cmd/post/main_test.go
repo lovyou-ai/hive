@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -1527,6 +1528,35 @@ func TestBackfillClaimCausesEditFails(t *testing.T) {
 	}
 }
 
+// TestFetchBoardByQuerySendsLimit verifies that fetchBoardByQuery includes a
+// limit parameter in the board query URL to avoid the 65-node server default.
+// Without this, the board silently truncates results and claims.md is incomplete
+// (Invariant 13: BOUNDED — every operation has defined scope).
+func TestFetchBoardByQuerySendsLimit(t *testing.T) {
+	var gotLimit string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotLimit = r.URL.Query().Get("limit")
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"nodes": []any{}})
+	}))
+	defer srv.Close()
+
+	if _, err := fetchBoardByQuery("lv_testkey", srv.URL, "Lesson "); err != nil {
+		t.Fatalf("fetchBoardByQuery() error: %v", err)
+	}
+
+	if gotLimit == "" {
+		t.Error("board query missing limit parameter — will silently truncate at server default of 65")
+	}
+	// Limit must be high enough to cover all current and future lessons.
+	// boardQueryLimit constant is 500; guard against accidental regression below 200.
+	limitInt, _ := strconv.Atoi(gotLimit)
+	if limitInt < 200 {
+		t.Errorf("board query limit = %d, want >= 200 (current lesson count ~200)", limitInt)
+	}
+}
+
 // TestFetchBoardByQueryReturnsNodes verifies that fetchBoardByQuery parses the
 // board JSON response and returns boardNode values with all fields populated.
 func TestFetchBoardByQueryReturnsNodes(t *testing.T) {
@@ -1633,7 +1663,8 @@ func TestHasClaimPrefix(t *testing.T) {
 		{"Fix the Lesson tracker", false},     // "Lesson" in middle
 		{"A Lesson Learned", false},           // "Lesson" doesn't start title
 		{"", false},                           // empty string
-		{"LessonX: no space after word", false}, // no space — doesn't match "Lesson "
+		{"LessonX: no space after word", false},  // no space — doesn't match "Lesson "
+		{"Lesson: 2026-03-27", false},            // date instead of number — malformed title created by extractGapTitle bug
 	}
 	for _, tt := range tests {
 		got := hasClaimPrefix(tt.title)
