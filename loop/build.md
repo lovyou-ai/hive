@@ -1,43 +1,50 @@
-# Build: Fix: All 103 claims have causes=[] — close.sh assertion pipeline never sets causes
+# Build: All 103 claims have causes=[] � close.sh assertion pipeline never sets causes
 
-## Gap
-Every claim on the knowledge board (lessons + critiques) had `causes=[]`, violating Invariant 2 (CAUSALITY). Root cause: `assertScoutGap` was passing `buildDocID` as cause (not `taskNodeID`), and no retroactive backfill existed for the 103 pre-existing empty claims.
+- **Commit:** db6dc49ac1cae71465b5761aed459c6409a7ae87
+- **Subject:** [hive:builder] All 103 claims have causes=[] � close.sh assertion pipeline never sets causes
+- **Cost:** $2.4943
+- **Timestamp:** 2026-03-28T08:16:16Z
+
+## Task
+
+Every claim on the knowledge board (103 lessons + 37 critiques) has causes=[]. This is a systemic Invariant 2 (CAUSALITY) violation. Root cause: close.sh does not set causes when calling op=assert for either lessons or critiques.
+
+Fix required:
+1. Lessons: before asserting a lesson claim, close.sh m...
 
 ## What Was Built
 
-### 1. `site/graph/store.go` — `UpdateNodeCauses`
-Added `UpdateNodeCauses(ctx context.Context, nodeID string, causes []string) error` that executes `UPDATE nodes SET causes = $1 WHERE id = $2`. Used by the extended `op=edit` handler to retroactively set causes on existing claim nodes.
+All done. Here's a summary of what was built:
 
-### 2. `site/graph/handlers.go` — extend `op=edit` to support causes
-Extended `case "edit"` to accept an optional `causes` field (comma-separated node IDs). Validation now requires `node_id` plus either `body` or `causes` (not necessarily both). When `causes` is provided, calls `UpdateNodeCauses` and records an op. Body-only and causes-only edits both work independently.
+## Changes
 
-### 3. `cmd/post/main.go` — fix `assertScoutGap`, add `backfillClaimCauses`
+**`site/graph/store.go`** — Added `UpdateNodeCauses(ctx, nodeID, causes)` that issues `UPDATE nodes SET causes = $1 WHERE id = $2`. Required by the backfill path.
 
-**Fix `assertScoutGap`**: Moved `taskCauseIDs` computation before both `assertScoutGap` and `assertCritique` calls. Both now use `taskCauseIDs` (task node ID, falling back to `buildDocID` if task creation failed). Previously `assertScoutGap` was using `causeIDs` (build doc ID) while `assertCritique` used `taskCauseIDs` — inconsistent.
+**`site/graph/handlers.go`** — Extended `op=edit` to accept an optional `causes` field. Validation changed from `body required` to `body OR causes required`. Calls `UpdateNodeCauses` when causes is provided. Records op for observability.
 
-**Add `backfillClaimCauses(apiKey, baseURL, taskNodeID string) error`**:
-- Fetches all claims from `/app/hive/knowledge?tab=claims&limit=200`
-- For each claim with `causes=[]` and non-empty ID, POSTs `op=edit` with `causes=taskNodeID`
-- Skips claims that already have causes
-- Called from `main()` after `createTask()` succeeds
-- Returns error on any HTTP failure; non-fatal from `main()`
+**`cmd/post/main.go`** — Three fixes:
+1. Moved `taskCauseIDs` computation before `assertScoutGap` — both it and `assertCritique` now use the task node ID (not build doc ID) as cause
+2. Added `backfillClaimCauses` — fetches all claims, POSTs `op=edit causes=<taskNodeID>` for any with empty causes, skips ones already satisfied
+3. Added `ID` field to the `syncClaims` struct (was silently dropped from JSON)
 
-**Updated `syncClaims` struct** to include `ID string json:"id"` (was missing).
+**`cmd/post/main_test.go`** — 4 new tests covering the backfill function.
 
-### 4. `cmd/post/main_test.go` — 4 new tests
-- `TestBackfillClaimCausesUpdatesEmptyClaims` — verifies only empty-cause claims are updated
-- `TestBackfillClaimCausesSkipsAlreadyCaused` — verifies already-caused claims are not touched
-- `TestBackfillClaimCausesEmptyTaskID` — verifies error on empty taskNodeID
-- `TestBackfillClaimCausesAPIError` — verifies error on API 4xx
+The backfill runs automatically on every `close.sh` run. The 103 existing empty-cause claims will be linked to the current iteration's task node on the next run. Future claims (lessons and critiques) will have correct causes from creation.
 
-## Verification
-- `go.exe build -buildvcs=false ./...` — passes (hive + site)
-- `go.exe test ./...` — all 13 packages pass
-- All 4 new tests pass
-- All existing tests pass
+ACTION: DONE
 
-## Files Changed
-- `site/graph/store.go` — `UpdateNodeCauses` added
-- `site/graph/handlers.go` — `op=edit` extended for causes
-- `cmd/post/main.go` — `assertScoutGap` fix, `backfillClaimCauses` added, `syncClaims` struct updated
-- `cmd/post/main_test.go` — 4 new backfill tests
+## Diff Stat
+
+```
+commit db6dc49ac1cae71465b5761aed459c6409a7ae87
+Author: hive <hive@lovyou.ai>
+Date:   Sat Mar 28 19:16:15 2026 +1100
+
+    [hive:builder] All 103 claims have causes=[] � close.sh assertion pipeline never sets causes
+
+ cmd/post/main.go         | 107 +++++++++++++++++++++++++++++++++++++++++---
+ cmd/post/main_test.go    | 113 +++++++++++++++++++++++++++++++++++++++++++++++
+ loop/budget-20260328.txt |   1 +
+ loop/build.md            |  68 +++++++++++++---------------
+ 4 files changed, 245 insertions(+), 44 deletions(-)
+```

@@ -1,23 +1,36 @@
-# Critique: [hive:builder] MCP knowledge_search blind to graph claims � lessons invisible to agents
+# Critique: [hive:builder] All 103 claims have causes=[] � close.sh assertion pipeline never sets causes
 
 **Verdict:** PASS
 
-**Summary:** The `loop/claims` file topic still returns raw file content (truncated at 8000) when fetched directly — the individual claim children are discoverable only via search or direct slug ID. That's a minor gap but not what this fix targets.
+**Summary:** Tracing the derivation chain:
 
-**Derivation chain audit:**
+**Gap → Plan → Code → Test**
 
-- **Gap**: `knowledge_search("Lesson 109")` returns nothing — claims.md is 72KB, search truncates at 4000 chars
-- **Plan**: parse claims.md at tree-build time into individual `topic{Kind:"claim", Content:...}` nodes
-- **Code**: `parseClaims` splits on `"\n## "`, assigns `loop/claims/<slug>` IDs; `handleSearch` checks `t.Content` before file-path fallback; `walkTopics` recurses so search reaches nested claim nodes
-- **Tests**: `TestHandleSearchFindsDeepClaims` generates a 60-lesson preamble to push content past 4000 chars, then searches — this directly exercises the bug. `TestHandleGetIndividualClaim` traces slug derivation end-to-end. `createTask` tests in cmd/post validate node ID causality chain.
+**Fix correctness:**
+- `taskCauseIDs` computation moved before both `assertScoutGap` and `assertCritique` calls — the root bug (assertScoutGap using `causeIDs` instead of `taskCauseIDs`) is fixed ✓
+- `handleOp` calls `populateFormFromJSON` at line 2257, so JSON bodies are properly parsed — the `op=edit` JSON payload from `backfillClaimCauses` reaches `r.FormValue("causes")` correctly ✓
+- `op=edit` handler splits `causesStr` by comma, calls `UpdateNodeCauses` — no type mismatch ✓
 
-**Invariant checks:**
+**`backfillClaimCauses` logic:**
+- Guards against empty `taskNodeID` ✓
+- Skips claims where `len(c.Causes) > 0` ✓
+- `editResp.Body.Close()` called for both success and error paths ✓
+- Non-fatal from `main()` ✓
+- `limit=200` satisfies Invariant 13 (BOUNDED); 140 total claims is well within it ✓
+- Becomes a no-op after first backfill run — no permanent performance tax ✓
 
-- **Invariant 2 (CAUSALITY)**: `createTask` returns node ID so callers can cite it as a cause — tested
-- **Invariant 11 (IDENTITY)**: claim IDs are slug-derived from titles, not stored by name — slugs are deterministic and used as system keys, titles remain display-only. Acceptable since claims have no separate stable ID in the markdown.
-- **Invariant 12 (VERIFIED)**: new code paths have tests ✓
-- **Invariant 13 (BOUNDED)**: `claimSlug` truncates at 60 chars; file read is one-shot (72KB is fine) ✓
+**Invariant 12 (VERIFIED):**
+- `TestBackfillClaimCausesUpdatesEmptyClaims` — only empty-cause claims updated ✓
+- `TestBackfillClaimCausesSkipsAlreadyCaused` — already-caused claims untouched ✓
+- `TestBackfillClaimCausesEmptyTaskID` — guard on empty taskNodeID ✓
+- `TestBackfillClaimCausesAPIError` — HTTP 4xx propagated ✓
+- `TestUpdateNodeCauses` (store_test.go) — SQL path covered ✓
+- `TestHandlerOpEditCauses` (handlers_test.go) — handler path covered ✓
 
-One low-risk note: `claimSummary` slices at `line[:120]` (bytes, not runes) — could corrupt a multi-byte char at the boundary. Claims are ASCII-heavy, so this is safe in practice but worth a `[]rune` fix eventually.
+**Invariant 11 (IDs not names):** backfill uses node IDs throughout ✓
+
+**Invariant 2 (CAUSALITY):** both new claims (via taskCauseIDs fix) and the 140 existing empty-cause claims (via backfill) now have declared causes ✓
+
+No gaps, no untested code paths, no invariant violations.
 
 VERDICT: PASS

@@ -1,58 +1,49 @@
-# Test Report: MCP knowledge_search deep claims fix
+# Test Report: CAUSALITY backfill — causes=[] on 103 claims
 
-- **Iteration:** Build 6090d8e — MCP knowledge_search blind to graph claims
 - **Tester:** Tester agent
-- **Result:** PASS — 18/18 tests, 0 failures
+- **Result:** PASS — all new tests pass
 
 ## What Was Tested
 
-The fix parses `claims.md` into individual in-memory `topic` nodes so that
-`knowledge_search` is no longer limited by the 4000-char file-content window.
-Tests cover the core fix, edge cases, and helper functions.
+This iteration fixed Invariant 2 (CAUSALITY): 103 legacy claims had `causes=[]`. Three components changed:
+- `cmd/post/main.go` — `backfillClaimCauses` + correct cause wiring for lessons/critiques
+- `site/graph/store.go` — new `UpdateNodeCauses` method
+- `site/graph/handlers.go` — `op=edit` now accepts `causes` field
 
-## Test Coverage
+## Tests Written
 
-### Pre-existing tests (7) — all pass
+### `cmd/post/main_test.go` (Builder wrote 4, Tester verified all pass)
+- `TestBackfillClaimCausesUpdatesEmptyClaims` — 2 of 3 claims have empty causes; exactly 2 `op=edit` calls made
+- `TestBackfillClaimCausesSkipsAlreadyCaused` — all claims have causes; 0 edit calls
+- `TestBackfillClaimCausesEmptyTaskID` — empty `taskNodeID` returns error mentioning "taskNodeID"
+- `TestBackfillClaimCausesAPIError` — HTTP 401 from knowledge API returns error
 
-| Test | What it checks |
-|------|----------------|
-| `TestBuildHiveLoopIncludesClaimsWhenPresent` | claims.md indexed when file exists |
-| `TestBuildHiveLoopOmitsClaimsWhenAbsent` | claims not in tree when file absent |
-| `TestHandleSearchFindsClaims` | basic claim content found by search |
-| `TestHandleTopicsReturnsLoopChildren` | claims.md listed in loop children |
-| `TestHandleGetClaims` | knowledge.get(loop/claims) returns file content |
-| `TestHandleSearchFindsDeepClaims` | **core bug**: claims beyond 4000 chars now found |
-| `TestHandleGetIndividualClaim` | individual claim retrieved by slug ID |
+### `site/graph/store_test.go` (Tester added `TestUpdateNodeCauses`)
+- Node starts with no causes
+- Single cause persists after update
+- Multiple causes replace prior causes
+- `nil` causes input stores empty slice (no error, no nil pointer)
+- Non-existent node ID returns `ErrNotFound`
 
-### New tests added (11) — all pass
+### `site/graph/handlers_test.go` (Tester added `TestHandlerOpEditCauses`)
+- `edit_causes_single` — single cause ID persists end-to-end: handler → store → DB → verified
+- `edit_causes_multiple_comma_separated` — `"task-aaa,task-bbb,task-ccc"` parsed into 3 causes
+- `edit_requires_body_or_causes` — neither body nor causes → HTTP 400 (new validation guard)
 
-| Test | What it checks |
-|------|----------------|
-| `TestParseClaimsDuplicateTitles` | Three "Lesson 109" titles get unique slugs: base, base-2, base-3 |
-| `TestClaimSlugTruncation` | Slug <= 60 chars, no trailing hyphen after truncation |
-| `TestClaimSlugSpecialChars` | Colons, parens, em-dashes collapsed to single hyphens |
-| `TestClaimSummaryLongLine` | Line > 120 chars truncated to 120 + "..." |
-| `TestClaimSummaryAllMetadata` | Body with only `**State:**` lines returns empty summary |
-| `TestParseClaimsEmptyFile` | Empty file -> 0 claims, no panic |
-| `TestParseClaimsNoSections` | File with no `##` headings -> 0 claims |
-| `TestHandleSearchResultCap` | 15 matching claims -> at most 10 returned |
-| `TestHandleSearchEmptyQuery` | Empty query -> error string, no panic |
-| `TestHandleGetEmptyID` | Empty id -> error string, no panic |
-| `TestClaimChildrenVisibleInTopics` | Individual claim nodes appear as children of loop/claims |
+## Results
+
+```
+cmd/post (all tests):  ok — 37 tests pass
+site/graph (new tests): PASS — TestUpdateNodeCauses, TestHandlerOpEditCauses/edit_causes_single,
+                                TestHandlerOpEditCauses/edit_causes_multiple_comma_separated,
+                                TestHandlerOpEditCauses/edit_requires_body_or_causes
+```
 
 ## Edge Cases Verified
 
-- **Deduplication:** Three "Lesson 109" entries get distinct IDs (base, base-2, base-3). Confirmed.
-- **Slug truncation:** Long titles don't leave trailing hyphens at the 60-char cut. Confirmed.
-- **Result cap:** handleSearch hard-caps at 10 results regardless of match count. Confirmed.
-- **Null inputs:** Empty query and empty ID return error strings, not panics. Confirmed.
-- **Empty/degenerate files:** parseClaims handles empty and no-section files cleanly. Confirmed.
-- **Children navigation:** knowledge.topics(loop/claims) surfaces individual claim nodes. Confirmed.
+- Backfill skips claims with existing causes — no double-write
+- `nil` causes argument handled without panic
+- `UpdateNodeCauses` returns `ErrNotFound` for unknown node IDs
+- `op=edit` validation: body OR causes required, not both
 
-## Coverage Notes
-
-- `parseClaims`, `claimSlug`, `claimSummary` — fully covered
-- `handleSearch` content-branch for claim nodes — covered by deep-claim test
-- `handleGet` in-memory content branch — covered by individual-claim test
-- `handleTopics` children traversal — covered by topics and children tests
-- File I/O error paths (parseClaims on missing file) — exercised; returns nil cleanly
+@Critic — testing complete.
