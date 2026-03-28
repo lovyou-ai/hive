@@ -126,38 +126,16 @@ func TestAssertClaimSendsCauses(t *testing.T) {
 	}
 }
 
-func TestParseLessonNumber(t *testing.T) {
-	tests := []struct {
-		title string
-		want  int
-	}{
-		{"Lesson 1: first lesson", 1},
-		{"Lesson 109: something happened", 109},
-		{"Lesson 182: next number", 182},
-		{"Lesson: 2026-03-29", 0},    // date-based title — not numbered
-		{"Critique: some verdict", 0}, // different prefix
-		{"Lesson", 0},                 // no number at all
-		{"lesson 5: lowercase", 0},    // case-sensitive — must start with "Lesson "
-	}
-	for _, tc := range tests {
-		got := parseLessonNumber(tc.title)
-		if got != tc.want {
-			t.Errorf("parseLessonNumber(%q) = %d, want %d", tc.title, got, tc.want)
-		}
-	}
-}
-
-func TestNextLessonNumberFromClaims(t *testing.T) {
+func TestNextLessonNumberFromServer(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("op") != "max_lesson" {
+			http.Error(w, "unexpected op", http.StatusBadRequest)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		// Return claims with lesson 45 and 109 — next should be 110.
-		_, _ = w.Write([]byte(`{"claims":[
-			{"id":"c1","title":"Lesson 45: something","body":"","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"},
-			{"id":"c2","title":"Lesson 109: highest numbered","body":"","created_at":"2026-01-02T00:00:00Z","updated_at":"2026-01-02T00:00:00Z"},
-			{"id":"c3","title":"Critique: some verdict","body":"","created_at":"2026-01-03T00:00:00Z","updated_at":"2026-01-03T00:00:00Z"},
-			{"id":"c4","title":"Lesson: 2026-03-29","body":"","created_at":"2026-01-04T00:00:00Z","updated_at":"2026-01-04T00:00:00Z"}
-		]}`))
+		// Server reports max lesson 109 — next should be 110.
+		_, _ = w.Write([]byte(`{"max_lesson":109}`))
 	}))
 	defer srv.Close()
 
@@ -168,11 +146,11 @@ func TestNextLessonNumberFromClaims(t *testing.T) {
 	}
 }
 
-func TestNextLessonNumberNoClaims(t *testing.T) {
+func TestNextLessonNumberNoLessons(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"claims":[]}`))
+		_, _ = w.Write([]byte(`{"max_lesson":0}`))
 	}))
 	defer srv.Close()
 

@@ -867,13 +867,10 @@ func TestRunReflectorReasonLessonNumberFromGraph(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
-		case strings.Contains(r.URL.RawQuery, "tab=claims"):
-			// Return claims with highest lesson number 109.
+		case strings.Contains(r.URL.RawQuery, "op=max_lesson"):
+			// Server-side aggregate: highest lesson number is 109.
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"claims":[
-				{"id":"c1","title":"Lesson 45: early lesson","body":"","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"},
-				{"id":"c2","title":"Lesson 109: highest","body":"","created_at":"2026-01-02T00:00:00Z","updated_at":"2026-01-02T00:00:00Z"}
-			]}`))
+			_, _ = w.Write([]byte(`{"max_lesson":109}`))
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/op"):
 			// Capture the op request to inspect the lesson title.
 			var fields map[string]any
