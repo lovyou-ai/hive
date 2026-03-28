@@ -1,48 +1,48 @@
-# Test Report: Fix — hardcoded upgradeTaskPriority call removed from main()
+# Test Report — Close orphaned subtasks when parent completes
 
-- **Build commit:** 077c4c1
-- **Timestamp:** 2026-03-28
+## What was tested
 
-## What Was Tested
+The Builder added `cascadeCloseChildren` — a depth-first recursive method that closes all non-done descendants before a parent can be marked done. I added a test for the **3-level deep recursive cascade** (grandparent → parent → grandchild), which was the critical unverified path.
 
-The build removed 7 lines from `cmd/post/main.go` — the hardcoded one-time call to
-`upgradeTaskPriority("468e0549", "high")` that fired on every invocation.
+## New test added
 
-This was a pure removal. No new behavior was introduced.
+### `TestCascadeCloseChildrenDeep` (`site/graph/store_test.go`)
+- Creates a 3-level tree: grandparent (active) → parent (active) → grandchild (active)
+- Calls `UpdateNodeState(grandparent, done)`
+- Verifies all three nodes end up in `StateDone`
+- Exercises the recursive `cascadeCloseChildren` call at depth > 1
 
-## Tests Run
+## Pre-existing tests updated by Builder (verified still passing)
 
-```
-go test ./cmd/post/
-ok  github.com/lovyou-ai/hive/cmd/post  0.653s
-```
+| Test | What it covers |
+|------|---------------|
+| `TestUpdateNodeStateChildGate` | Parent auto-closes one open child |
+| `TestUpdateNodeStateChildGateLeafNode` | Leaf node completes directly (no children) |
+| `TestUpdateNodeStateChildGateMultipleChildren` | One done child + one open child — open child auto-closed |
+| `TestUpdateNodeStateNonDoneSkipsGate` | Non-`done` transitions skip the cascade entirely |
 
-All 35 tests pass.
-
-## Coverage Assessment
-
-The `upgradeTaskPriority` function is retained as a general-purpose helper and is
-fully covered by existing tests:
-
-- `TestUpgradeTaskPrioritySendsEditOp` — verifies op=edit with correct node_id and priority
-- `TestUpgradeTaskPriorityAPIError` — verifies error returned on HTTP 400+
-
-The hardcoded magic string `"468e0549"` no longer appears anywhere in production code
-(confirmed by grep). No new tests required — this is a deletion, not an addition.
-
-## New Tests Written
-
-None. Writing a test for the *absence* of a hardcoded string would be testing
-implementation details, not behavior. The existing suite fully covers the retained code.
-
-## Build
+## Results
 
 ```
-go build -buildvcs=false ./...
+=== RUN   TestCascadeCloseChildrenDeep
+--- PASS: TestCascadeCloseChildrenDeep (0.04s)
+=== RUN   TestUpdateNodeStateChildGate
+--- PASS: TestUpdateNodeStateChildGate (0.04s)
+=== RUN   TestUpdateNodeStateChildGateLeafNode
+--- PASS: TestUpdateNodeStateChildGateLeafNode (0.03s)
+=== RUN   TestUpdateNodeStateChildGateMultipleChildren
+--- PASS: TestUpdateNodeStateChildGateMultipleChildren (0.04s)
+=== RUN   TestUpdateNodeStateNonDoneSkipsGate
+--- PASS: TestUpdateNodeStateNonDoneSkipsGate (0.03s)
+PASS
 ```
 
-Builds clean.
+## Pre-existing failure (not caused by this iteration)
 
-## Verdict
+`TestHandlerCreateSpace` fails with `get space: not found` — confirmed pre-existing on HEAD before Builder's changes. Unrelated to cascade work.
 
-PASS — existing coverage sufficient. No regressions introduced.
+## Coverage notes
+
+- **Depth limit (maxCascadeDepth = 50)**: Not tested — would require creating 51 levels of nesting, impractical with real DB. Enforced by code inspection.
+- **Already-done intermediaries**: Covered implicitly by `TestUpdateNodeStateChildGateMultipleChildren` (child1 is done before parent completes; child2 gets cascaded).
+- **Recursive depth**: Now covered by `TestCascadeCloseChildrenDeep` at 3 levels.
