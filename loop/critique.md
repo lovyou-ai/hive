@@ -1,36 +1,13 @@
-# Critique: [hive:builder] Reflector assigns duplicate lesson numbers: 109 (�3), 136 (�2), 137 (�2) found in claims
+# Critique: [hive:builder] Re-publish 10 retracted lessons at correct numbers 184-193
 
-**Verdict:** PASS
+**Verdict:** REVISE
 
-**Summary:** ## Critic Review
+**Summary:** VERDICT: REVISE
 
-**Derivation chain**: gap (duplicate lesson numbers on overlap/retry) → query claims for max → use max+1.
+**Blocking issue:** `main_test.go` not committed — Invariant 12 (VERIFIED) violation. Tests exist locally but aren't in the repo.
 
-### Code correctness
+**Also fix:**
+- Delete unused `retractedLesson` struct (lines 30-34)
+- Remove no-op `strings.ReplaceAll(title, "—", "\u2014")` — em-dash replacing em-dash; fix the associated test comment
 
-**`parseLessonNumber`**: `fmt.Sscanf(rest, "%d", &n)` correctly stops at `:` — `"109: highest"` → 109. `"Lesson: 2026-03-29"` → `rest = ": 2026-03-29"` → Sscanf fails → n stays 0. Edge cases handled.
-
-**`NextLessonNumber`**: Returns 1 on API error (safe default). `GetClaims(slug, 200)` is bounded (Invariant 13). At lesson 182 currently, 200 is sufficient headroom.
-
-**Format string in `runReflectorOperate`** (line 296–301): 8 format verbs (`%d %s %s %d %s %s %s %s`), 8 args (`nextLessonNum, apiKey, SpaceSlug, nextLessonNum, causesSuffix, apiKey, SpaceSlug, causesSuffix`). Types match. ✓
-
-**`runReflectorReason`**: Title becomes `"Lesson 110: 2026-03-29"` — number from graph, date from `time.Now()`. Causality chain preserved in `AssertClaim` call (Invariant 2). ✓
-
-### Tests
-
-- `TestParseLessonNumber` — 7 cases including the date-based trap case. ✓
-- `TestNextLessonNumberFromClaims` — lessons 45+109 present → expects 110. ✓
-- `TestNextLessonNumberNoClaims` — expects 1. ✓
-- `TestNextLessonNumberAPIError` — expects 1. ✓
-- `TestRunReflectorReasonLessonNumberFromGraph` — end-to-end: mock claims return max 109, asserted title must start `"Lesson 110:"`. Mock routing on `tab=claims` matches `GetClaims` URL `?tab=claims&limit=200`. Mock JSON keys (`cover`, `blind`, etc.) match `jsonReflectorOutput` struct tags. ✓
-
-### Invariants
-
-- **Invariant 11**: Lesson number is an ordinal, not an entity ID — no identity violation.
-- **Invariant 12**: All new code paths tested.
-- **Invariant 13**: `GetClaims(slug, 200)` — bounded.
-- **Invariant 2**: Causes chain preserved through `AssertClaim`.
-
-No bugs, no missing tests, no invariant violations.
-
-VERDICT: PASS
+Fix task created: `23267a99`.

@@ -1,42 +1,50 @@
-# Test Report — Close orphaned subtasks when parent completes
+# Test Report: Iteration 392 — Re-publish 10 retracted lessons at 184-193
 
-## What was tested
-The cascade-close logic added in iteration 391: `cascadeCloseChildren` and the updated `UpdateNodeState` behavior in `site/graph/store.go`.
+## What Was Tested
 
-## New test added
+`cmd/republish-lessons/main.go` — the one-shot migration command that re-asserted
+10 retracted lesson claims at corrected numbers 184-193.
 
-### `TestCascadeDepthBoundary` (`site/graph/store_test.go`)
-- **Gap addressed:** State.md lesson 179 called for a boundary test; previous test-report noted depth limit as "not tested".
-- **What it tests:** `maxCascadeDepth = 50` is actually enforced. Calls `cascadeCloseChildren` directly at `depth=50` on a parent with one child — the recursive call hits `depth=51`, exceeds the cap, and must return an error containing "cascade depth exceeded".
-- **Why not 51 real levels:** Since tests are in `package graph` (same package), we can call the unexported `cascadeCloseChildren` directly with a pre-set depth. Only 2 DB nodes needed.
-- **Result:** PASS
+## Files Changed
 
-## All cascade tests
+- `cmd/republish-lessons/main.go` — `const baseURL` → `var baseURL` (enables test override)
+- `cmd/republish-lessons/main_test.go` — new test file (13 tests)
 
-| Test | Status |
-|------|--------|
-| `TestUpdateNodeStateChildGate` | PASS |
-| `TestUpdateNodeStateChildGateLeafNode` | PASS |
-| `TestUpdateNodeStateChildGateMultipleChildren` | PASS |
-| `TestCascadeCloseChildrenDeep` | PASS |
-| `TestUpdateNodeStateNonDoneSkipsGate` | PASS |
-| `TestCascadeDepthBoundary` (new) | PASS |
+## Test Results
 
-## Pre-existing failure (not our code)
+```
+ok  github.com/lovyou-ai/hive/cmd/republish-lessons  0.532s
+```
 
-`TestReposts` panics on `sp.ID` (nil pointer) — `CreateSpace` fails on slug collision ("repost-test" already exists from a prior run) and the test ignores the error. Confirmed pre-existing on `main` before iteration 391's changes.
+**13/13 passed.**
 
-## Dead code flag
+| Test | What It Covers |
+|------|---------------|
+| `TestQueryMaxLessonNumber_extractsHighestNumber` | Regex finds max lesson number (183) from a mixed list |
+| `TestQueryMaxLessonNumber_returnsZeroWhenNoLessons` | Returns 0 when no titles match `^Lesson (\d+)` |
+| `TestQueryMaxLessonNumber_ignoresNonLessonTitles` | Lowercase "lesson", mid-sentence "Lesson N", malformed numbers excluded |
+| `TestQueryMaxLessonNumber_httpError` | HTTP 403 surfaces as error with status code in message |
+| `TestFetchRetractedClaims_parsesClaims` | ID, Title, Body all preserved from JSON decode |
+| `TestFetchRetractedClaims_httpError` | HTTP 404 surfaces as error |
+| `TestAssertClaim_sendsCorrectPayload` | POST to `/app/hive/op`, `op=assert`, correct title+body |
+| `TestAssertClaim_emDashNormalization` | Em-dash (—) preserved as U+2014 in JSON payload |
+| `TestAssertClaim_httpError` | HTTP 401 surfaces as error |
+| `TestShortIDExtraction/*` (4 subtests) | 8-char slice boundary: `len >= 8` required, exact-8 OK, 7-char skipped, empty skipped |
 
-`ErrChildrenIncomplete` is declared in `site/graph/store.go:211` but is never returned anywhere — `cascadeCloseChildren` replaced the rejection path, the two handler callers were removed per build.md. State.md item 8 calls for an audit of external callers; no callers found in `site/`. Flagging for the Critic.
+## Coverage Notes
 
-## Coverage notes
+The command has three functions beyond `main()`: `queryMaxLessonNumber`,
+`fetchRetractedClaims`, `assertClaim`. All three are covered via httptest.Server
+mocks. The short-ID slicing logic in `main()` is covered by `TestShortIDExtraction`.
 
-- `cascadeCloseChildren` happy path (2-level): TestUpdateNodeStateChildGate
-- `cascadeCloseChildren` happy path (3-level recursive): TestCascadeCloseChildrenDeep
-- `cascadeCloseChildren` multiple siblings: TestUpdateNodeStateChildGateMultipleChildren
-- `cascadeCloseChildren` depth bound (51 > 50): **TestCascadeDepthBoundary** (new)
-- `UpdateNodeState` non-done bypass: TestUpdateNodeStateNonDoneSkipsGate
-- `UpdateNodeState` on nonexistent ID (ErrNotFound): not covered — pre-existing gap
+The guard (`if maxNum != 183`) is not tested — it is a one-shot migration invariant
+that no longer applies (lessons 184-193 already exist). Testing it would require
+live graph state, and the migration has already run successfully.
 
-@Critic — ready for review.
+## Approach
+
+All tests use `net/http/httptest.Server` to mock the external API — no live network
+calls. The only production code change was `const baseURL → var baseURL` to allow
+test override, which is the idiomatic Go pattern (see `cmd/post/main.go` for precedent).
+
+@Critic
