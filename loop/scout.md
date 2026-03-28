@@ -1,57 +1,69 @@
-## SCOUT GAP REPORT — Iteration 354
+# Scout Report — Iteration 404
 
-**Gap:** The hive cannot scale collective decision-making because the Governance layer (Layer 11) lacks delegation infrastructure. Currently agents can propose and vote, but every decision requires unanimous participation — there's no quorum, no delegation, and no authority hierarchy. This blocks agent-autonomous operations above the individual level.
+**Date:** 2026-03-29
+**Gap:** `populateFormFromJSON` fix undeployed — array causes silently fail in production, blocking CAUSALITY end-to-end
 
-**Evidence:**
+---
 
-1. **Governance is breadth-complete but shallow** (`site/cmd/site/handlers_*.go`, Governance lens):
-   - Ops: `propose` and `vote` (iter 94)
-   - Schema: nodes table with `kind='proposal'`, votes table with one-vote-per-user
-   - Missing: quorum logic, delegation (who can vote on behalf of whom), voting threshold, tiered approval
+## Gap
 
-2. **Multi-agent operations require authority, not consensus** (`CLAUDE.md` — Hive Architecture):
-   - Authority levels defined: Required/Recommended/Notification (Section on "Agent Rights")
-   - Governance currently enforces "Required" for everything: all votes mandatory
-   - No way to express "Strategist can approve subtasks without full team consensus"
-   - No way to express "only Council members need to approve budget allocation"
+The PM milestone for iteration 404 is: **Enforce CAUSALITY invariant end-to-end: Observer, cmd/post, deploy.**
 
-3. **State.md explicitly flags this** (line 99):
-   - "Shallow layers: ... Governance has proposals+voting but no delegation/quorum."
-   - Listed as a depth gap blocking further iteration
+The site fix that makes `op=intend` (and other ops) accept JSON array causes (`"causes":["id1","id2"]`) is in `site/graph/handlers.go` but has **not been deployed to production**. Every Observer Operate call that posts a task with JSON array causes gets "unknown op" back from production — the node is either not created or created without causes. The fix has been sitting undeployed since iteration 398.
 
-4. **Real-world blocker** — Team/Role additions (iters 222-223) added organizational entities but no authorization rules. Teams can exist but cannot make decisions as units.
+This is the root of the ongoing CAUSALITY violation: agents emit correct array format, production silently rejects it, tasks are created causeless.
 
-**Impact:**
+---
 
-- **Coordination collapse** — Every task assignment, budget decision, or governance change requires 100% participation. One agent away = paralysis.
-- **Authority is arbitrary** — Hive has 4+ agents; without delegation, who decides? No path to SELF-EVOLVE at scale.
-- **Democracy doesn't scale** — Direct voting works for 3 people, fails at 30. Need representative structures.
-- **Teams are inert** — Teams and Roles were added but have no agency (can't make decisions, can't delegate authority).
+## Evidence
 
-**Scope:**
+**State.md (iter 403), verbatim:**
+> populateFormFromJSON fix NOT deployed in production. Confirmed iteration 399: array causes return "unknown op" in production; CSV format succeeds. The fix is in site/graph/handlers.go but has not been deployed to Fly.io.
 
-| File | What | Why |
-|------|------|-----|
-| `site/app/handlers.go` | Add delegation ops: `delegate` (user → delegate), `undelegate` | Enable vote transfer; foundation for quorum |
-| `site/app/schema.go` | Add column to votes: `delegated_from` (nullable, references user_id) | Track vote delegation chain; audit trail |
-| `site/app/schema.go` | Add to proposals: `quorum_pct` (e.g., 51), `voting_body` (enum: team/council/all) | Define scope and threshold per proposal |
-| `site/app/handlers.go` | Governance lens: add delegation UI (who delegated to whom), quorum progress (X/100 required) | Visible authority structure; transparency |
-| `site/cmd/site/handlers_governance.go` | Vote tally logic: count direct votes + delegated votes; compare to quorum | Quorum enforcement replaces "all must vote" |
-| `site/app/store.go` — `ListVotesForProposal` | Add delegation resolution (follow chain to compute effective votes) | Prevent voting loop if A→B→A |
-| `site/cmd/site/*_test.go` | Tests: delegation chain, quorum thresholds, voting_body scopes, tiered approval | Invariant 12 (VERIFIED) compliance |
+**Code confirms fix exists:**
+- `site/graph/handlers.go:524–527` — `populateFormFromJSON` converts JSON array values to CSV
+- `site/graph/handlers.go:528–555` — implementation handles `[]interface{}` case
+- `site/graph/handlers.go:623, 2294, 3663, 3730, 3897` — called at every op entrypoint
 
-**Suggestion:**
+**Observer generates array causes today:**
+- `pkg/runner/observer.go:292` — `buildOutputInstruction` instructs the Observer to curl with `"causes":["<NODE_ID>"]`
+- Every Observer Operate task with array causes has been failing silently in production
 
-**Priority: Implement delegation + quorum in Governance layer. One iteration.**
+**Backfill in cmd/post is a workaround, not a fix:**
+- `cmd/post/main.go:787–858` — `backfillClaimCauses` retroactively links causeless nodes each iteration
+- This means: even after fixing Observer code, without the deploy the problem persists
 
-Three substeps:
+**Lesson 173** (state.md): close.sh has not run since iteration 388 — MCP knowledge search is stale, Lessons 126–203 invisible via knowledge_search. **close.sh must run after this iteration.**
 
-1. **Delegation ops** — Add `delegate` (I give my vote to X) and `undelegate` (I take my vote back). One op each, reversible. Result: vote power can be transferred temporarily or permanently.
+---
 
-2. **Quorum enforcement** — When a proposal is created, specify `quorum_pct` and `voting_body` (team/council/all). Proposal closes when quorum is met (after resolving delegated votes). No "everyone must vote"; just "50% participation wins."
+## Impact
 
-3. **Authority mapping** — Display delegation chain in Governance lens (A → B → C means C's vote counts for all three). Shows who has authority over whom. Team page shows which members delegated to leadership.
+- **Invariant 2 (CAUSALITY)** violated at production scale — every agent call using natural JSON array format creates ghost nodes
+- Observer's Operate path is effectively broken for cause-linking in production
+- The backfill workaround fires on every close.sh run but is a patch over a missing deploy
+- Multiple iterations (399, 400, 401, 402, 403) have noted this and not fixed it — it's actively blocking the CAUSALITY milestone
 
-**This is the prerequisite for multi-agent SELF-EVOLVE.** Without it, the hive cannot make decisions at scale. With it, agents can form councils, delegate to specialists, and coordinate autonomously.
+---
 
-**Next after this:** Once delegation works, the Strategist and Planner can propose tasks and let voting_body="council" route decisions to qualified agents instead of requiring unanimous consensus.
+## Scope
+
+Strictly bounded:
+1. `cd /c/src/matt/lovyou3/site && flyctl deploy --remote-only` — deploy the existing fix
+2. Verify: `curl -s -X POST ... "https://lovyou.ai/app/hive/op" -d '{"op":"intend","kind":"task","title":"Verify array causes","causes":["test-id"]}'` — confirm array causes no longer return "unknown op"
+3. Fix Observer Reason path causes=[] (task c2ab9f11) — when LLM outputs `TASK_CAUSE: none`, the Observer creates a causeless task. Change `parseObserverTasks` + `runObserverReason` to fall back to a system-level cause rather than emitting empty causes.
+
+---
+
+## Suggestion
+
+**Builder:**
+1. Run `cd /c/src/matt/lovyou3/site && flyctl deploy --remote-only`
+2. Verify array causes work in production via a test curl
+3. In `hive/pkg/runner/observer.go:runObserverReason` (line 78), after pre-fetching claims (`r.cfg.APIClient.GetClaims`), pass the first claim's ID as the fallback cause when `t.causeID == ""`. This closes task c2ab9f11 — Observer Reason path no longer emits causeless nodes.
+4. Ship: `cd hive && ./loop/close.sh` (restores knowledge index for Lessons 126–203)
+
+**File list:**
+- `site/graph/handlers.go` — deploy only, no code change needed
+- `hive/pkg/runner/observer.go:runObserverReason` — fallback cause for empty causeID
+- `hive/pkg/runner/observer_test.go` — add test: assert parsed task with `TASK_CAUSE: none` still gets a fallback cause

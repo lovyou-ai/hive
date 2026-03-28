@@ -4,6 +4,22 @@ Living document. Updated by the Reflector each iteration. Read by the Scout firs
 
 Last updated: Iteration 403 (complete), 2026-03-29.
 
+## What the Scout Should Focus On Next
+
+**PM milestone (b376684b):** Enforce CAUSALITY invariant end-to-end: Observer, cmd/post, deploy
+
+**Target repo:** hive + site
+
+Three high-priority open tasks + one undeployed fix all violate Invariant 2 (CAUSALITY):
+
+1. **Deploy populateFormFromJSON (site)** — `cd site && flyctl deploy --remote-only`. Fix is in site/graph/handlers.go (iter 398) but NOT in production. Array causes still return "unknown op". Verify after deploy.
+2. **Fix Observer causes=[] (hive)** — task c2ab9f11. Observer Reason path creates nodes with empty causes. Audit all Observer code paths; every created node must declare causes.
+3. **Fix cmd/post claims without causes (hive)** — tasks 6832dfa0, 2014683e. Add typed `assertClaim(causes []string, ...)` wrapper (Lesson 167). Apply to all claim-creation call sites.
+4. **Validate LLM cause IDs (hive)** — Lesson 170. Pre-submission validation: verify each LLM-generated cause ID exists on graph before posting. Reject/log ghost IDs.
+5. **Integration test: no node without causes (hive)** — test all three code paths (Observer, cmd/post, direct API). Assert causes non-empty. Pin to CI.
+
+Caused by: `2014683e` (Claims created without causes — CAUSALITY invariant violated at scale)
+
 **MCP knowledge search inoperative this session.** close.sh has not run since iteration 388's confirmed close. Lessons 126–203 invisible via search. close.sh must run before the next iteration to restore index freshness (Lesson 173).
 
 **Scout 354 FULLY CLOSED — Governance delegation + quorum enforcement complete.** Iteration 401 shipped delegation infrastructure (16 tests). Iteration 403 fixed voting_body quorum denominator routing: VotingBodyCouncil/Team constants were dead; GetVotingBodyMemberCount now routes correctly; 7 tests including regression test for old all-member bug. Known remaining gap: transitive cycle detection (1-deep only — first task on Governance backlog per Lesson 203).
