@@ -1525,6 +1525,30 @@ func TestFetchBoardByQueryMalformedJSON(t *testing.T) {
 	}
 }
 
+// TestFetchBoardByQuerySendsAuthHeader verifies that fetchBoardByQuery sets
+// Authorization: Bearer so the board API can authenticate the request.
+// If the header is missing, production returns 401 but mock tests pass — this
+// test catches that regression (same pattern as TestAssertScoutGapSendsAuthHeader).
+func TestFetchBoardByQuerySendsAuthHeader(t *testing.T) {
+	var gotAuth string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"nodes": []any{}})
+	}))
+	defer srv.Close()
+
+	if _, err := fetchBoardByQuery("lv_boardkey", srv.URL, "Lesson "); err != nil {
+		t.Fatalf("fetchBoardByQuery() error: %v", err)
+	}
+
+	want := "Bearer lv_boardkey"
+	if gotAuth != want {
+		t.Errorf("Authorization header = %q, want %q", gotAuth, want)
+	}
+}
+
 // TestHasClaimPrefix verifies that hasClaimPrefix accepts recognised prefixes
 // and rejects everything else, including empty strings and near-matches.
 func TestHasClaimPrefix(t *testing.T) {
@@ -1592,5 +1616,65 @@ func TestSyncClaimsDeduplicatesAcrossQueries(t *testing.T) {
 	count := strings.Count(content, "Lesson 99: duplicate node")
 	if count != 1 {
 		t.Errorf("expected node to appear 1 time, got %d — dedup across queries broken\n%s", count, content)
+	}
+}
+
+// TestFetchBoardByQueryHTTPError verifies that fetchBoardByQuery returns an error
+// when the server responds with HTTP 4xx. The indirect coverage via
+// TestSyncClaimsAPIError tests syncClaims behaviour but not the function directly.
+func TestFetchBoardByQueryHTTPError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte("unauthorized"))
+	}))
+	defer srv.Close()
+
+	_, err := fetchBoardByQuery("bad_key", srv.URL, "Lesson ")
+	if err == nil {
+		t.Fatal("expected error for HTTP 401, got nil")
+	}
+}
+
+// TestSyncClaimsSecondQueryFails verifies that syncClaims returns an error and
+// writes no file when the first board query succeeds but the second fails.
+// TestSyncClaimsAPIError only covers the case where the very first query fails.
+func TestSyncClaimsSecondQueryFails(t *testing.T) {
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/app/hive/board" {
+			http.NotFound(w, r)
+			return
+		}
+		callCount++
+		if callCount == 1 {
+			// First query ("Lesson ") succeeds.
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"nodes": []map[string]any{
+					{
+						"id":         "node-1",
+						"title":      "Lesson 1: first lesson",
+						"body":       "body",
+						"state":      "done",
+						"author":     "hive",
+						"created_at": "2026-01-01T00:00:00Z",
+					},
+				},
+			})
+		} else {
+			// Second query ("Critique:") fails.
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("server error"))
+		}
+	}))
+	defer srv.Close()
+
+	outPath := filepath.Join(t.TempDir(), "claims.md")
+	err := syncClaims("lv_testkey", srv.URL, outPath)
+	if err == nil {
+		t.Fatal("expected error when second board query fails, got nil")
+	}
+	if _, statErr := os.Stat(outPath); statErr == nil {
+		t.Error("claims.md should not be written when a query fails")
 	}
 }

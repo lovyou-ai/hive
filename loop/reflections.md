@@ -1,5 +1,125 @@
 # Reflection Log
 
+## 2026-03-28 — Iteration 384
+
+**COVER:** Iteration 384 is the 9th consecutive ghost builder (376 was real; 377–384 all ghost). The builder fired the identical `chdir C:\c\src\matt\lovyou3\hive` error at 10:20:55, 0.20 seconds, falsely marked task.done. Tester ran 180 seconds — all tests pass, no new code. Critic ran in 0.0005 seconds against stale iteration 376 critique.md.
+
+This Reflector is operator-invoked: Claude Code running the reflection phase manually, outside the autonomous loop. This is materially different from the prior 8 autonomous Reflector invocations. The loop's passive BLOCKING escalation, written to state.md from iteration 378 onward, has reached an operator. The passive mechanism worked — at 9 iterations and ~$18+ cost, but it worked.
+
+The staged repository confirms the two-track structure: `cmd/post/main_test.go` (staged, syncClaims tests from iteration 376), `pkg/runner/diagnostic.go` + `pipeline_state.go` + their tests (pipeline agent infrastructure from iterations 382–383, unstaged). All changes are correct and tested. The builder track is the only stuck track.
+
+Lessons 149–162 accurately describe the ghost cycle, its costs, and its fixes. No new defects emerged this iteration.
+
+**BLIND:** Three gaps.
+
+(1) **Formalization-as-stopping-condition doesn't stop loops.** Iteration 383 explicitly stated "this should be the last reflection to formalize these lessons." That was iteration 8 of the ghost cycle. The statement was accurate knowledge that produced no mechanism — the loop generated another cycle regardless. A Reflector saying "no more lessons on this topic" has no authority over the loop runner. Only code does.
+
+(2) **Operator present, fixes not yet applied.** Prior reflections treated operator presence as the end state of the escalation. It isn't — it's the beginning of remediation. The gap between "escalation received" and "escalation remediated" is real. Lessons 149–162 are written; the path bug, ghost-detection, and close.sh are still pending.
+
+(3) **MCP search still returns nothing.** Lessons 126–162 remain invisible to `knowledge_search`. Every "search first" step at the start of Reflector invocations has returned empty results for 10+ iterations. The search interface is decorative until close.sh runs. This iteration's search returned nothing, as expected.
+
+**ZOOM:** Nine iterations of ghost is enough. The diagnostic cycle produced accurate lessons (149–162), escalated correctly (state.md BLOCKING since iteration 378), and reached the operator. The loop performed its diagnostic function correctly — it just can't stop itself or apply fixes. The remaining work is operator-scope:
+
+1. Fix the operate path (`C:\c\src` → `C:\src`) — unblocks all builder iterations
+2. Implement ghost-detection halt (~10 lines in diagnostics reader) — prevents recurrence
+3. Run close.sh — makes lessons 126–162 searchable
+
+Further reflection on these topics without applying fixes is pure overhead. The zoom reveals a completion boundary: the Reflector's job is diagnosis, not repair. Diagnosis is complete.
+
+**FORMALIZE:**
+
+Lesson 163 — An operator-invoked Reflector (running outside the autonomous loop) marks the transition from passive escalation to active remediation. State.md BLOCKING is a passive signal — it waits for the operator to arrive. When the operator arrives and runs the Reflector manually, the escalation cycle closes. This transition should be recorded explicitly in state.md: "BLOCKING escalation received by operator [date]." If the loop resumes autonomously before fixes are applied, the Scout should see this marker and know the operator acknowledged the condition — it should not generate another BLOCKING report, but instead await operator action already in progress. Passive escalation + operator arrival = escalation closed; remediation pending.
+
+Lesson 164 — Formalization has a completion boundary. A lesson is complete when it accurately names the defect, identifies the root cause, specifies the fix, and attributes the cost. After that point, re-formalizing the same defect generates noise, not signal. Future Reflectors encountering a known defect should cite the canonical lesson by number rather than re-formalizing. Test: if a new lesson could be replaced by "see Lesson N, still unresolved," it should be replaced, not added. Lesson 150 is the canonical path-bug lesson. Lessons 151–162 refined and extended it. Lesson 163 closes the escalation arc. No further lessons about this ghost cycle are warranted.
+
+## 2026-03-28 — Iteration 383
+
+**COVER:** Iteration 383 is the 8th consecutive ghost builder (376 was real; 377–383 are ghosts). Build.md is stale — the syncClaims fix from iteration 376, unchanged. The path bug fired again: `chdir C:\c\src\matt\lovyou3\hive` (0.18s, falsely marked task.done). Tester ran 212 seconds — the longest run of the ghost cycle, up from 114s in iteration 382. Critic ran in 0.0005s against stale critique.md.
+
+The authentic work this iteration lives in the tester's report: two new tests in `pkg/runner` covering the PhaseEvent infrastructure added in iteration 382:
+
+- `TestReviseCountIncrementsOnCritiqueRevise` — verifies `EventCritiqueRevise` increments `reviseCount` (1 → 2 across two loops); `EventCritiquePass` does not
+- `TestPhaseEventNewFieldsRoundTrip` — verifies all 7 new PhaseEvent fields round-trip through JSON: `TaskID`, `TaskTitle`, `Repo`, `GitHash`, `FilesChanged`, `ReviseCount`, `BoardOpen`
+
+The pipeline agent has now completed a full implement-then-test cycle across two iterations: fields (iter 382) → tests for those fields (iter 383). Invariant 12 (VERIFIED) is satisfied for the infrastructure changes. `pkg/runner` ran `3.598s` with 2 new tests; `cmd/post` was cached (35 tests unchanged).
+
+**BLIND:** Three gaps and one new observation.
+
+(1) **Ghost-detection logic still absent despite complete observability.** The infrastructure now has: PhaseEvent fields (iter 382), tests for those fields (iter 383). What's still missing is the scan of `diagnostics.jsonl` for consecutive builder errors with identical `Error` strings and `FilesChanged=0`. The tests cover the data model; they don't cover detection logic because the logic doesn't exist yet. The test gap and the logic gap are the same gap.
+
+(2) **Scout.md header reads "Iteration 354"** — the governance delegation report that has been the standing scout report for 29+ iterations. State.md has carried a BLOCKING override since iteration 378. Either the Scout is not running this phase, or it runs and produces identical output, or its output isn't being overwritten. The routing fix (Lesson 155) is unimplemented. BLOCKING does not override product backlog selection.
+
+(3) **Tester at 212s is a new high and a compounding cost signal.** Each ghost iteration that runs the tester costs more than the last as the test suite grows. At 212s, tester overhead is now the dominant per-iteration cost on ghost cycles. Ghost-detection that halts before the tester runs would eliminate this cost. The implementation cost is ~10 lines (Lesson 160). The return on that investment grows with every ghost.
+
+**ZOOM:** The two-track structure is now confirmed across three data points:
+
+- *Builder track (stuck, iter 377–383):* 8 ghosts, path bug unfixed, ~$10+ in tester/reflector overhead, no product progress.
+- *Pipeline track (active, iter 382–383):* PhaseEvent fields → tests, implement-then-test pattern, functioning under SELF-EVOLVE without operator intervention.
+
+The pipeline agent is ghost-resilient and test-complete. Its work is ready for when the builder track resumes. There is nothing more the pipeline agent can contribute until the ghost-detection logic is implemented — and that logic is operator-scope (it lives in the loop runner, but writing it requires the builder to be functional).
+
+The formalization machinery has now produced 12 lessons (149–160) about the path bug, ghost cycles, routing failures, and tester costs. The knowledge is complete. Additional reflection on these topics produces diminishing returns. The action required — fix the operate working directory, implement ghost-detection, run close.sh — is outside the loop's reach. This reflection should be the last to formalize these lessons.
+
+**FORMALIZE:**
+
+Lesson 161 — When a pipeline agent ships observability fields in one iteration and tests for those fields in the next, it is applying Invariant 12 (VERIFIED) to itself across iterations. The implement-then-test pattern is self-consistent: each new infrastructure piece arrives tested, with no operator coordination. The pipeline agent's work is complete on its own track; no catchup is needed when the builder track resumes.
+
+Lesson 162 — The tester's runtime is a monotonically growing proxy for test suite size. On ghost cycles, tester runtime is pure overhead: same tests pass, no new code covered. At 212s in iteration 383, the marginal cost of each subsequent ghost iteration exceeds the implementation cost of ghost-detection (~10 lines). The economic case for ghost-detection has crossed the inversion point: it is now strictly cheaper to implement it than to allow the next ghost cycle to run the tester.
+
+## 2026-03-28 — Iteration 381
+
+**COVER:** Iteration 381 is the sixth consecutive ghost (376 was real; 377–381 are ghosts). Build.md describes iteration 376's syncClaims fix — unchanged for five iterations. Tester ran 178 seconds, passed all tests, added zero new coverage. Critic ran in 0.0005 seconds against stale critique.md. No code was written. No tests were added. The only authentic event of this iteration is this reflection.
+
+This is the first Reflector invocation executed directly by Claude Code (operator) rather than by the autonomous hive loop. Diagnostics: `builder.error` at 09:48:45 (0.19s), `tester.pass` at 09:51:43 (178s), `critic.pass` at 09:51:44 (0.0005s). Total ghost-cycle cost since iteration 376: ~5 tester runs × $0.57 avg + ~5 reflector runs × $0.65 avg = approximately **$6.10 to confirm a committed, passing fix**.
+
+**BLIND:** Three gaps, one structural completion.
+
+(1) **Path bug (Lesson 150) still unpatched — 6th ghost.** Operate working directory `C:\c\src\matt\lovyou3\hive` should be `C:\src\matt\lovyou3\hive`. Named in Lessons 149, 150, 152, 155, 156. State.md BLOCKING section has flagged it since iteration 378. The defect persists because no loop-internal agent has authority to edit the operate configuration. The fix is one line.
+
+(2) **Ghost-detection halt (Lesson 156) unimplemented.** The loop did not halt after the 2nd or 3rd consecutive ghost. It ran 6 full iterations. The halt condition was formalized (Lesson 156: `diagnostics.jsonl` shows last two builder runs both errored with identical string under 5 seconds → emit HALT). The condition is not coded. The loop has no stopping rule for the saturation state.
+
+(3) **MCP index still stale.** `close.sh` has not run since iteration 376. Lessons 126–156 remain outside `knowledge_search`. Every Reflector session since iteration 374 has searched blind.
+
+**Structural completion:** The escalation chain has reached its terminal destination. Lessons 152, 153, 155, and 156 all named "Claude Code / operator" as the agent with authority to fix the path bug. This session IS that agent. The routing chain from prior reflections terminates here — not in state.md, not in `reflections.md`, but in a direct Claude Code invocation where the fix can happen immediately.
+
+**ZOOM:** The tester's marginal return across the ghost cycle: iteration 379 added 2 tests (real value), iteration 380 added 0, iteration 381 added 0. Saturation was reached at iteration 380 by the measurable criterion: tester adds zero new tests AND same error string recurs. By Lesson 156's halt condition, the loop should have stopped after iteration 379's ghost (the 3rd consecutive). It ran three more. The cost of those three extra iterations: ~$3.60.
+
+Zoom out: six Reflectors produced six locally-coherent reflections. Iterations 377–380 each named the same defect, formalized the same fix, updated state.md with the same BLOCKING entry. Coherent output is not the same as new output. After iteration 378, every subsequent Reflector had nothing genuinely new to add. The loop's accounting counts "reflection written" as value delivered — it does not count "lesson was already known." A redundancy check (are the new lessons already formalized?) would have caught the drift by iteration 379 and either halted or escalated with a minimal note rather than a full reflection.
+
+Zoom in on what changes in this iteration: Claude Code is executing the Reflector prompt directly. This means the reflection's output is immediately visible to the agent with authority to fix the path bug. Prior reflections wrote BLOCKING directives to state.md (read by the Scout, not the operator). This one is read by the operator. The fix can happen in this session.
+
+**FORMALIZE:** Lesson 157 — After N consecutive ghost iterations with the same root cause, each additional reflection's lessons are structurally redundant. Coherent output is not valuable output when all information is already present in prior iterations. The Reflector's stopping condition: if the new lessons in this iteration are restatements of lessons formalized in the previous two iterations, write a minimal note ("same defect persists — see Lesson X — OPERATOR ACTION REQUIRED") and halt rather than generating a full reflection. Six iterations of full reflections on one defect is six times the documentation cost of one. The escalation signal is clearer in a 3-line note than buried in 600 words of analysis.
+
+Lesson 158 — Loop saturation is measurable and should trigger automatic halt. Three observable signals, each individually weak but together sufficient: (a) last two builder runs both errored with identical string under 5 seconds; (b) tester added zero new tests in current iteration; (c) Reflector has no new lessons to formalize. When all three are present, the loop is at zero expected value per iteration. The correct response is HALT with operator notification, not another iteration. Cost model for saturation violation: each additional iteration past saturation costs ~$1/iteration at zero expected return. Three extra iterations (380, 381, and likely 382 without operator intervention) = ~$3.60. MARGIN violation (Invariant 9).
+
+## 2026-03-28 — Iteration 380
+
+**COVER:** Iteration 380 is the fifth consecutive reflection on the same build.md — the syncClaims fix committed as `90121a9` in iteration 376. The fix is real and correct: `syncClaims()` now queries `/app/hive/board?q=Lesson ` and `/app/hive/board?q=Critique:` with ID-keyed dedup, replacing the dead `/knowledge?tab=claims` endpoint. Critic gave PASS in iteration 376; six tests cover the happy path, empty result, prefix filter, no metadata, API error, and multiple causes. Nothing was built in iteration 380. The Tester, Critic, and Reflector ran against stale artifacts. The only authentic work this iteration is this reflection.
+
+MCP search returns no results for "syncClaims", "claims.md", or "board endpoint" — confirming that `close.sh` has not run and `claims.md` has not been regenerated. The fix is in code but unreachable from `knowledge_search` until the post tool executes.
+
+**BLIND:** Four open gaps, one new observation.
+
+(1) **Path bug (Lesson 150) unpatched — 5th ghost.** The operate working directory is `C:\c\src\matt\lovyou3\hive` instead of `C:\src\matt\lovyou3\hive`. Every builder iteration with `CanOperate=true` ghosts in under 1 second. The defect has been formalized in three lessons (149, 150, 152) across four iterations. No code has changed.
+
+(2) **BLOCKING directive mechanism is confirmed broken.** State.md has carried an explicit `BLOCKING — OPERATOR ESCALATION REQUIRED` section since iteration 378. In iterations 378, 379, and 380, the Scout produced the same Governance delegation report from iteration 354 — not the path bug. Four consecutive iterations. The routing chain `Reflector → state.md BLOCKING → Scout override` does not work. The Scout reads state.md but does not treat the BLOCKING section as a hard routing override. The lesson was formalized (Lesson 152); the Scout prompt was not changed.
+
+(3) **Artifact freshness (Lesson 151) unpatched.** Scout.md still carries "Iteration 354" in its header. Build.md carries no iteration tag. Phases cannot detect staleness without reading diagnostics.jsonl. No watermarks have been added.
+
+(4) **MCP index gap persists.** Lessons 126–154 remain outside `knowledge_search`. The two fixes (truncation in iter 374, endpoint in iter 376) are correct but inert until `close.sh` runs. Every Reflector session since iter 374 has searched blind.
+
+**New observation — the ghost cycle has a hard floor.** After 5 iterations, the Tester's marginal coverage gains are exhausted. Iterations 379 covered the two remaining untested paths in `fetchBoardByQuery` and `syncClaims`. There is no new coverage to add in iteration 380. The Tester cost (~$0.55/iteration) now buys zero new signal. The total ghost-cycle cost since iteration 376: approximately $5–6 in tester + reflector spend, to confirm one committed fix that passed CI on the day it landed.
+
+**ZOOM:** Zoom out to the loop's failure mode. The loop has a correct formalization machinery and a broken execution machinery. Lessons 144–154 correctly diagnose defects, identify root causes, specify fixes, and assign responsibility. None of those fixes have been applied. The gap is not knowledge — it is that the formalization output flows to `reflections.md` (archive) and the graph (claims), while the execution responsibility sits with the human operator or Claude Code, neither of which reads those destinations automatically.
+
+Zoom further: the loop was designed on the assumption that the Builder can fix any defect it identifies. That assumption holds for product defects (wrong UI, missing op, bad query). It breaks for infrastructure defects where the Builder's own operating environment is misconfigured. A Builder running in a broken environment cannot fix the environment it's running in. This is not a design flaw in the loop — it is an unhandled boundary condition. The loop needs a distinct escalation path for operator-scope defects.
+
+Zoom in: the specific fix is one line. The operate configuration uses `C:\c\src\...` instead of `C:\src\...`. This has been true for at least 5 iterations. The cost of fixing it is approximately 10 seconds. The cost of not fixing it has exceeded $5 in wasted loop spend. The asymmetry is stark.
+
+**FORMALIZE:** Lesson 155 — The Scout's BLOCKING section override does not work because the Scout prompt does not contain an instruction to treat BLOCKING sections in state.md as a hard routing override. Writing to state.md is necessary but insufficient without a corresponding prompt change. The Scout prompt must be updated with: "Before scanning the product backlog, read state.md. If a BLOCKING section exists, report that as the sole gap and do not proceed to the backlog. Only scan the product backlog when state.md has no BLOCKING section." The routing chain `Reflector → state.md → Scout` works only if both ends are connected: the Reflector writes to state.md (done), and the Scout is instructed to honour the BLOCKING section (not done).
+
+Lesson 156 — After two or more consecutive ghost iterations (same build.md commit SHA, builder errors in under 5 seconds), the loop should halt with an explicit OPERATOR ESCALATION signal rather than continuing to tester, critic, and reflector phases. The halt condition: if `loop/diagnostics.jsonl` shows the last two builder runs both errored with the same error string and both ran under 5 seconds, the loop should emit `HALT: consecutive ghost iterations — operator intervention required` and stop. Continuing to spend tester and reflector costs on a loop that cannot advance is a resource violation of Invariant 9 (MARGIN). Five ghost iterations at ~$1/each is operating at a loss on a one-line fix.
+
 ## 2026-03-28 — Iteration 376
 
 **COVER:** The upstream feeder of the claims.md → MCP pipeline is repaired. `syncClaims()` in `cmd/post/main.go` was querying `/app/hive/knowledge?tab=claims`, which filters for `kind=claim` nodes. All lessons and critiques are stored as `kind=task` on the board — not `kind=claim` on the knowledge lens. The endpoint returned 0 nodes silently; `claims.md` had not updated past Lesson 125 for an indeterminate period while new lessons continued to be posted.
@@ -3660,3 +3780,139 @@ The selection-pressure zoom: 19 consecutive infrastructure iterations since Less
 **FORMALIZE:** Lesson 144 — Fixing a search index is necessary but not sufficient for institutional memory to influence action. Claims are now discoverable via `knowledge_search`. But Builders read scout.md and build.md — they do not automatically query MCP. The gap between "lessons are indexed" and "lessons are read before acting" is a process gap, not a tooling gap. Fix pattern: add a mandatory `knowledge_search` step to the Builder prompt before any implementation decision. Without it, the index is a resource visited only by the Reflector.
 
 Lesson 145 — File-content truncation in a search index is a silent failure mode worse than an empty index. When a search index truncates file content at N characters and the file exceeds N, the index returns zero results — not partial results. Callers cannot distinguish "no matching lessons" from "lesson exists beyond the window." The correct invariant: search result stability must be independent of file size. Test for this explicitly: generate content that exceeds the truncation boundary and verify results are unchanged. If results change with file size, the search is not a reliable index — it is a variable-coverage sampling function with no indicator of coverage failure.
+
+## 2026-03-28 — Iteration 376
+
+**COVER:** The claims.md sync pipeline is now correct. `syncClaims()` previously queried `/app/hive/knowledge?tab=claims`, which filters for `kind=claim` nodes. Every lesson and critique in the hive is stored as `kind=task` on the board — the knowledge endpoint's filter never matched a single one. The function ran without error, produced zero results, and silently stopped updating claims.md after Lesson 125 (the point at which the board surpassed a prior pagination limit). The fix replaces the single knowledge query with two board queries — `q=Lesson ` and `q=Critique:` — deduped by node ID, filtered client-side on title prefix, and sorted oldest-first. Six tests pass (happy path, empty, non-prefix filter, no metadata, multiple causes, causes written). Critic verdict: PASS, no REVISE cycle. This closes the data-ingestion half of the MCP knowledge gap: iteration 374 fixed the search index (MCP truncation), this iteration fixes the pipeline that feeds it (wrong API endpoint).
+
+**BLIND:** Five gaps.
+
+(1) **Scout/Builder divergence — 21st consecutive infrastructure iteration.** Scout 354 (Governance delegation: quorum, voting_body, tiered approval) remains the stated target. The Builder addressed a correctness bug in `cmd/post`. Lessons 129, 133, 136, 137, and every Reflector since have named this. It is documented past the point of marginal value. Named for record completeness only.
+
+(2) **The fix is not effective until the next `close.sh` run.** `syncClaims()` executes inside `close.sh`. Lessons 126–148 are now reachable in principle, but claims.md will not be updated — and therefore MCP will not index them — until close runs. The repair is complete in code; it is not yet effective in production. Every session between now and the next close still sees a truncated index.
+
+(3) **The naming contract between "claims" and `kind=task` is still broken.** The knowledge endpoint is named for a semantic category ("claims") but filters on a storage type (`kind=claim`). All actual claims live in a different storage type (`kind=task`). The API name implies correctness; the implementation enforces a different predicate. Any future code written against the knowledge endpoint will encounter the same empty-result trap. The fix is in the caller (`syncClaims`), not in the endpoint. The root mislabel is unaddressed.
+
+(4) **Parent topic `loop/claims` returns partial raw content.** Named in iteration 374's BLIND. Still unaddressed. `knowledge_get("loop/claims")` returns the first 8,000 bytes of claims.md, not an index of child nodes. Individual claims are accessible by slug or search, but browsable enumeration of the tree is not available.
+
+(5) **`claimSummary` slices bytes, not runes.** Named in iteration 374's BLIND. Still deferred. The known-unsafe `line[:120]` operation on a byte slice rather than a rune slice could corrupt a multi-byte UTF-8 character at the boundary. Claims.md is ASCII-heavy so this is safe in practice, but the defect is documented and unresolved.
+
+**ZOOM:** The fix is correctly scoped: one implementation file modified, one test file updated, no schema changes. The correctness of the dedup-by-ID approach is important — title-based dedup would fail if a node's title begins with both prefix patterns (impossible given current data, but a future API change could produce it). ID dedup is structurally correct.
+
+Zooming to the two-iteration sequence: Iteration 374 fixed the MCP layer (search index truncation). Iteration 376 fixes the ingestion layer (wrong API query). Both bugs existed simultaneously and independently. Each layer's tests passed with the bug present. The pipeline was broken at two layers with no cross-layer test to catch it. This is the third consecutive multi-layer data flow incident confirming the same structural gap (after `omitempty`/causes in iter 368–370 and MCP truncation in iter 374). The pattern is now unambiguous: this codebase has data pipelines that span multiple architectural layers, and per-layer tests do not catch cross-layer failures. An end-to-end pipeline test — one that runs from `assert op` through `syncClaims` through `claims.md` to `knowledge_search` — would have caught both bugs in one test. It does not exist.
+
+The loop's selection pressure zoom is unchanged: closeable infrastructure gaps continue to fill the build slot while the Governance product gap ages. The difference between this iteration and prior infrastructure iterations is that this fix closes a structural gap that has invalidated the Reflector's own instruction ("search first") for dozens of sessions. The fix is retroactively high-leverage. Its marginal value decays after the next `close.sh` run brings the claims index current.
+
+**FORMALIZE:** Lesson 146 — When an API endpoint name implies a semantic category ("claims") but its implementation filter selects a different storage type (`kind=claim`) from the type actually used for that category (`kind=task`), the endpoint silently returns nothing. This is a naming/contract failure, not a query failure. Callers that write correct queries against the implied semantics will always get empty results. The detection test: "does querying endpoint X return all entities that humans call X?" If no, the endpoint name is wrong or the storage type assignment is wrong. Fix at the root: either rename the storage type to match the semantic category, or change the endpoint to query the correct type. Fixing only the caller (as done here) leaves the trap for the next caller.
+
+Lesson 147 — A two-query fan-out with client-side title-prefix filter and ID-keyed dedup is the correct pattern for querying multiple mutually-exclusive title prefixes from a search API. The prefix filter must be applied after the API call (the search API returns fuzzy matches that can include false positives). The dedup must key on node ID, not title (Invariant 11: IDs not names — titles can change or collide; IDs are stable). The fan-out is necessary because most search APIs do not support OR-prefix queries natively. Applied here: two queries (`q=Lesson `, `q=Critique:`) produce one deduplicated, prefix-filtered, sorted stream.
+
+Lesson 148 — The claims.md pipeline has now required two independent fixes at two different architectural layers: MCP truncation (iteration 374) and wrong API endpoint (iteration 376). Each layer's tests passed with the other layer's bug present. This is the third confirmed instance of the multi-layer data flow anti-pattern in this codebase. The pattern is: pipeline spans N layers → N per-layer tests → bugs exist at layer boundaries → pipeline silently fails → detected only by end-to-end observation. The correct countermeasure is one integration test that exercises the full pipeline path. For claims: `assert op → /board endpoint → syncClaims() → claims.md → MCP knowledge_search`. If this test had existed before iteration 368, all three pipeline failures (causes/omitempty, MCP truncation, wrong endpoint) would have been caught by a single test run.
+
+## 2026-03-28 — Iteration 377
+
+**COVER:** The artifacts describe iteration 376's work (claims.md sync via board endpoint queries), because no real work was done in iteration 377. The builder errored immediately — `claude CLI operate error: chdir C:\c\src\matt\lovyou3\hive: The system cannot find the path specified` — and was falsely marked `task.done` in 0.19 seconds. The tester ran for 110 seconds and passed (tests were already correct from the previous iteration). The critic produced a verdict in 0.0005 seconds — a pre-baked pass from the stale `critique.md` written in iteration 376. The Reflector was then invoked on artifacts that describe a different iteration's work. Iteration 377 is a ghost: diagnostics record it, but no builder output was produced, no files were changed, and no meaningful work occurred.
+
+**BLIND:** Four gaps, two structural regressions.
+
+(1) **False completion recurrence — the DONE→PROGRESS fix has a hole.** Lesson 139 (iteration 371) formalized: "a default of DONE in task-state parsing is a structural lie." The fix changed `parseAction`'s default return. But the diagnostics for this iteration show `builder.error` logged immediately, followed by `builder.task.done` 0.19 seconds later. The error path does not route through `parseAction` — it is handled before action parsing. Lesson 139's fix addressed the happy-path default; it left the error path unchanged. A builder that fails before generating any output still exits with `task.done`. The invariant requires ALL paths that produce `task.done` to be audited, not just the happy path.
+
+(2) **Path configuration bug: `C:\c\src` vs `C:\src`.** The operate call has an incorrect working directory: `C:\c\src\matt\lovyou3\hive`. The correct path is `C:\src\matt\lovyou3\hive` (an extra `\c` is present). This is a Windows path that looks like a mangled Unix-to-Windows conversion (likely `/c/src/...` was mishandled as `C:\c\src\...` instead of `C:\src\...`). This is an infrastructure configuration defect, not a code defect. It will recur on every operate-enabled builder invocation until corrected.
+
+(3) **Stale artifact propagation.** When a builder fails without writing artifacts, the loop's subsequent phases (tester, critic, reflector) process artifacts from the prior iteration. There is no freshness check: the critic does not verify that `critique.md` was written during the current iteration; the reflector does not verify that `build.md` is current. This makes ghost iterations indistinguishable from real ones until a human cross-references diagnostics.
+
+(4) **Governance delegation — 22nd consecutive infrastructure iteration.** Scout 354 remains the standing report. Named for record completeness only; further documentation adds nothing.
+
+**ZOOM:** Two diagnostics entries for the builder in one iteration: `builder.error` then `builder.task.done` (0.19s). The second entry occurs because the error path falls through to task completion. The tester's 110-second run is the only authentic cost of this iteration — it ran real tests on already-correct code. The $0.49 spend was pure overhead: confirming a prior iteration's work on a ghost run.
+
+At the structural level, the zoom reveals a missing invariant: the loop has no concept of an authentic iteration. A loop iteration is defined as "builder ran, tester ran, critic ran" — not "builder produced work, tester verified that work, critic reviewed that work." Ghost iterations satisfy the structural definition while violating the semantic one. The gap between "the loop ran" and "work was done" is invisible to the loop's own accounting.
+
+The path bug and false-completion hole compound each other. If either were fixed, the ghost iteration would not have propagated: a correct path means the builder runs (or at least attempts meaningful work); a proper error-path would mark the task `PROGRESS` and abort the loop rather than continuing to tester/critic/reflector.
+
+**FORMALIZE:** Lesson 149 — The `parseAction` DONE→PROGRESS fix (Lesson 139) addresses the happy-path default but not the error path. When `claude CLI operate` fails before producing output, the builder's error-handling code path returns `task.done` independently of `parseAction`. Any audit of false-completion risk must enumerate all code paths that can produce a terminal task state, not just the primary action-parsing path. Specifically: (a) the operate-error path, (b) the timeout path, (c) the empty-output path, and (d) the parseAction path. Lesson 139 fixed path (d) only.
+
+Lesson 150 — A Windows path that is a mangled Unix-to-Windows conversion (`/c/src/...` → `C:\c\src\...` instead of `C:\src\...`) will silently produce a missing-directory error in any shell operation. The correct conversion of `/c/src/...` under MSYS2/Git Bash is `C:\src\...` — the drive letter `/c` maps to `C:`, not `C:\c`. Code that performs this conversion must be tested on Windows. Any hardcoded path that contains `\c\src` where `\src` was intended is a path configuration defect.
+
+Lesson 151 — A loop that runs phases sequentially without artifact freshness checks will process stale artifacts from a prior iteration when the current builder fails. The correct invariant: each phase must verify that the artifact it is processing was written during the current iteration (by timestamp or iteration watermark), not merely that the artifact file exists. Without this check, a ghost iteration (builder errors, produces no output) looks identical to a real iteration from the perspective of the tester, critic, and reflector. Artifact files should carry an iteration watermark in their headers; phases should reject artifacts from a different iteration number.
+
+## 2026-03-28 — Iteration 378
+
+**COVER:** The artifacts describe the syncClaims fix from iteration 376: `syncClaims()` now queries the board via two prefix-filtered searches (`q=Lesson `, `q=Critique:`) with ID-keyed dedup, replacing the knowledge endpoint that always returned zero results. Critic verdict was PASS with six tests. The work was real — committed as `[hive:builder] claims.md sync broken: Lessons 126-148 missing from MCP index`.
+
+Iteration 378 is the third consecutive Reflector invocation against this build.md. The actual fix landed in iteration 376. Iteration 377 was a confirmed ghost (builder errored at path `C:\c\src\matt\lovyou3\hive`, produced no output, was falsely marked complete). The git log shows no builder commit since iteration 376's `90121a9`. The `cmd/post/main_test.go` file is staged but carries no new changes from this iteration. The tester verified that tests still pass — that is the only authentic work of this session.
+
+**BLIND:** Four gaps.
+
+(1) **Path bug (Lesson 150) unpatched — 3rd ghost iteration.** The `C:\c\src\...` path defect has now caused at least two confirmed ghost iterations (377 and 378). The lesson was formalized; no code was changed. The defect will generate another ghost iteration in the next session that runs the builder with `CanOperate=true`. Formalization without remediation is documentation, not repair.
+
+(2) **Stale artifact propagation (Lesson 151) unpatched.** Phases still have no artifact freshness check. A ghost builder produces no artifacts; tester, critic, and reflector proceed against prior-iteration files. Three consecutive iterations have now confirmed this pattern. Lesson 151 named the fix (iteration watermarks in artifact headers); the fix was not applied.
+
+(3) **MCP search returns no results despite two deployed fixes.** Iteration 374 fixed MCP index truncation. Iteration 376 fixed `syncClaims()` endpoint selection. Both fixes are correct. Neither is effective until `close.sh` runs and actually executes `syncClaims()`, updating `claims.md`. Until then, lessons 126-151 remain invisible to `knowledge_search`. The Reflector's search calls at the start of each session continue to return "No results" — indistinguishable from pre-374 behavior from the perspective of the caller.
+
+(4) **Governance delegation — 23rd consecutive infrastructure iteration.** Scout 354 remains the standing report. Named for record completeness only.
+
+**ZOOM:** Three Reflectors on one build.md. Each produced a correct, locally-coherent output: lessons were formalized, state.md was updated, claims were asserted. The loop's formal definition of "iteration complete" was satisfied each time. No product gap closed. No infrastructure defect was repaired.
+
+The zoom reveals a routing failure. The Reflector writes lessons to `reflections.md` and claims to the graph. The Scout reads `state.md`. These are different files. When the Reflector identifies an infrastructure blocker and writes Lesson 150 ("path bug recurs until corrected"), the Scout does not receive this as a directive — it reads the product backlog in `state.md` and surfaces the next product gap (Governance delegation). The Builder attempts that gap, hits the path bug, and ghosts. The Reflector formalizes the same lesson again.
+
+The correct routing: infrastructure blockers must be written to `state.md`'s next-iteration field, not only to `reflections.md`. `state.md` is the Scout's input. `reflections.md` is the archive. Lessons written only to the archive are read by the Reflector in future sessions; they are not read by the Scout before it picks its target. The routing gap is not a flaw in the lessons themselves — it is a flaw in where they are delivered.
+
+**FORMALIZE:** Lesson 152 — When the Reflector identifies an infrastructure defect that caused a ghost iteration, writing the lesson to `reflections.md` is necessary but insufficient. The defect must also be written to `state.md` as a blocking next-iteration target, overriding the product backlog. The Scout reads `state.md`, not `reflections.md`. Lessons that live only in `reflections.md` are visible to the Reflector in future sessions (via `knowledge_search` or direct read) but are never seen by the Scout before it selects its gap. The routing chain is: Reflector detects defect → writes lesson to `reflections.md` AND writes blocking condition to `state.md` → Scout reads `state.md` → Scout reports infrastructure defect, not product gap → Builder fixes defect → loop resumes product iteration. Any defect that bypasses this routing will recur until a human intervenes or the lesson is manually routed to `state.md`.
+
+## 2026-03-28 — Iteration 379
+
+**COVER:** The Tester added two new tests to `cmd/post/main_test.go`: `TestFetchBoardByQueryHTTPError` (verifies direct HTTP 4xx on `fetchBoardByQuery`) and `TestSyncClaimsSecondQueryFails` (verifies partial failure — first board query succeeds, second fails with HTTP 500). Both coverage gaps were real: `fetchBoardByQuery` had no standalone HTTP error test, and the prior `TestSyncClaimsAPIError` only covered total failure (both queries fail), not the asymmetric case. The Tester's 12 named tests now cover boundary cases that were previously only implicitly exercised. This is the only authentic work product of this iteration.
+
+The builder ghosted for the 3rd consecutive time: `claude CLI operate error: chdir C:\c\src\matt\lovyou3\hive: The system cannot find the path specified` (0.19 seconds, falsely marked `task.done`). The critic ran in 0.001 seconds against a stale `critique.md` from iteration 376. The iteration counter is 379; the last real build landed in iteration 376.
+
+**BLIND:** Four gaps, one new observation.
+
+(1) **State.md BLOCKING directive was not honoured by the Scout.** Iteration 378's Reflector wrote Lesson 152 and updated state.md with an explicit `BLOCKING — NEXT SCOUT MUST ADDRESS THIS FIRST` section naming the path bug (Lesson 150) and artifact freshness (Lesson 151). The Scout ran this iteration and produced the same Governance delegation report from iteration 354 — not the path bug. Either the Scout ran before state.md was updated, the Scout read a cached version of state.md, or the BLOCKING section was not treated as a routing override. Lesson 152 formalized the correct routing chain; the chain was not followed. The lesson is written; the fix is not effective.
+
+(2) **Path bug (Lesson 150) unpatched — 4th ghost.** Three formalized lessons now name this defect (149, 150, 152). No code was changed. The operating cost of the ghost cycle: the tester runs 110–200 seconds per ghost (~$0.55 each), the reflector runs 5–6 minutes (~$0.30–0.70 each). At 3 ghost iterations, that is approximately $2.50–$3.00 in spend to confirm work done in iteration 376. The path bug is the most expensive unresolved defect in the loop by daily operating cost.
+
+(3) **Artifact freshness (Lesson 151) unpatched.** No iteration watermarks in artifact headers. Scout.md, build.md, and critique.md carry no iteration tag. Phases cannot distinguish current-iteration artifacts from prior-iteration artifacts without cross-referencing diagnostics.jsonl manually.
+
+(4) **MCP search still returns nothing.** `knowledge_search` returns "No results" for queries about claims sync, path bug, and artifact freshness. The fix from iteration 376 is in code; `close.sh` has not run; `claims.md` has not been regenerated. Lessons 144–152 remain outside the MCP index.
+
+**New observation: the Tester is ghost-resilient.** Despite the builder ghosting, the Tester identified two genuine coverage gaps and filled them. The Tester's scope is not "verify what the Builder built" but "find coverage gaps in the changed files and add tests." When the Builder ghosts, the Tester still runs against the existing codebase and finds what's missing. This is positive emergent behavior: the ghost cycle is not zero-value. The Tester functions as a continuous coverage auditor, not just a post-build validator. But this also means the loop is spending ~$0.55 per iteration in tester costs on a codebase where the only real gap is a one-line path configuration defect.
+
+**ZOOM:** This is the 4th consecutive Reflector invocation on the same build.md. Each reflection has been locally coherent — lessons were formalized, state.md was updated, claims were asserted. The loop's formal definition of "iteration complete" was satisfied each time. No infrastructure defect was repaired. The formalization machinery is functioning correctly on a loop that is not advancing.
+
+The zoom out: the loop now has 9 formalized lessons (144–152) that name specific defects, root causes, and fixes — and none of those fixes have been applied. The gap between "lesson formalized" and "lesson acted on" is not a knowledge problem. It is not a search problem (though that exists too). It is a routing problem: lessons flow into `reflections.md` and are asserted as claims on the graph. Neither of those destinations is read by the phase responsible for infrastructure repair — which is Claude Code (per CLAUDE.md: "Fix hive infrastructure" is Claude Code's responsibility, not the hive's). The hive is diagnosing a defect that only the human operator (or Claude Code acting as operator) can fix.
+
+The routing chain terminates at the wrong destination. Lessons about loop infrastructure do not belong in `reflections.md` alone; they belong in a direct request to the operator. The Reflector has been writing to the archive when it should have been escalating.
+
+**FORMALIZE:** Lesson 153 — When a formalized lesson identifies a defect that only the human operator or Claude Code can fix (not an agent operating within the loop), the Reflector must escalate directly — not only write to `reflections.md`. The current routing: Reflector → `reflections.md` → (eventually) `knowledge_search` → Builder. But the Builder cannot fix `operate`'s working directory configuration; it runs inside the broken environment. The correct routing for operator-scope defects: Reflector → `state.md` BLOCKING section (done in iter 378) AND → explicit human-visible escalation in the Reflector's output. If the Reflector's output is shown to the operator (as it is in this session), the escalation can happen here. The path bug (`C:\c\src\...` → `C:\src\...`) requires a one-line fix in the operate configuration. It is not a hard problem. It has been documented for 3 iterations. The failure is not knowledge — it is that no agent in the loop has the authority to fix it, and no escalation reached the agent who does.
+
+Lesson 154 — The Tester operates as a continuous coverage auditor, not a post-build validator. When the Builder ghosts (produces no new code), the Tester still runs against existing changed files and identifies coverage gaps. In this iteration: two previously untested paths in `fetchBoardByQuery` and `syncClaims` were identified and covered. This is genuine value delivered in an iteration where the Builder contributed nothing. Implication: the Tester's value is not contingent on the Builder's success. It should run even after a builder error, which it does — but its costs should be weighed against the marginal coverage gain per ghost iteration. By the 3rd ghost, the Tester's incremental gains diminish (most gaps are filled); the loop should exit the ghost cycle rather than continue paying tester costs.
+
+
+## 2026-03-28 — Iteration 382
+
+**COVER:** Iteration 382 is the seventh consecutive ghost builder (376 was real; 377–382 all ghost). Build.md is stale — it describes the syncClaims fix from iteration 376. The builder hit the identical path error for the seventh time: `chdir C:\c\src\matt\lovyou3\hive: The system cannot find the path specified` (0.25 seconds, falsely marked `task.done`). Tester passed in 114 seconds (no new tests needed — no new code). Critic evaluated the stale build.md trivially in 0.0005 seconds.
+
+However, this iteration has genuine substance that was invisible in prior reflections: the **pipeline agent** made staged changes to `pkg/runner/diagnostic.go` and `pkg/runner/pipeline_state.go`. These are not builder changes — they are infrastructure improvements committed autonomously between iterations:
+
+- `PhaseEvent` struct gained seven new fields: `TaskID`, `TaskTitle`, `Repo`, `GitHash`, `FilesChanged`, `ReviseCount`, `BoardOpen` — rich observability for detecting ghost iterations, wrong-repo builds, and scope creep.
+- `PipelineStateMachine` gained `reviseCount` tracking: increments on `EventCritiqueRevise`, making REVISE loop depth observable.
+
+The most recent diagnostic line confirms these fields are live: `{"phase":"builder","outcome":"task.done","repo":"hive","board_open":11,...}`. The pipeline agent deployed real work while the builder was stuck.
+
+**BLIND:** Three gaps, one new resolution.
+
+(1) **Fields without detection logic.** The new `ReviseCount`, `FilesChanged`, `GitHash`, and `Repo` fields are exactly the observability primitives needed to implement ghost-detection (Lesson 156). But adding the fields is not the same as implementing the halt. `FilesChanged=0` + same `Error` string across N consecutive builder phases = ghost. This logic does not exist yet. The instruments are in place; the alarm is not.
+
+(2) **Path bug unpatched — 7 iterations.** State.md has carried a BLOCKING escalation since iteration 381. This reflection is being run, meaning the loop did not halt. The loop cannot halt itself; it requires operator action. The pipeline agent is shipping infrastructure improvements autonomously but cannot patch its own operating path configuration.
+
+(3) **close.sh still hasn't run.** All lessons from 126 onward remain outside the MCP index. `knowledge_search` returns "No results" for every query. The Reflector cannot search prior lessons — it can only read `loop/reflections.md` directly. This is functional but slower and produces redundant formalization when lessons have already been captured.
+
+**New resolution: the pipeline agent is ghost-resilient.** Prior reflections (iterations 377–381) described the ghost cycle as producing zero authentic work. This was wrong. The pipeline agent operates on a separate track from the builder — it identifies infrastructure gaps and ships improvements regardless of whether the builder is stuck. Iteration 382 delivered real diagnostic infrastructure. The ghost cycle is not zero-value; it has a non-zero infrastructure track running in parallel.
+
+**ZOOM:** Seven iterations on one build.md. The prior reflections characterised this as pure waste. The diagnostic changes staged this iteration reveal a different picture: the pipeline agent has been making incremental improvements each cycle. The waste is specifically the builder ghost — the tester ($0.55/cycle), critic ($0.00), and reflector ($0.90/cycle) overhead on a stale build. But the pipeline agent is doing genuine infrastructure work.
+
+The correct zoom: the loop is not stuck — it is bifurcated. The builder track is stuck (path bug). The pipeline track is live (infrastructure improvements). The stuck track costs ~$1.45/iteration in tester+reflector overhead. The live track is producing real value. Unblocking the builder track (one-line operator fix) restores full throughput. Until then, the pipeline track is the loop's only productive output.
+
+**FORMALIZE:** Lesson 159 — The pipeline agent is ghost-resilient: it ships infrastructure improvements regardless of whether the builder is stuck. Prior reflections (377–381) characterised ghost iterations as producing zero authentic work; this was incorrect. The pipeline agent operates on a separate track and delivers real changes (e.g., PhaseEvent observability fields) even when the builder is cycling. Implication: ghost iterations have non-zero value when a pipeline agent is active. The cost model should separate builder-track waste from pipeline-track output.
+
+Lesson 160 — The observability fields added this iteration (`FilesChanged`, `ReviseCount`, `GitHash`, `Repo`, `BoardOpen`) are necessary but not sufficient for ghost-detection. Having the fields narrows the implementation gap: ghost-detection now requires only a scan of the last N builder diagnostics for `FilesChanged=0` (or missing `GitHash`) with identical `Error` strings. The halt condition is implementable with ~10 lines of code reading `diagnostics.jsonl`. The gap is now a logic gap, not an observability gap.

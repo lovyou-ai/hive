@@ -10,20 +10,26 @@ import (
 )
 
 // PhaseEvent is a diagnostic event emitted by every pipeline phase.
-// Not just failures — records tokens, duration, and outcome for every run.
-// The Observer uses this to detect inefficiency, not just errors.
-// Cost is a derivative of tokens × model rate — track the raw data.
+// The hive's nervous system — everything an agent needs to detect
+// inefficiency, stuck tasks, wrong-repo builds, and scope creep.
 type PhaseEvent struct {
-	Phase        string  `json:"phase"`
-	Outcome      string  `json:"outcome,omitempty"`       // "success", "failure", "revise", "skip"
-	Error        string  `json:"error,omitempty"`
-	Preview      string  `json:"preview,omitempty"`
-	Model        string  `json:"model,omitempty"`          // which model was used
-	InputTokens  int     `json:"input_tokens,omitempty"`
-	OutputTokens int     `json:"output_tokens,omitempty"`
-	DurationSecs float64 `json:"duration_secs,omitempty"`  // wall clock time
-	CostUSD      float64 `json:"cost_usd,omitempty"`       // derived, kept for convenience
-	Timestamp    string  `json:"timestamp"`
+	Phase         string  `json:"phase"`
+	Outcome       string  `json:"outcome,omitempty"`        // "success", "failure", "revise", "skip"
+	Error         string  `json:"error,omitempty"`
+	Preview       string  `json:"preview,omitempty"`
+	Model         string  `json:"model,omitempty"`           // which model was used
+	TaskID        string  `json:"task_id,omitempty"`         // which task was worked
+	TaskTitle     string  `json:"task_title,omitempty"`      // task title for pattern detection
+	Repo          string  `json:"repo,omitempty"`            // which repo was targeted
+	GitHash       string  `json:"git_hash,omitempty"`        // commit produced
+	FilesChanged  int     `json:"files_changed,omitempty"`   // scope indicator
+	ReviseCount   int     `json:"revise_count,omitempty"`    // REVISE loops this cycle
+	BoardOpen     int     `json:"board_open,omitempty"`      // open tasks at this point
+	InputTokens   int     `json:"input_tokens,omitempty"`
+	OutputTokens  int     `json:"output_tokens,omitempty"`
+	DurationSecs  float64 `json:"duration_secs,omitempty"`   // wall clock time
+	CostUSD       float64 `json:"cost_usd,omitempty"`        // derived, kept for convenience
+	Timestamp     string  `json:"timestamp"`
 }
 
 // appendDiagnostic appends a PhaseEvent as a JSON line to

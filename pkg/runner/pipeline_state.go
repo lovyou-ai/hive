@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"path/filepath"
 	"time"
 )
 
@@ -92,8 +93,9 @@ var stateAgents = map[PipelineState]string{
 // Instead of a for-loop over roles, events trigger transitions
 // and transitions invoke agents.
 type PipelineStateMachine struct {
-	state  PipelineState
-	runner *Runner
+	state       PipelineState
+	runner      *Runner
+	reviseCount int // how many REVISE loops this cycle
 }
 
 // NewPipelineStateMachine creates a state machine starting at idle.
@@ -129,6 +131,10 @@ func (sm *PipelineStateMachine) Transition(event PipelineEvent) (PipelineState, 
 	prev := sm.state
 	sm.state = next
 	agent := stateAgents[next]
+
+	if event == EventCritiqueRevise {
+		sm.reviseCount++
+	}
 
 	log.Printf("[pipeline] %s --%s--> %s (invoke: %s)", prev, event, next, agent)
 	return next, agent, nil
@@ -186,12 +192,23 @@ func (sm *PipelineStateMachine) Run(ctx context.Context) error {
 		// Determine the next event based on what happened.
 		event := sm.inferEvent(agent)
 
-		// Record diagnostic for every phase — not just failures.
+		// Record diagnostic for every phase — the hive's nervous system.
+		boardOpen := 0
+		if tasks, err := sm.runner.cfg.APIClient.GetTasks(sm.runner.cfg.SpaceSlug, ""); err == nil {
+			for _, t := range tasks {
+				if t.Kind == "task" && t.State != "done" && t.State != "closed" {
+					boardOpen++
+				}
+			}
+		}
 		sm.runner.appendDiagnostic(PhaseEvent{
 			Phase:        agent,
 			Outcome:      string(event),
-			CostUSD:      sm.runner.cost.TotalCostUSD,
+			Repo:         filepath.Base(sm.runner.cfg.RepoPath),
+			BoardOpen:    boardOpen,
+			ReviseCount:  sm.reviseCount,
 			DurationSecs: phaseDuration.Seconds(),
+			CostUSD:      sm.runner.cost.TotalCostUSD,
 		})
 		if _, _, err := sm.Transition(event); err != nil {
 			log.Printf("[pipeline] transition error: %v — returning to idle", err)

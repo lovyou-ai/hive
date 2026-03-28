@@ -177,3 +177,36 @@ func TestInferEventCriticPass(t *testing.T) {
 		t.Errorf("inferEvent(critic) with PASS: got %s, want %s", got, EventCritiquePass)
 	}
 }
+
+// TestReviseCountIncrementsOnCritiqueRevise verifies that the reviseCount field
+// increments each time EventCritiqueRevise is applied and does not increment
+// for other events.
+func TestReviseCountIncrementsOnCritiqueRevise(t *testing.T) {
+	sm := &PipelineStateMachine{state: StateReviewing}
+
+	// First REVISE loop.
+	if _, _, err := sm.Transition(EventCritiqueRevise); err != nil {
+		t.Fatalf("first revise transition: %v", err)
+	}
+	if sm.reviseCount != 1 {
+		t.Errorf("reviseCount after first REVISE = %d, want 1", sm.reviseCount)
+	}
+
+	// Transition to reviewing again and apply a second REVISE.
+	sm.state = StateReviewing
+	if _, _, err := sm.Transition(EventCritiqueRevise); err != nil {
+		t.Fatalf("second revise transition: %v", err)
+	}
+	if sm.reviseCount != 2 {
+		t.Errorf("reviseCount after second REVISE = %d, want 2", sm.reviseCount)
+	}
+
+	// A non-REVISE transition must not affect reviseCount.
+	sm.state = StateReviewing
+	if _, _, err := sm.Transition(EventCritiquePass); err != nil {
+		t.Fatalf("pass transition: %v", err)
+	}
+	if sm.reviseCount != 2 {
+		t.Errorf("reviseCount changed on non-REVISE event: got %d, want 2", sm.reviseCount)
+	}
+}

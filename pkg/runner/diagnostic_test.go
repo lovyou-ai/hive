@@ -91,6 +91,72 @@ func TestAppendDiagnosticAppendsLines(t *testing.T) {
 	}
 }
 
+// TestPhaseEventNewFieldsRoundTrip verifies that the fields added to PhaseEvent
+// (TaskID, TaskTitle, Repo, GitHash, FilesChanged, ReviseCount, BoardOpen)
+// survive a JSON marshal/unmarshal cycle.  These fields were added to give the
+// Observer enough signal to detect inefficiency and scope creep — missing them
+// would silently drop diagnostic data.
+func TestPhaseEventNewFieldsRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "loop"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	pe := PhaseEvent{
+		Phase:        "builder",
+		Outcome:      "task.done",
+		TaskID:       "task-abc",
+		TaskTitle:    "Add quorum logic",
+		Repo:         "hive",
+		GitHash:      "deadbeef",
+		FilesChanged: 3,
+		ReviseCount:  1,
+		BoardOpen:    4,
+		InputTokens:  200,
+		OutputTokens: 80,
+		DurationSecs: 12.5,
+		CostUSD:      0.005,
+		Timestamp:    "2026-03-28T00:00:00Z",
+	}
+
+	if err := appendDiagnostic(dir, pe); err != nil {
+		t.Fatalf("appendDiagnostic: %v", err)
+	}
+
+	path := filepath.Join(dir, "loop", "diagnostics.jsonl")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("file not created: %v", err)
+	}
+
+	var got PhaseEvent
+	if err := json.Unmarshal(data[:len(data)-1], &got); err != nil {
+		t.Fatalf("invalid JSON: %v\ncontent: %s", err, data)
+	}
+
+	if got.TaskID != pe.TaskID {
+		t.Errorf("TaskID: got %q, want %q", got.TaskID, pe.TaskID)
+	}
+	if got.TaskTitle != pe.TaskTitle {
+		t.Errorf("TaskTitle: got %q, want %q", got.TaskTitle, pe.TaskTitle)
+	}
+	if got.Repo != pe.Repo {
+		t.Errorf("Repo: got %q, want %q", got.Repo, pe.Repo)
+	}
+	if got.GitHash != pe.GitHash {
+		t.Errorf("GitHash: got %q, want %q", got.GitHash, pe.GitHash)
+	}
+	if got.FilesChanged != pe.FilesChanged {
+		t.Errorf("FilesChanged: got %d, want %d", got.FilesChanged, pe.FilesChanged)
+	}
+	if got.ReviseCount != pe.ReviseCount {
+		t.Errorf("ReviseCount: got %d, want %d", got.ReviseCount, pe.ReviseCount)
+	}
+	if got.BoardOpen != pe.BoardOpen {
+		t.Errorf("BoardOpen: got %d, want %d", got.BoardOpen, pe.BoardOpen)
+	}
+}
+
 func TestCountDiagnostics(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "loop"), 0755); err != nil {
