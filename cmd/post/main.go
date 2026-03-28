@@ -22,9 +22,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -299,69 +302,68 @@ func buildTitle(build []byte) string {
 	return ""
 }
 
-// syncClaims fetches KindClaim nodes from the graph and writes them to outPath
-// as a markdown file. The MCP knowledge server indexes this file so that
-// knowledge_search can find claims asserted via the assert op.
+// boardNode is the subset of a board Node needed for claims.md.
+type boardNode struct {
+	ID        string    `json:"id"`
+	Title     string    `json:"title"`
+	Body      string    `json:"body"`
+	State     string    `json:"state"`
+	Author    string    `json:"author"`
+	Causes    []string  `json:"causes"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// claimTitlePrefixes lists board node title prefixes that identify claim-like
+// knowledge entries. Lessons and Critiques are stored as kind=task on the board,
+// not as kind=claim on the knowledge lens — the knowledge endpoint returns 0.
+var claimTitlePrefixes = []string{"Lesson ", "Critique:"}
+
+// syncClaims fetches lesson and critique nodes from the board (stored as
+// kind=task, not kind=claim) and writes them to outPath as a markdown file.
+// The MCP knowledge server indexes this file so knowledge_search can find them.
 func syncClaims(apiKey, baseURL, outPath string) error {
-	u := baseURL + "/app/hive/knowledge?tab=claims&limit=200"
-	req, err := http.NewRequest("GET", u, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+apiKey)
-	req.Header.Set("Accept", "application/json")
+	seen := make(map[string]bool)
+	var allNodes []boardNode
 
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, b)
+	for _, prefix := range claimTitlePrefixes {
+		nodes, err := fetchBoardByQuery(apiKey, baseURL, prefix)
+		if err != nil {
+			return fmt.Errorf("fetch board q=%q: %w", prefix, err)
+		}
+		for _, n := range nodes {
+			if !seen[n.ID] && hasClaimPrefix(n.Title) {
+				seen[n.ID] = true
+				allNodes = append(allNodes, n)
+			}
+		}
 	}
 
-	var result struct {
-		Claims []struct {
-			ID        string   `json:"id"`
-			Title     string   `json:"title"`
-			Body      string   `json:"body"`
-			State     string   `json:"state"`
-			Author    string   `json:"author"`
-			CreatedAt string   `json:"created_at"`
-			Causes    []string `json:"causes"`
-		} `json:"claims"`
-	}
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("read body: %w", err)
-	}
-	if err := json.Unmarshal(data, &result); err != nil {
-		return fmt.Errorf("decode claims: %w", err)
-	}
-
-	if len(result.Claims) == 0 {
+	if len(allNodes) == 0 {
 		return nil // nothing to write
 	}
+
+	// Sort oldest-first so lessons appear in natural chronological order.
+	sort.Slice(allNodes, func(i, j int) bool {
+		return allNodes[i].CreatedAt.Before(allNodes[j].CreatedAt)
+	})
 
 	var sb strings.Builder
 	sb.WriteString("# Knowledge Claims\n\n")
 	sb.WriteString("Asserted knowledge claims from the hive graph store.\n\n")
-	for _, c := range result.Claims {
-		sb.WriteString(fmt.Sprintf("## %s\n\n", c.Title))
-		if c.State != "" || c.Author != "" {
-			sb.WriteString("**State:** " + c.State)
-			if c.Author != "" {
-				sb.WriteString(" | **Author:** " + c.Author)
+	for _, n := range allNodes {
+		sb.WriteString(fmt.Sprintf("## %s\n\n", n.Title))
+		if n.State != "" || n.Author != "" {
+			sb.WriteString("**State:** " + n.State)
+			if n.Author != "" {
+				sb.WriteString(" | **Author:** " + n.Author)
 			}
 			sb.WriteString("\n\n")
 		}
-		if len(c.Causes) > 0 {
-			sb.WriteString("**Causes:** " + strings.Join(c.Causes, ", ") + "\n\n")
+		if len(n.Causes) > 0 {
+			sb.WriteString("**Causes:** " + strings.Join(n.Causes, ", ") + "\n\n")
 		}
-		if c.Body != "" {
-			sb.WriteString(c.Body + "\n\n")
+		if n.Body != "" {
+			sb.WriteString(n.Body + "\n\n")
 		}
 		sb.WriteString("---\n\n")
 	}
@@ -370,8 +372,53 @@ func syncClaims(apiKey, baseURL, outPath string) error {
 		return fmt.Errorf("write %s: %w", outPath, err)
 	}
 
-	fmt.Printf("synced %d claims to %s\n", len(result.Claims), outPath)
+	fmt.Printf("synced %d claims to %s\n", len(allNodes), outPath)
 	return nil
+}
+
+// fetchBoardByQuery fetches board nodes whose title or body contains q.
+// Returns only nodes whose title has a recognised claim prefix (client-side filter).
+func fetchBoardByQuery(apiKey, baseURL, q string) ([]boardNode, error) {
+	u := baseURL + "/app/hive/board?q=" + url.QueryEscape(q)
+	req, err := http.NewRequest("GET", u, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, b)
+	}
+
+	var result struct {
+		Nodes []boardNode `json:"nodes"`
+	}
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read body: %w", err)
+	}
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, fmt.Errorf("decode nodes: %w", err)
+	}
+	return result.Nodes, nil
+}
+
+// hasClaimPrefix reports whether title starts with a recognised claim prefix.
+func hasClaimPrefix(title string) bool {
+	for _, p := range claimTitlePrefixes {
+		if strings.HasPrefix(title, p) {
+			return true
+		}
+	}
+	return false
 }
 
 // assertScoutGap reads loop/scout.md, extracts the gap title and iteration number,

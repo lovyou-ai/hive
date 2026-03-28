@@ -75,29 +75,125 @@ func TestPostCreatesDocument(t *testing.T) {
 	}
 }
 
-// TestSyncClaimsWritesFile verifies that syncClaims fetches claims from the API
-// and writes them as markdown to the given output path.
+// TestSyncClaimsWritesFile verifies that syncClaims queries the board for
+// Lesson and Critique: nodes and writes them as markdown to the output path.
 func TestSyncClaimsWritesFile(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/app/hive/knowledge" {
+		if r.URL.Path != "/app/hive/board" {
+			http.NotFound(w, r)
+			return
+		}
+		q := r.URL.Query().Get("q")
+		w.Header().Set("Content-Type", "application/json")
+		switch q {
+		case "Lesson ":
+			json.NewEncoder(w).Encode(map[string]any{
+				"nodes": []map[string]any{
+					{
+						"id":         "node-1",
+						"title":      "Lesson 34: Absence is invisible to traversal",
+						"body":       "The Scout traverses what exists. Tests don't exist, so the Scout never encounters them.",
+						"state":      "done",
+						"author":     "hive",
+						"created_at": "2026-03-01T00:00:00Z",
+					},
+				},
+			})
+		case "Critique:":
+			json.NewEncoder(w).Encode(map[string]any{
+				"nodes": []map[string]any{
+					{
+						"id":         "node-2",
+						"title":      "Critique: PASS — Fix: some bug",
+						"body":       "Verdict: PASS. All tests pass.",
+						"state":      "done",
+						"author":     "hive",
+						"created_at": "2026-03-02T00:00:00Z",
+					},
+				},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]any{"nodes": []any{}})
+		}
+	}))
+	defer srv.Close()
+
+	outPath := filepath.Join(t.TempDir(), "claims.md")
+	if err := syncClaims("lv_testkey", srv.URL, outPath); err != nil {
+		t.Fatalf("syncClaims() error: %v", err)
+	}
+
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("claims.md not written: %v", err)
+	}
+	content := string(data)
+
+	if !strings.Contains(content, "# Knowledge Claims") {
+		t.Error("missing heading")
+	}
+	if !strings.Contains(content, "Lesson 34: Absence is invisible to traversal") {
+		t.Error("missing lesson title")
+	}
+	if !strings.Contains(content, "Critique: PASS — Fix: some bug") {
+		t.Error("missing critique title")
+	}
+	if !strings.Contains(content, "The Scout traverses what exists") {
+		t.Error("missing lesson body")
+	}
+	// Lesson (created_at 03-01) should appear before Critique (created_at 03-02).
+	lessonPos := strings.Index(content, "Lesson 34")
+	critiquePos := strings.Index(content, "Critique: PASS")
+	if lessonPos > critiquePos {
+		t.Error("lesson should appear before critique (sorted oldest-first)")
+	}
+}
+
+// TestSyncClaimsEmptyDoesNotWrite verifies that syncClaims does not write a
+// file when both board queries return zero nodes.
+func TestSyncClaimsEmptyDoesNotWrite(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"nodes": []any{}})
+	}))
+	defer srv.Close()
+
+	outPath := filepath.Join(t.TempDir(), "claims.md")
+	if err := syncClaims("lv_testkey", srv.URL, outPath); err != nil {
+		t.Fatalf("syncClaims() error: %v", err)
+	}
+
+	if _, err := os.Stat(outPath); err == nil {
+		t.Error("claims.md should not be written when there are no claims")
+	}
+}
+
+// TestSyncClaimsFiltersNonClaimNodes verifies that board nodes without a
+// recognised claim title prefix are excluded from claims.md.
+func TestSyncClaimsFiltersNonClaimNodes(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/app/hive/board" {
 			http.NotFound(w, r)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
+		// Return a mix: one genuine lesson, one task that mentions "Lesson" in body only.
 		json.NewEncoder(w).Encode(map[string]any{
-			"claims": []map[string]any{
+			"nodes": []map[string]any{
 				{
-					"title":      "Absence is invisible to traversal",
-					"body":       "The Scout traverses what exists. Tests don't exist, so the Scout never encounters them.",
-					"state":      "claimed",
-					"author":     "Reflector",
+					"id":         "node-1",
+					"title":      "Lesson 42: Something important",
+					"body":       "The lesson body.",
+					"state":      "done",
+					"author":     "hive",
 					"created_at": "2026-03-01T00:00:00Z",
 				},
 				{
-					"title":      "Ship what you build",
-					"body":       "Every build iteration should deploy.",
-					"state":      "verified",
-					"author":     "Builder",
+					"id":         "node-2",
+					"title":      "Fix the Lesson tracker bug",
+					"body":       "This task references a Lesson but is not itself a lesson.",
+					"state":      "done",
+					"author":     "hive",
 					"created_at": "2026-03-02T00:00:00Z",
 				},
 			},
@@ -116,39 +212,11 @@ func TestSyncClaimsWritesFile(t *testing.T) {
 	}
 	content := string(data)
 
-	if !strings.Contains(content, "# Knowledge Claims") {
-		t.Error("missing heading")
+	if !strings.Contains(content, "Lesson 42: Something important") {
+		t.Error("genuine lesson node should be included")
 	}
-	if !strings.Contains(content, "Absence is invisible to traversal") {
-		t.Error("missing first claim title")
-	}
-	if !strings.Contains(content, "Ship what you build") {
-		t.Error("missing second claim title")
-	}
-	if !strings.Contains(content, "Every build iteration should deploy") {
-		t.Error("missing second claim body")
-	}
-	if !strings.Contains(content, "**State:** verified") {
-		t.Error("missing state for verified claim")
-	}
-}
-
-// TestSyncClaimsEmptyDoesNotWrite verifies that syncClaims does not write a
-// file when the API returns zero claims.
-func TestSyncClaimsEmptyDoesNotWrite(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{"claims": []any{}})
-	}))
-	defer srv.Close()
-
-	outPath := filepath.Join(t.TempDir(), "claims.md")
-	if err := syncClaims("lv_testkey", srv.URL, outPath); err != nil {
-		t.Fatalf("syncClaims() error: %v", err)
-	}
-
-	if _, err := os.Stat(outPath); err == nil {
-		t.Error("claims.md should not be written when there are no claims")
+	if strings.Contains(content, "Fix the Lesson tracker bug") {
+		t.Error("non-claim node should be excluded (prefix filter)")
 	}
 }
 
@@ -394,16 +462,21 @@ func TestSyncClaimsAPIError(t *testing.T) {
 	}
 }
 
-// TestSyncClaimsClaimWithNoMetadata verifies that syncClaims writes claim body
-// without the state/author line when both fields are empty.
+// TestSyncClaimsClaimWithNoMetadata verifies that syncClaims writes a lesson node's
+// body without the state/author line when both fields are empty.
 func TestSyncClaimsClaimWithNoMetadata(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/app/hive/board" {
+			http.NotFound(w, r)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
-			"claims": []map[string]any{
+			"nodes": []map[string]any{
 				{
-					"title":      "Body-only claim",
-					"body":       "This claim has no state or author.",
+					"id":         "node-1",
+					"title":      "Lesson 99: Body-only lesson",
+					"body":       "This lesson has no state or author.",
 					"state":      "",
 					"author":     "",
 					"created_at": "2026-03-01T00:00:00Z",
@@ -421,10 +494,10 @@ func TestSyncClaimsClaimWithNoMetadata(t *testing.T) {
 	data, _ := os.ReadFile(outPath)
 	content := string(data)
 
-	if !strings.Contains(content, "Body-only claim") {
+	if !strings.Contains(content, "Lesson 99: Body-only lesson") {
 		t.Error("missing claim title")
 	}
-	if !strings.Contains(content, "This claim has no state or author.") {
+	if !strings.Contains(content, "This lesson has no state or author.") {
 		t.Error("missing claim body")
 	}
 	if strings.Contains(content, "**State:**") {
@@ -1183,18 +1256,23 @@ func TestAssertCritiqueNoTitle(t *testing.T) {
 	}
 }
 
-// TestSyncClaimsMultipleCauses verifies that when a claim has multiple cause IDs,
+// TestSyncClaimsMultipleCauses verifies that when a lesson node has multiple cause IDs,
 // all of them are comma-joined in the **Causes:** line in claims.md.
-// This exercises the strings.Join path added in this iteration.
 func TestSyncClaimsMultipleCauses(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/app/hive/board" {
+			http.NotFound(w, r)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
-			"claims": []map[string]any{
+			"nodes": []map[string]any{
 				{
-					"title":  "Multi-cause claim",
-					"body":   "This claim has two causes.",
-					"causes": []string{"build-doc-aaa", "build-doc-bbb"},
+					"id":         "node-1",
+					"title":      "Lesson 7: Multi-cause lesson",
+					"body":       "This lesson has two causes.",
+					"causes":     []string{"build-doc-aaa", "build-doc-bbb"},
+					"created_at": "2026-03-01T00:00:00Z",
 				},
 			},
 		})
@@ -1225,17 +1303,22 @@ func TestSyncClaimsMultipleCauses(t *testing.T) {
 }
 
 // TestSyncClaimsWritesCauses verifies that syncClaims includes the causes field
-// in claims.md when the API returns claims with causes populated.
+// in claims.md when board nodes have causes populated.
 func TestSyncClaimsWritesCauses(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/app/hive/board" {
+			http.NotFound(w, r)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
-			"claims": []map[string]any{
+			"nodes": []map[string]any{
 				{
-					"title":      "Ship what you build",
+					"id":         "node-1",
+					"title":      "Lesson 4: Ship what you build",
 					"body":       "Every build iteration should deploy.",
-					"state":      "verified",
-					"author":     "Builder",
+					"state":      "done",
+					"author":     "hive",
 					"created_at": "2026-03-01T00:00:00Z",
 					"causes":     []string{"build-doc-abc123"},
 				},
