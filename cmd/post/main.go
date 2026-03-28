@@ -157,6 +157,13 @@ func main() {
 		}
 	}
 
+	// Retroactive priority upgrade: task 468e0549 (title compounding cleanup)
+	// covers 95 nodes, not the 26 originally estimated — bump to high.
+	if err := upgradeTaskPriority(apiKey, baseURL, "468e0549", "high"); err != nil {
+		fmt.Fprintf(os.Stderr, "upgrade task 468e0549 priority: %v\n", err)
+		// Non-fatal — post succeeded.
+	}
+
 	fmt.Printf("posted iteration %s to %s/app/hive/feed\n", iteration, baseURL)
 }
 
@@ -224,11 +231,86 @@ func syncMindState(apiKey, baseURL, state string) error {
 	return nil
 }
 
+// stripFixPrefixes strips all leading "Fix: " prefixes from a title,
+// returning the core title. e.g. "Fix: Fix: X" → "X".
+func stripFixPrefixes(title string) string {
+	for strings.HasPrefix(title, "Fix: ") {
+		title = strings.TrimPrefix(title, "Fix: ")
+	}
+	return title
+}
+
+// findExistingTask searches the board for a task whose title, after stripping
+// all "Fix: " prefixes, matches coreTitle. Returns the node ID if found, empty
+// string if not. Used to deduplicate Fix: tasks created on repeated build failures.
+func findExistingTask(apiKey, baseURL, coreTitle string) (string, error) {
+	if coreTitle == "" {
+		return "", nil
+	}
+	nodes, err := fetchBoardByQuery(apiKey, baseURL, coreTitle)
+	if err != nil {
+		return "", err
+	}
+	for _, n := range nodes {
+		if strings.EqualFold(stripFixPrefixes(n.Title), coreTitle) {
+			return n.ID, nil
+		}
+	}
+	return "", nil
+}
+
+// addTaskComment posts a comment (respond op) on an existing task node.
+// Used when a duplicate Fix: task would otherwise be created.
+func addTaskComment(apiKey, baseURL, nodeID, body string) error {
+	payload, _ := json.Marshal(map[string]string{
+		"op":      "respond",
+		"node_id": nodeID,
+		"body":    body,
+	})
+	req, _ := http.NewRequest("POST", baseURL+"/app/hive/op", bytes.NewReader(payload))
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, b)
+	}
+	return nil
+}
+
 // createTask creates a task on the Board and marks it complete.
 // Returns the task node ID so callers can use it as a cause for subsequent
 // claims (Invariant 2: CAUSALITY — a critique of a task must cite that task).
 // causeIDs links this task to the nodes that triggered it (e.g. the build document).
+//
+// Dedup: if the title starts with "Fix:" and a task with the same core title
+// already exists on the board, a comment is added to the existing task instead
+// of creating a new one. This prevents "Fix: Fix: Fix: X" compounding when
+// repeated build failures each prepend another "Fix: " prefix.
 func createTask(apiKey, baseURL, title, description string, causeIDs []string) (string, error) {
+	// Dedup check: strip all "Fix: " prefixes to get the core title.
+	// If the title has at least one "Fix: " prefix AND an existing task with
+	// the core title exists, comment on it instead of creating a new task.
+	coreTitle := stripFixPrefixes(title)
+	if coreTitle != title && coreTitle != "" {
+		existingID, err := findExistingTask(apiKey, baseURL, coreTitle)
+		if err == nil && existingID != "" {
+			comment := fmt.Sprintf("Fix attempt: %s\n\n%s", title, description)
+			if commentErr := addTaskComment(apiKey, baseURL, existingID, comment); commentErr != nil {
+				return existingID, fmt.Errorf("comment on existing task: %w", commentErr)
+			}
+			fmt.Printf("deduped: commented on existing task %s instead of creating %q\n", existingID, title)
+			return existingID, nil
+		}
+	}
+
 	// Create task (intend op with kind=task).
 	p := map[string]string{
 		"op":          "intend",
@@ -289,6 +371,32 @@ func createTask(apiKey, baseURL, title, description string, causeIDs []string) (
 		return "", fmt.Errorf("complete: HTTP %d: %s", resp2.StatusCode, b)
 	}
 	return taskNodeID, nil
+}
+
+// upgradeTaskPriority sends an edit op to change the priority of a task node.
+func upgradeTaskPriority(apiKey, baseURL, nodeID, priority string) error {
+	payload, _ := json.Marshal(map[string]string{
+		"op":       "edit",
+		"node_id":  nodeID,
+		"priority": priority,
+	})
+	req, _ := http.NewRequest("POST", baseURL+"/app/hive/op", bytes.NewReader(payload))
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, b)
+	}
+	fmt.Printf("upgraded task %s to priority=%s\n", nodeID, priority)
+	return nil
 }
 
 // buildTitle extracts the title from the first line of build.md.

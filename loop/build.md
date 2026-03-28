@@ -1,30 +1,48 @@
-# Build: MCP knowledge search blackout — verified resolved
+# Build: Prevent Fix: title compounding — dedup before creating fix task
 
-## Gap
-Observer audit found `mcp__knowledge__knowledge_search` returning zero results for every query. 145 claims on graph, none reachable via search. Acceptance: `knowledge_search("lesson")` returns at least one result.
+## What Was Built
 
-## Investigation
+Added deduplication to `createTask` in `cmd/post/main.go` to prevent "Fix: Fix: Fix: X" title compounding on the board.
 
-### What I found
-- `loop/claims.md` exists (72KB, 65 claim sections, last synced Mar 28 02:33)
-- `mcp__knowledge__knowledge_search("lesson")` returns **10 results** — acceptance criteria met
-- All 18 mcp-knowledge tests pass, including `TestHandleSearchFindsDeepClaims`
-- `go build ./...` succeeds with no errors
+## Root Cause
 
-### Root cause of prior blackout
-The blackout was a transient state. Prior builder commits (`90121a9`, `3b6cd0e`) fixed the deep-claim search gap by adding `parseClaims()` — which splits `claims.md` into individual `topic` nodes (one per `##` section) so each claim is searchable by name/summary rather than only within the first 4000 chars of the file. Once `cmd/post` ran and wrote a fresh `claims.md`, the search recovered.
+`createTask` always called `op=intend` unconditionally. When a build failed Critic review and the next iteration's `build.md` title was "Fix: [original title]", a new task was created. Repeated failures compounded: "Fix: Fix: X", "Fix: Fix: Fix: X", etc. This produced 95 compound-title tasks.
 
-### Residual gap (not in scope of this acceptance test)
-`claims.md` contains 65 claim sections (Lessons 109–125 + critiques). The graph has 145 claims. Lessons 1–108 are absent — likely because early iterations pre-dated the `createTask("Lesson X: ...")` title convention, or were stored as `kind=claim` on the knowledge lens rather than `kind=task` on the board. The `syncClaims` function only queries the board (`/app/hive/board?q=Lesson`), which returns `kind=task` root nodes. A future iteration should also query `/app/hive/knowledge` (kind=claim) and merge results.
+## Files Changed
+
+### `cmd/post/main.go`
+
+Added three new functions:
+
+- **`stripFixPrefixes(title string) string`** — strips all leading "Fix: " prefixes to get the core title. "Fix: Fix: X" → "X".
+- **`findExistingTask(apiKey, baseURL, coreTitle string) (string, error)`** — searches the board for a task whose title (after stripping Fix: prefixes) matches `coreTitle`. Uses existing `fetchBoardByQuery` with client-side title comparison.
+- **`addTaskComment(apiKey, baseURL, nodeID, body string) error`** — posts `op=respond` on an existing task node (adds a comment/follow-up instead of a new task).
+
+Modified **`createTask`** to run the dedup check before creating:
+1. Strip all "Fix: " prefixes from `title` to get `coreTitle`
+2. If `coreTitle != title` (title had at least one Fix: prefix): query board for existing task
+3. If found: call `addTaskComment`, return existing task ID — no new task created
+4. If not found or board API fails: fall through to normal `op=intend` creation (dedup is best-effort)
+
+Added **`upgradeTaskPriority(apiKey, baseURL, nodeID, priority string) error`** — sends `op=edit` with a new priority value.
+
+In **`main()`**: added a call to upgrade task `468e0549` from low to high (covers 95 nodes, not the 26 originally estimated).
+
+### `cmd/post/main_test.go`
+
+Added 8 new tests:
+- `TestStripFixPrefixes` — 8 cases including double/triple Fix: prefix, no prefix, case-sensitivity
+- `TestAddTaskCommentSendsRespondOp` — verifies op=respond, correct node_id and body
+- `TestAddTaskCommentAPIError` — API error propagated
+- `TestFindExistingTaskMatchesCoreTitle` — finds task with matching stripped title
+- `TestFindExistingTaskNoMatch` — returns empty when no title match
+- `TestCreateTaskDeduplicatesFixTask` — double Fix: prefix triggers comment on existing task, no intend op
+- `TestCreateTaskNoDedup` — non-Fix title always creates new task, board not queried
+- `TestCreateTaskDeduplicatesBoardAPIError` — board API failure is non-fatal, falls through to normal creation
 
 ## Verification
 
-| Check | Result |
-|-------|--------|
-| `knowledge_search("lesson")` returns ≥1 result | ✓ 10 results |
-| `go build -buildvcs=false ./...` | ✓ clean |
-| `go test ./...` | ✓ all pass (18 mcp-knowledge tests, all packages) |
-| Acceptance criteria | ✓ MET |
-
-## Files changed
-None — the fix was already present in code. This build confirmed the acceptance criteria is met and documented the residual 65/145 sync gap as a follow-up.
+```
+go.exe build -buildvcs=false ./...   ✓ no errors
+go.exe test ./...                     ✓ all pass (13 packages)
+```

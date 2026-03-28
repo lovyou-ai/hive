@@ -1746,3 +1746,267 @@ func TestSyncClaimsSecondQueryFails(t *testing.T) {
 		t.Error("claims.md should not be written when a query fails")
 	}
 }
+
+// TestStripFixPrefixes verifies that stripFixPrefixes removes all leading
+// "Fix: " prefixes and returns the core title, not just the first prefix.
+func TestStripFixPrefixes(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"Fix: foo", "foo"},
+		{"Fix: Fix: foo", "foo"},
+		{"Fix: Fix: Fix: foo", "foo"},
+		{"foo", "foo"},
+		{"Fix: ", ""},
+		{"", ""},
+		{"NotFix: foo", "NotFix: foo"},
+		{"fix: lowercase", "fix: lowercase"}, // case-sensitive
+	}
+	for _, tt := range tests {
+		got := stripFixPrefixes(tt.input)
+		if got != tt.want {
+			t.Errorf("stripFixPrefixes(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+// TestAddTaskCommentSendsRespondOp verifies that addTaskComment sends op=respond
+// with the correct node_id and body to /app/hive/op.
+func TestAddTaskCommentSendsRespondOp(t *testing.T) {
+	var received map[string]string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/app/hive/op" {
+			http.NotFound(w, r)
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		json.Unmarshal(body, &received)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"op":"respond"}`))
+	}))
+	defer srv.Close()
+
+	if err := addTaskComment("lv_testkey", srv.URL, "task-abc", "Fix attempt: Fix: X\n\nbuild details"); err != nil {
+		t.Fatalf("addTaskComment() error: %v", err)
+	}
+
+	if received["op"] != "respond" {
+		t.Errorf("op = %q, want %q", received["op"], "respond")
+	}
+	if received["node_id"] != "task-abc" {
+		t.Errorf("node_id = %q, want %q", received["node_id"], "task-abc")
+	}
+	if !strings.Contains(received["body"], "Fix attempt") {
+		t.Errorf("body %q should contain comment text", received["body"])
+	}
+}
+
+// TestAddTaskCommentAPIError verifies that addTaskComment returns an error when
+// the server responds with HTTP 4xx.
+func TestAddTaskCommentAPIError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte("forbidden"))
+	}))
+	defer srv.Close()
+
+	err := addTaskComment("bad_key", srv.URL, "task-xyz", "comment body")
+	if err == nil {
+		t.Fatal("expected error for HTTP 403, got nil")
+	}
+}
+
+// TestFindExistingTaskMatchesCoreTitle verifies that findExistingTask returns the
+// node ID of a board task whose title, after stripping Fix: prefixes, matches
+// the given coreTitle. This is the lookup that prevents Fix: compounding.
+func TestFindExistingTaskMatchesCoreTitle(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/app/hive/board" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"nodes": []map[string]any{
+				{
+					"id":         "task-existing",
+					"title":      "Fix: title compounding",
+					"state":      "done",
+					"created_at": "2026-03-01T00:00:00Z",
+				},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	id, err := findExistingTask("lv_testkey", srv.URL, "title compounding")
+	if err != nil {
+		t.Fatalf("findExistingTask() error: %v", err)
+	}
+	if id != "task-existing" {
+		t.Errorf("findExistingTask() = %q, want %q", id, "task-existing")
+	}
+}
+
+// TestFindExistingTaskNoMatch verifies that findExistingTask returns empty string
+// when no board node has a matching core title.
+func TestFindExistingTaskNoMatch(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"nodes": []map[string]any{
+				{
+					"id":         "task-other",
+					"title":      "Fix: something unrelated",
+					"state":      "done",
+					"created_at": "2026-03-01T00:00:00Z",
+				},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	id, err := findExistingTask("lv_testkey", srv.URL, "title compounding")
+	if err != nil {
+		t.Fatalf("findExistingTask() error: %v", err)
+	}
+	if id != "" {
+		t.Errorf("findExistingTask() = %q, want empty — no title match", id)
+	}
+}
+
+// TestCreateTaskDeduplicatesFixTask verifies that when a title starts with
+// "Fix:" and a board task with the core title already exists, createTask adds
+// a comment on the existing task instead of creating a new one. This prevents
+// the "Fix: Fix: Fix: X" compounding that produced 95 duplicate board nodes.
+func TestCreateTaskDeduplicatesFixTask(t *testing.T) {
+	var opRequests []map[string]string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == "GET" && r.URL.Path == "/app/hive/board":
+			// Return existing task with core title.
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"nodes": []map[string]any{
+					{
+						"id":         "task-original",
+						"title":      "Fix: some feature",
+						"state":      "done",
+						"created_at": "2026-03-01T00:00:00Z",
+					},
+				},
+			})
+		case r.Method == "POST" && r.URL.Path == "/app/hive/op":
+			body, _ := io.ReadAll(r.Body)
+			var payload map[string]string
+			json.Unmarshal(body, &payload)
+			opRequests = append(opRequests, payload)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"op":"respond"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	// Title with double Fix: — the core title is "some feature".
+	nodeID, err := createTask("lv_testkey", srv.URL, "Fix: Fix: some feature", "build details", nil)
+	if err != nil {
+		t.Fatalf("createTask() error: %v", err)
+	}
+
+	// Must return the existing task's ID, not create a new one.
+	if nodeID != "task-original" {
+		t.Errorf("createTask() nodeID = %q, want %q — should return existing task ID", nodeID, "task-original")
+	}
+
+	// Must send exactly one op=respond (comment), not op=intend (new task).
+	if len(opRequests) != 1 {
+		t.Fatalf("expected 1 op request (respond comment), got %d: %v", len(opRequests), opRequests)
+	}
+	if opRequests[0]["op"] != "respond" {
+		t.Errorf("op = %q, want %q — must comment, not create new task", opRequests[0]["op"], "respond")
+	}
+	if opRequests[0]["node_id"] != "task-original" {
+		t.Errorf("node_id = %q, want %q", opRequests[0]["node_id"], "task-original")
+	}
+}
+
+// TestCreateTaskNoDedup verifies that a title without "Fix:" prefix always
+// creates a new task, regardless of board contents.
+func TestCreateTaskNoDedup(t *testing.T) {
+	var intendCalled bool
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/app/hive/op" {
+			body, _ := io.ReadAll(r.Body)
+			var payload map[string]string
+			json.Unmarshal(body, &payload)
+			if payload["op"] == "intend" {
+				intendCalled = true
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			w.Write([]byte(`{"node":{"id":"task-new"}}`))
+			return
+		}
+		// Board should NOT be queried for non-Fix titles.
+		if r.URL.Path == "/app/hive/board" {
+			t.Error("board should not be queried for titles without Fix: prefix")
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	_, err := createTask("lv_testkey", srv.URL, "Observer audit gap", "details", nil)
+	if err != nil {
+		t.Fatalf("createTask() error: %v", err)
+	}
+	if !intendCalled {
+		t.Error("expected op=intend for non-Fix title, but it was not called")
+	}
+}
+
+// TestCreateTaskDeduplicatesBoardAPIError verifies that when the board API
+// fails during the dedup check, createTask falls through and creates the task
+// normally (dedup is best-effort, not a hard blocker).
+func TestCreateTaskDeduplicatesBoardAPIError(t *testing.T) {
+	var intendCalled bool
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == "GET" && r.URL.Path == "/app/hive/board":
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("server error"))
+		case r.Method == "POST" && r.URL.Path == "/app/hive/op":
+			body, _ := io.ReadAll(r.Body)
+			var payload map[string]string
+			json.Unmarshal(body, &payload)
+			if payload["op"] == "intend" {
+				intendCalled = true
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			w.Write([]byte(`{"node":{"id":"task-fallback"}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	nodeID, err := createTask("lv_testkey", srv.URL, "Fix: something", "details", nil)
+	if err != nil {
+		t.Fatalf("createTask() error: %v — board API error should not block task creation", err)
+	}
+	if nodeID != "task-fallback" {
+		t.Errorf("nodeID = %q, want %q", nodeID, "task-fallback")
+	}
+	if !intendCalled {
+		t.Error("expected op=intend fallback when board API fails during dedup check")
+	}
+}
