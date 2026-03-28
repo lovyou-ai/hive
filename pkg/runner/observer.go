@@ -25,6 +25,7 @@ func (r *Runner) runObserver(ctx context.Context) {
 	// Pre-fetch claims so the Observer has ground-truth count injected into context.
 	// Without this, the Observer only calls /board (kind=task only) and concludes zero claims.
 	var claimsSummary string
+	var fallbackCauseID string // first claim ID used as cause when LLM emits TASK_CAUSE:none
 	if r.cfg.APIClient != nil {
 		claims, err := r.cfg.APIClient.GetClaims(r.cfg.SpaceSlug, 50)
 		if err != nil {
@@ -33,6 +34,9 @@ func (r *Runner) runObserver(ctx context.Context) {
 			claimsSummary = buildClaimsSummary(claims)
 			if claimsSummary != "" {
 				log.Printf("[observer] pre-fetched %d claims for context injection", len(claims))
+			}
+			if len(claims) > 0 {
+				fallbackCauseID = claims[0].ID
 			}
 		}
 	}
@@ -48,7 +52,7 @@ func (r *Runner) runObserver(ctx context.Context) {
 	op, ok := r.cfg.Provider.(decision.IOperator)
 	if !ok {
 		log.Printf("[observer] provider does not support Operate, falling back to Reason")
-		r.runObserverReason(ctx, claimsSummary)
+		r.runObserverReason(ctx, claimsSummary, fallbackCauseID)
 		return
 	}
 
@@ -75,7 +79,8 @@ func (r *Runner) runObserver(ctx context.Context) {
 
 // runObserverReason is a fallback when Operate() isn't available.
 // Gathers context manually and uses Reason().
-func (r *Runner) runObserverReason(ctx context.Context, claimsSummary string) {
+// fallbackCauseID is used when the LLM emits TASK_CAUSE:none — ensures CAUSALITY invariant holds.
+func (r *Runner) runObserverReason(ctx context.Context, claimsSummary, fallbackCauseID string) {
 	// Gather what we can without tool access.
 	routes := r.grepRoutes()
 	kinds := r.grepEntityKinds()
@@ -119,9 +124,13 @@ You may report up to 2 findings. If everything looks good, say "No issues found.
 
 	tasks := parseObserverTasks(resp.Content())
 	for _, t := range tasks {
+		causeID := t.causeID
+		if causeID == "" {
+			causeID = fallbackCauseID // Invariant 2: CAUSALITY — fall back to first known node
+		}
 		var causes []string
-		if t.causeID != "" {
-			causes = []string{t.causeID}
+		if causeID != "" {
+			causes = []string{causeID}
 		}
 		task, err := r.cfg.APIClient.CreateTask(r.cfg.SpaceSlug, t.title, t.desc, t.priority, causes)
 		if err != nil {

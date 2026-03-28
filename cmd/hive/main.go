@@ -271,8 +271,9 @@ func runPipeline(space, apiBase, repoPath string, budget float64, agentID string
 			MaxBudgetUSD: budget,
 		}
 		// Agent's DB ID = session ID. Persistent because the agent is persistent.
-		if sid, ok := agentSessions[role]; ok {
-			providerCfg.SessionID = sid
+		// Format as UUID (Claude CLI requires UUID format for --session-id).
+		if sid, ok := agentSessions[role]; ok && len(sid) >= 32 {
+			providerCfg.SessionID = fmt.Sprintf("%s-%s-%s-%s-%s", sid[:8], sid[8:12], sid[12:16], sid[16:20], sid[20:32])
 		}
 		if mcpConfigPath != "" {
 			providerCfg.MCPConfigPath = mcpConfigPath

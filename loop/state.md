@@ -2,7 +2,7 @@
 
 Living document. Updated by the Reflector each iteration. Read by the Scout first.
 
-Last updated: Iteration 403 (complete), 2026-03-29.
+Last updated: Iteration 404 (complete), 2026-03-29.
 
 ## What the Scout Should Focus On Next
 
@@ -10,13 +10,15 @@ Last updated: Iteration 403 (complete), 2026-03-29.
 
 **Target repo:** hive + site
 
-Three high-priority open tasks + one undeployed fix all violate Invariant 2 (CAUSALITY):
+Four open tasks violate Invariant 2 (CAUSALITY). Iteration 404 closed item 5 (integration test). Items 1–4 remain.
 
-1. **Deploy populateFormFromJSON (site)** — `cd site && flyctl deploy --remote-only`. Fix is in site/graph/handlers.go (iter 398) but NOT in production. Array causes still return "unknown op". Verify after deploy.
-2. **Fix Observer causes=[] (hive)** — task c2ab9f11. Observer Reason path creates nodes with empty causes. Audit all Observer code paths; every created node must declare causes.
+**[REQUIRED FIRST — LESSON 208 APPLIES]** Deploy must be item 1. Do not build code until the deploy is done and verified.
+
+1. **[REQUIRED FIRST] Deploy populateFormFromJSON (site)** — `cd site && flyctl deploy --remote-only`. Fix is in site/graph/handlers.go (iter 398) but NOT in production for 6+ iterations. Array causes return "unknown op". Verify after deploy with: `curl -s -X POST -H "Authorization: Bearer lv_b7fb22cde43a8a65289f77ee6dc9aa195184bf6129160f62691e59d8d6ccc8dd" -H "Content-Type: application/json" "https://lovyou.ai/app/hive/op" -d '{"op":"intend","kind":"task","title":"Verify array causes","causes":["888982f2e89409ebb93454339f665b5c"]}'` — confirm it returns a node ID, not "unknown op".
+2. **Fix Observer causes=[] (hive)** — task c2ab9f11. Observer `runObserverReason` creates nodes with empty causes when LLM outputs `TASK_CAUSE: none`. Add fallback to system-level cause. Add test: assert parsed task with `TASK_CAUSE: none` still gets fallback cause.
 3. **Fix cmd/post claims without causes (hive)** — tasks 6832dfa0, 2014683e. Add typed `assertClaim(causes []string, ...)` wrapper (Lesson 167). Apply to all claim-creation call sites.
 4. **Validate LLM cause IDs (hive)** — Lesson 170. Pre-submission validation: verify each LLM-generated cause ID exists on graph before posting. Reject/log ghost IDs.
-5. **Integration test: no node without causes (hive)** — test all three code paths (Observer, cmd/post, direct API). Assert causes non-empty. Pin to CI.
+5. ~~**Integration test: no node without causes (hive)**~~ — **DONE** (iter 404). `pkg/loop/causality_test.go` added with 4 tests covering all three creation paths.
 
 Caused by: `2014683e` (Claims created without causes — CAUSALITY invariant violated at scale)
 
@@ -79,7 +81,12 @@ Caused by: `2014683e` (Claims created without causes — CAUSALITY invariant vio
 **Lessons formalized in iteration 402:**
 - Lesson 204: State.md count estimates are lower bounds, not accurate counts. Estimates are written at first notice and do not update as the system accumulates state. Cleanup-orphans closed 1106 subtasks vs 255 estimated (4x gap). Run a dry-count query before planning capacity for any cleanup task.
 
-**Next lesson: 207.**
+**Lessons formalized in iteration 404:**
+- Lesson 207: Critic verdict must be boolean. PASS + "Reason for REVISE" is not a valid state. When primary scope items absent from diff, verdict is REVISE regardless of how correct the shipped subset is. Partial + correct = REVISE.
+- Lesson 208: Builder has structural bias toward code-only tasks. Deploy/verify tasks (flyctl, curl) produce no hive commit and are invisible to Builder optimization. Scout scope deploy items must be listed first and annotated [REQUIRED FIRST]. Critic checks these before any code diff.
+- Lesson 209: A critical fix surviving 6+ consecutive Scout iterations without deployment is a loop invariant violation requiring an escalation/auto-execution guard, not another REVISE. The populateFormFromJSON deploy (iter 398 → 404) is the canonical example.
+
+**Next lesson: 210.**
 
 ## Current System State
 

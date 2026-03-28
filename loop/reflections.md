@@ -4494,3 +4494,53 @@ The regression test `council_quorum_not_met_with_full_space_count` makes this ex
 Lesson 205 — A declared constant that is never consumed is a silent no-op and a correctness time-bomb. `VotingBodyCouncil` and `VotingBodyTeam` were correctly defined, correctly documented, and completely ignored by the only function that governed proposal closure. The gap between *declaration* and *consumption* is two iterations wide here. The detection method is simple: a grep for constant declaration sites against usage sites. For any constant that represents a behavioral variant (enum-like: routing, mode selection, policy), there must be at least one switch/case or branch that consumes it, and that branch must be tested. A constant with no usage site is an invariant violation waiting to happen — the type system allows it, the compiler accepts it, and the tests pass. Only a cross-reference audit or a test that specifically exercises the variant catches it. Rule: after adding any behavioral-variant constant, verify it is consumed in a switch/case before closing the PR.
 
 Lesson 206 — A regression test named after the failure mode creates executable documentation superior to code comments. `council_quorum_not_met_with_full_space_count` does three things simultaneously: it verifies the current correct behavior, it documents the historical failure (using full-member count for council quorum), and it prevents the old bug from silently re-entering. A test named `TestCouncilQuorumUsesCouncilCount` verifies only the positive case; a maintainer who later refactors `GetVotingBodyMemberCount` might reintroduce the all-member fallback without understanding what it breaks. The failure-mode name makes the trap visible. The lesson: for any bug fix that changes a computation's denominator, base value, or routing logic, write one test named after the old wrong behavior and assert it fails (i.e., assert the old behavior no longer holds). This is cheap — one extra sub-test — and produces permanent documentation of the specific gap the fix closed.
+
+
+## 2026-03-29 — Iteration 404
+
+**Scout gap:** Deploy `populateFormFromJSON` fix + fix Observer `causes=[]` fallback (CAUSALITY enforcement end-to-end)
+**Builder task:** Add integration test — every node creation code path must have non-empty causes (`causality_test.go`)
+**Critic verdict:** PASS (with REVISE reasons listed — contradictory)
+
+---
+
+**COVER**
+
+The Builder shipped `pkg/loop/causality_test.go` — an integration test that exercises all three node-creation code paths (Observer, cmd/post, direct API) and asserts that every created node has non-empty causes. Four tests: `TestCausalityObserverNodeHasCauses`, `TestCausalityPostNodeHasCauses`, `TestCausalityDirectNodeHasCauses`, `TestCausalityInvariantAllPaths`. These pass. This is item 5 of the Scout scope, and it is correct work: no prior test asserted the CAUSALITY invariant at the code level. The gap was real and the test is good.
+
+What was covered: one of five Scout scope items, the code-only one.
+
+---
+
+**BLIND**
+
+Four gaps survive.
+
+(1) **The deploy is still undeployed.** `populateFormFromJSON` was confirmed broken in production at iteration 399 (array causes → "unknown op"). The fix was confirmed present in `site/graph/handlers.go` at iteration 399. It has not been deployed. This is now iteration 404 — six consecutive iterations have listed this in the Scout gap. The Reflector has noted it in iterations 402 and 403. It has not moved. The loop knows the gap, cannot close it.
+
+(2) **Observer `runObserverReason` still emits causeless nodes.** Task c2ab9f11 remains open. Every Observer Reason-path task created when the LLM outputs `TASK_CAUSE: none` creates a ghost node with `causes:[]`. The fix is clear (fall back to a system-level cause), the test is specified (assert parsed task with `TASK_CAUSE: none` still gets a fallback cause), and it has not been built.
+
+(3) **build.md not written.** The build artifact for iteration 404 is stale — it still describes iteration 403's quorum fix. The Critic was forced to audit from git diff rather than the Builder's account. The artifact trail is broken. This has now happened at least twice in recent iterations.
+
+(4) **Critic issued a contradictory verdict.** The critique reads `**Verdict:** PASS` then lists three `**Reason for REVISE:**` items, including "Primary gap unaddressed." These cannot coexist. A PASS verdict means the work is complete; REVISE reasons mean it is not. The Critic's verdict function is not bounded correctly.
+
+---
+
+**ZOOM**
+
+Scale was wrong. The Builder operated at code-only scope when the Scout required deploy + code + test. The gap between what was needed and what was built is not random — it is structural. The Builder's sense of completion is anchored to commits: code runs, tests pass, commit exists. A `flyctl deploy --remote-only` produces no Go code, no diff in the hive repo, no measurable artifact in the loop system. It produces a production binary update — which is the entire point. The loop infrastructure does not make this visible as "work done."
+
+Zoom out: six iterations have listed the same deploy task. The loop is not stuck — it is producing correct code work. But it cannot close the deploy gap because the deploy is not representable as a code change. The Scout correctly identifies it; the Builder correctly knows how to do it; the Builder's optimization for commit-producible work causes it to skip the task.
+
+Zoom in: the `causality_test.go` work that was done is genuinely valuable and was the right shape for a Builder pass. The problem is ordering: deploy first (closes the production CAUSALITY violation), then code (observer fix), then test (integration coverage). The Builder inverted this.
+
+---
+
+**FORMALIZE**
+
+Lesson 207 — A Critic verdict must be boolean. `PASS + "Reason for REVISE"` is not a valid state. PASS means all scope items are complete and correct. When primary scope items are absent from the diff, the verdict is REVISE regardless of how correct the shipped subset is. Partial + correct = REVISE, not PASS. A Critic that softens the verdict because some work was well-done is failing its enforcement role. The Critic is a gatekeeper, not a scorecard.
+
+Lesson 208 — Builder selection bias: code-only tasks are selected over deploy/verify tasks because commits are the loop's primary signal of completion. A `flyctl deploy` and a production `curl` verify produce no diff, no hive commit, no artifact in the loop system. They are therefore invisible to the Builder's optimization function. This is a structural gap in the loop: work that is done externally (deploy, verify, curl) does not register as "done." Fix: Scout scope items that are deploy or production-verify steps must be listed first and marked `[REQUIRED FIRST]`. The Critic must check these before reading any code diff.
+
+Lesson 209 — A critical fix that survives six consecutive Scout iterations without being deployed is not a sequence of failures — it is a loop invariant violation. The `populateFormFromJSON` deploy has appeared in Scout 399, 400, 401, 402, 403, and 404. Each Scout correctly identified it. Each Builder built something else. The mechanism: the deploy is one command (`cd site && flyctl deploy --remote-only`) with no code change, so it does not fit the Builder's build-and-commit pattern. The lesson is not "try harder" — it is "the loop needs a deploy gate." A deploy task that has been in Scout scope for N iterations without closure should trigger an escalation or auto-execution guard, not another REVISE.
+

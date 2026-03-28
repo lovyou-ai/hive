@@ -1,6 +1,11 @@
 package runner
 
 import (
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -528,6 +533,55 @@ func TestBuildOutputInstructionNoCausesWhenNoKey(t *testing.T) {
 	got := buildOutputInstruction("hive", "")
 	if strings.Contains(got, `"causes"`) {
 		t.Errorf("causes field should not appear in no-key output, got: %q", got)
+	}
+}
+
+// TestRunObserverReason_FallbackCause verifies that when the LLM returns
+// TASK_CAUSE: none (empty causeID after filtering), runObserverReason applies
+// the fallbackCauseID so the CreateTask request still includes a cause.
+// Invariant 2: CAUSALITY — every created node must declare its cause.
+func TestRunObserverReason_FallbackCause(t *testing.T) {
+	var createBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		var m map[string]any
+		if json.Unmarshal(b, &m) == nil {
+			if op, _ := m["op"].(string); op == "intend" {
+				createBody = b
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"op":"intend","node":{"id":"new-1","kind":"task","title":"t","created_at":"","updated_at":""}}`))
+	}))
+	defer srv.Close()
+
+	// LLM returns a task with TASK_CAUSE: none — causeID is empty after parsing.
+	provider := &mockProvider{response: "TASK_TITLE: Test gap\nTASK_PRIORITY: medium\nTASK_DESCRIPTION: some gap\nTASK_CAUSE: none"}
+
+	r := &Runner{
+		cfg: Config{
+			Provider:  provider,
+			APIClient: api.New(srv.URL, "test-key"),
+			SpaceSlug: "hive",
+		},
+	}
+
+	r.runObserverReason(context.Background(), "1 claims exist", "claim-fallback-123")
+
+	if createBody == nil {
+		t.Fatal("no CreateTask request captured — runObserverReason did not create a task")
+	}
+
+	var fields map[string]any
+	if err := json.Unmarshal(createBody, &fields); err != nil {
+		t.Fatalf("unmarshal CreateTask body: %v", err)
+	}
+	causeList, ok := fields["causes"].([]any)
+	if !ok || len(causeList) == 0 {
+		t.Errorf("CAUSALITY violated: CreateTask missing fallback cause when TASK_CAUSE:none, body=%s", createBody)
+	}
+	if len(causeList) > 0 && causeList[0] != "claim-fallback-123" {
+		t.Errorf("causes[0] = %v, want %q", causeList[0], "claim-fallback-123")
 	}
 }
 

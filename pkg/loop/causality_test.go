@@ -1,6 +1,7 @@
 // causality_test.go pins Invariant 2 (CAUSALITY: every event has declared causes)
 // to CI. Three node-creation code paths are exercised; each must produce an event
 // or HTTP request with len(causes) > 0.
+// Additional edge-case tests follow the three path tests.
 package loop
 
 import (
@@ -113,6 +114,50 @@ func TestCausality_DirectAPICallPath(t *testing.T) {
 	causeList, ok := fields["causes"].([]any)
 	if !ok || len(causeList) == 0 {
 		t.Errorf("CAUSALITY violated: CreateTask request missing causes, body=%s", body)
+	}
+}
+
+// TestCausality_LoopTaskCommandPath_MultipleTasks verifies that when the response
+// contains several /task create commands, EVERY resulting task event has causes —
+// not just the first one. Regression guard: causes is passed once to
+// executeTaskCommands; a refactor that computes it per-command must not lose it.
+func TestCausality_LoopTaskCommandPath_MultipleTasks(t *testing.T) {
+	provider := newMockProvider(`/signal {"signal": "IDLE"}`)
+	agent, g := agentWithGraph(t, provider)
+
+	if agent.LastEvent().IsZero() {
+		t.Fatal("agent.LastEvent() zero after boot")
+	}
+
+	factory := event.NewEventFactory(g.Registry())
+	ts := work.NewTaskStore(g.Store(), factory, &testSigner{})
+
+	convID := types.MustConversationID("conv_00000000000000000000000000000043")
+	l := &Loop{
+		agent:  agent,
+		config: Config{TaskStore: ts, ConvID: convID},
+	}
+
+	response := `/task create {"title": "first task", "description": "do this"}
+/task create {"title": "second task", "description": "then this"}
+/task create {"title": "third task", "description": "finally this"}`
+	l.processTaskCommands(response)
+
+	tasks, err := ts.List(10)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(tasks) != 3 {
+		t.Fatalf("expected 3 tasks, got %d", len(tasks))
+	}
+	for _, task := range tasks {
+		ev, err := g.Store().Get(task.ID)
+		if err != nil {
+			t.Fatalf("Store.Get(%v): %v", task.ID, err)
+		}
+		if len(ev.Causes()) == 0 {
+			t.Errorf("CAUSALITY violated: task %q created with no causes", task.Title)
+		}
 	}
 }
 
