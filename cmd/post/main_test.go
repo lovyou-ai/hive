@@ -76,46 +76,35 @@ func TestPostCreatesDocument(t *testing.T) {
 	}
 }
 
-// TestSyncClaimsWritesFile verifies that syncClaims queries the board for
+// TestSyncClaimsWritesFile verifies that syncClaims queries the knowledge endpoint for
 // Lesson and Critique: nodes and writes them as markdown to the output path.
 func TestSyncClaimsWritesFile(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/app/hive/board" {
+		if r.URL.Path != "/app/hive/knowledge" {
 			http.NotFound(w, r)
 			return
 		}
-		q := r.URL.Query().Get("q")
 		w.Header().Set("Content-Type", "application/json")
-		switch q {
-		case "Lesson ":
-			json.NewEncoder(w).Encode(map[string]any{
-				"nodes": []map[string]any{
-					{
-						"id":         "node-1",
-						"title":      "Lesson 34: Absence is invisible to traversal",
-						"body":       "The Scout traverses what exists. Tests don't exist, so the Scout never encounters them.",
-						"state":      "done",
-						"author":     "hive",
-						"created_at": "2026-03-01T00:00:00Z",
-					},
+		json.NewEncoder(w).Encode(map[string]any{
+			"claims": []map[string]any{
+				{
+					"id":         "node-1",
+					"title":      "Lesson 34: Absence is invisible to traversal",
+					"body":       "The Scout traverses what exists. Tests don't exist, so the Scout never encounters them.",
+					"state":      "done",
+					"author":     "hive",
+					"created_at": "2026-03-01T00:00:00Z",
 				},
-			})
-		case "Critique:":
-			json.NewEncoder(w).Encode(map[string]any{
-				"nodes": []map[string]any{
-					{
-						"id":         "node-2",
-						"title":      "Critique: PASS — Fix: some bug",
-						"body":       "Verdict: PASS. All tests pass.",
-						"state":      "done",
-						"author":     "hive",
-						"created_at": "2026-03-02T00:00:00Z",
-					},
+				{
+					"id":         "node-2",
+					"title":      "Critique: PASS — Fix: some bug",
+					"body":       "Verdict: PASS. All tests pass.",
+					"state":      "done",
+					"author":     "hive",
+					"created_at": "2026-03-02T00:00:00Z",
 				},
-			})
-		default:
-			json.NewEncoder(w).Encode(map[string]any{"nodes": []any{}})
-		}
+			},
+		})
 	}))
 	defer srv.Close()
 
@@ -151,11 +140,11 @@ func TestSyncClaimsWritesFile(t *testing.T) {
 }
 
 // TestSyncClaimsEmptyDoesNotWrite verifies that syncClaims does not write a
-// file when both board queries return zero nodes.
+// file when the knowledge endpoint returns zero claims.
 func TestSyncClaimsEmptyDoesNotWrite(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{"nodes": []any{}})
+		json.NewEncoder(w).Encode(map[string]any{"claims": []any{}})
 	}))
 	defer srv.Close()
 
@@ -169,18 +158,18 @@ func TestSyncClaimsEmptyDoesNotWrite(t *testing.T) {
 	}
 }
 
-// TestSyncClaimsFiltersNonClaimNodes verifies that board nodes without a
+// TestSyncClaimsFiltersNonClaimNodes verifies that knowledge claims without a
 // recognised claim title prefix are excluded from claims.md.
 func TestSyncClaimsFiltersNonClaimNodes(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/app/hive/board" {
+		if r.URL.Path != "/app/hive/knowledge" {
 			http.NotFound(w, r)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		// Return a mix: one genuine lesson, one task that mentions "Lesson" in body only.
+		// Return a mix: one genuine lesson, one claim that mentions "Lesson" in body only.
 		json.NewEncoder(w).Encode(map[string]any{
-			"nodes": []map[string]any{
+			"claims": []map[string]any{
 				{
 					"id":         "node-1",
 					"title":      "Lesson 42: Something important",
@@ -467,13 +456,13 @@ func TestSyncClaimsAPIError(t *testing.T) {
 // body without the state/author line when both fields are empty.
 func TestSyncClaimsClaimWithNoMetadata(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/app/hive/board" {
+		if r.URL.Path != "/app/hive/knowledge" {
 			http.NotFound(w, r)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
-			"nodes": []map[string]any{
+			"claims": []map[string]any{
 				{
 					"id":         "node-1",
 					"title":      "Lesson 99: Body-only lesson",
@@ -1296,13 +1285,13 @@ func TestAssertCritiqueNoTitle(t *testing.T) {
 // all of them are comma-joined in the **Causes:** line in claims.md.
 func TestSyncClaimsMultipleCauses(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/app/hive/board" {
+		if r.URL.Path != "/app/hive/knowledge" {
 			http.NotFound(w, r)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
-			"nodes": []map[string]any{
+			"claims": []map[string]any{
 				{
 					"id":         "node-1",
 					"title":      "Lesson 7: Multi-cause lesson",
@@ -1339,16 +1328,16 @@ func TestSyncClaimsMultipleCauses(t *testing.T) {
 }
 
 // TestSyncClaimsWritesCauses verifies that syncClaims includes the causes field
-// in claims.md when board nodes have causes populated.
+// in claims.md when knowledge claims have causes populated.
 func TestSyncClaimsWritesCauses(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/app/hive/board" {
+		if r.URL.Path != "/app/hive/knowledge" {
 			http.NotFound(w, r)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
-			"nodes": []map[string]any{
+			"claims": []map[string]any{
 				{
 					"id":         "node-1",
 					"title":      "Lesson 4: Ship what you build",
@@ -1674,28 +1663,26 @@ func TestHasClaimPrefix(t *testing.T) {
 	}
 }
 
-// TestSyncClaimsDeduplicatesAcrossQueries verifies that when the same node ID
-// is returned by both the "Lesson " and "Critique:" board queries, it appears
-// only once in claims.md. The seen-map dedup in syncClaims must prevent this.
-func TestSyncClaimsDeduplicatesAcrossQueries(t *testing.T) {
-	duplicateNode := map[string]any{
-		"id":         "node-dup",
-		"title":      "Lesson 99: duplicate node",
-		"body":       "appears in both query results",
-		"state":      "done",
-		"author":     "hive",
-		"created_at": "2026-03-01T00:00:00Z",
-	}
-
+// TestSyncClaimsDeduplicatesNodes verifies that when the knowledge endpoint
+// returns a node, it appears only once in claims.md.
+func TestSyncClaimsDeduplicatesNodes(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/app/hive/board" {
+		if r.URL.Path != "/app/hive/knowledge" {
 			http.NotFound(w, r)
 			return
 		}
-		// Both queries return the same node (e.g. body contains both keywords).
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
-			"nodes": []map[string]any{duplicateNode},
+			"claims": []map[string]any{
+				{
+					"id":         "node-dup",
+					"title":      "Lesson 99: single node",
+					"body":       "should appear exactly once",
+					"state":      "done",
+					"author":     "hive",
+					"created_at": "2026-03-01T00:00:00Z",
+				},
+			},
 		})
 	}))
 	defer srv.Close()
@@ -1712,9 +1699,9 @@ func TestSyncClaimsDeduplicatesAcrossQueries(t *testing.T) {
 	content := string(data)
 
 	// The node should appear exactly once.
-	count := strings.Count(content, "Lesson 99: duplicate node")
+	count := strings.Count(content, "Lesson 99: single node")
 	if count != 1 {
-		t.Errorf("expected node to appear 1 time, got %d — dedup across queries broken\n%s", count, content)
+		t.Errorf("expected node to appear 1 time, got %d\n%s", count, content)
 	}
 }
 
@@ -1734,47 +1721,110 @@ func TestFetchBoardByQueryHTTPError(t *testing.T) {
 	}
 }
 
-// TestSyncClaimsSecondQueryFails verifies that syncClaims returns an error and
-// writes no file when the first board query succeeds but the second fails.
-// TestSyncClaimsAPIError only covers the case where the very first query fails.
-func TestSyncClaimsSecondQueryFails(t *testing.T) {
-	callCount := 0
+// TestFetchKnowledgeClaimsReturnsNodes verifies that fetchKnowledgeClaims parses
+// the knowledge endpoint response and returns boardNode values with all fields.
+func TestFetchKnowledgeClaimsReturnsNodes(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/app/hive/board" {
+		if r.URL.Path != "/app/hive/knowledge" {
 			http.NotFound(w, r)
 			return
 		}
-		callCount++
-		if callCount == 1 {
-			// First query ("Lesson ") succeeds.
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{
-				"nodes": []map[string]any{
-					{
-						"id":         "node-1",
-						"title":      "Lesson 1: first lesson",
-						"body":       "body",
-						"state":      "done",
-						"author":     "hive",
-						"created_at": "2026-01-01T00:00:00Z",
-					},
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"claims": []map[string]any{
+				{
+					"id":         "claim-abc",
+					"title":      "Lesson 5: something",
+					"body":       "body text",
+					"state":      "done",
+					"author":     "hive",
+					"causes":     []string{"cause-1"},
+					"created_at": "2026-01-15T10:00:00Z",
 				},
-			})
-		} else {
-			// Second query ("Critique:") fails.
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte("server error"))
+			},
+		})
+	}))
+	defer srv.Close()
+
+	nodes, err := fetchKnowledgeClaims("lv_testkey", srv.URL)
+	if err != nil {
+		t.Fatalf("fetchKnowledgeClaims() error: %v", err)
+	}
+	if len(nodes) != 1 {
+		t.Fatalf("expected 1 node, got %d", len(nodes))
+	}
+	n := nodes[0]
+	if n.ID != "claim-abc" {
+		t.Errorf("ID = %q, want %q", n.ID, "claim-abc")
+	}
+	if n.Title != "Lesson 5: something" {
+		t.Errorf("Title = %q, want %q", n.Title, "Lesson 5: something")
+	}
+	if n.Body != "body text" {
+		t.Errorf("Body = %q, want %q", n.Body, "body text")
+	}
+	if len(n.Causes) != 1 || n.Causes[0] != "cause-1" {
+		t.Errorf("Causes = %v, want [cause-1]", n.Causes)
+	}
+}
+
+// TestFetchKnowledgeClaimsSendsAuthHeader verifies that fetchKnowledgeClaims
+// sets Authorization: Bearer so the knowledge API can authenticate the request.
+func TestFetchKnowledgeClaimsSendsAuthHeader(t *testing.T) {
+	var gotAuth string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"claims": []any{}})
+	}))
+	defer srv.Close()
+
+	if _, err := fetchKnowledgeClaims("lv_knowledgekey", srv.URL); err != nil {
+		t.Fatalf("fetchKnowledgeClaims() error: %v", err)
+	}
+
+	want := "Bearer lv_knowledgekey"
+	if gotAuth != want {
+		t.Errorf("Authorization header = %q, want %q", gotAuth, want)
+	}
+}
+
+// TestFetchKnowledgeClaimsHTTPError verifies that fetchKnowledgeClaims returns
+// an error when the server responds with HTTP 4xx.
+func TestFetchKnowledgeClaimsHTTPError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte("unauthorized"))
+	}))
+	defer srv.Close()
+
+	_, err := fetchKnowledgeClaims("bad_key", srv.URL)
+	if err == nil {
+		t.Fatal("expected error for HTTP 401, got nil")
+	}
+}
+
+// TestSyncClaimsKnowledgeEndpointFails verifies that syncClaims returns an error
+// and writes no file when the knowledge endpoint returns a server error.
+func TestSyncClaimsKnowledgeEndpointFails(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/app/hive/knowledge" {
+			http.NotFound(w, r)
+			return
 		}
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("server error"))
 	}))
 	defer srv.Close()
 
 	outPath := filepath.Join(t.TempDir(), "claims.md")
 	err := syncClaims("lv_testkey", srv.URL, outPath)
 	if err == nil {
-		t.Fatal("expected error when second board query fails, got nil")
+		t.Fatal("expected error when knowledge endpoint fails, got nil")
 	}
 	if _, statErr := os.Stat(outPath); statErr == nil {
-		t.Error("claims.md should not be written when a query fails")
+		t.Error("claims.md should not be written when the knowledge endpoint fails")
 	}
 }
 

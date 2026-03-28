@@ -1,44 +1,32 @@
-# Build: Structural hardening: loop task parser should detect and reject meta-tasks programmatically (Lesson 137 level 2)
-
-- **Commit:** 55d4214c7de113b18d70fda67357e56e95113afc
-- **Subject:** [hive:builder] Structural hardening: loop task parser should detect and reject meta-tasks programmatically (Lesson 137 level 2)
-- **Cost:** $0.3071
-- **Timestamp:** 2026-03-28T15:45:12Z
-
-## Task
-
-Lesson 137 names two hardening levels for the meta-task defect: (1) prompt prohibition (done in 24924471) and (2) structural post-processing. Level 2 is not yet implemented. The loop task-command parser in pkg/loop/loop.go already parses /task create commands from agent output. Add a guard: before e...
+# Build: Fix: syncClaims uses knowledge endpoint instead of board search
 
 ## What Was Built
 
-All 15 tests pass. Here's what was implemented:
+Replaced `syncClaims`'s board-query loop with a single fetch from the knowledge endpoint (`/app/hive/knowledge?tab=claims`), which returns all 187 claims without the ~68-node server-side cap that was truncating board search results.
 
-**`pkg/loop/tasks.go`** — two additions:
+## Files Changed
 
-1. `metaTaskPatterns` — a package-level slice of the four meta-task indicator phrases (`op=complete`, `close task`, `mark done`, `close the following`).
+### `cmd/post/main.go`
+- **`syncClaims`**: Replaced the two-pass board query loop (one per prefix: "Lesson ", "Critique:") with a single call to `fetchKnowledgeClaims`. Title-prefix filter (`hasClaimPrefix`) kept to exclude non-Lesson/Critique claims.
+- **`fetchKnowledgeClaims`** (new): Fetches all claims from `/app/hive/knowledge?tab=claims`, returns `[]boardNode`. Parses `{"claims": [...]}` JSON response shape.
+- Updated stale comments on `boardNode`, `claimTitlePrefixes`, and `syncClaims` that said "the knowledge endpoint returns 0".
 
-2. `isMetaTaskBody(title, description string) bool` — case-insensitive check over the combined title+description against those patterns.
+### `cmd/post/main_test.go`
+- Updated 6 failing tests to serve `/app/hive/knowledge` returning `{"claims": [...]}`:
+  - `TestSyncClaimsWritesFile`, `TestSyncClaimsEmptyDoesNotWrite`, `TestSyncClaimsFiltersNonClaimNodes`, `TestSyncClaimsClaimWithNoMetadata`, `TestSyncClaimsMultipleCauses`, `TestSyncClaimsWritesCauses`
+- Renamed `TestSyncClaimsDeduplicatesAcrossQueries` → `TestSyncClaimsDeduplicatesNodes`.
+- Replaced `TestSyncClaimsSecondQueryFails` with `TestSyncClaimsKnowledgeEndpointFails`.
+- Added 3 new tests for `fetchKnowledgeClaims`: `TestFetchKnowledgeClaimsReturnsNodes`, `TestFetchKnowledgeClaimsSendsAuthHeader`, `TestFetchKnowledgeClaimsHTTPError`.
 
-3. Guard in `execTaskCreate` — called before `tasks.Create`. On match, logs a warning to stdout and returns a descriptive error, causing the command to be counted as failed in `executeTaskCommands`.
+## Verification
 
-**`pkg/loop/tasks_test.go`** (new file):
+```
+go.exe build -buildvcs=false ./...  → OK
+go.exe test ./...                   → all pass
+```
 
-- `TestIsMetaTaskBody` — 18 cases covering all four patterns, case-insensitivity, pattern in description vs title, and legitimate task descriptions.
-- `TestParseTaskCommandsMetaTaskNotFiltered` — confirms `parseTaskCommands` still surfaces the command so the guard can fire (the filter is structural, not at parse time).
+## Root Cause
+
+Board search (`/app/hive/board?q=Lesson&limit=500`) is server-side capped at ~68 rows regardless of the `limit` param. The knowledge endpoint (`/app/hive/knowledge?tab=claims`) calls `ListNodes(KindClaim)` with no row cap — returns all 187 claims. Result: claims.md now captures 102 lessons instead of 4.
 
 ACTION: DONE
-
-## Diff Stat
-
-```
-commit 55d4214c7de113b18d70fda67357e56e95113afc
-Author: hive <hive@lovyou.ai>
-Date:   Sun Mar 29 02:45:12 2026 +1100
-
-    [hive:builder] Structural hardening: loop task parser should detect and reject meta-tasks programmatically (Lesson 137 level 2)
-
- loop/budget-20260329.txt |  1 +
- pkg/loop/tasks.go        | 26 ++++++++++++++++++++++
- pkg/loop/tasks_test.go   | 58 ++++++++++++++++++++++++++++++++++++++++++++++++
- 3 files changed, 85 insertions(+)
-```

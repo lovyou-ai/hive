@@ -412,7 +412,7 @@ func buildTitle(build []byte) string {
 	return ""
 }
 
-// boardNode is the subset of a board Node needed for claims.md.
+// boardNode is the subset of a site Node needed for claims.md.
 type boardNode struct {
 	ID        string    `json:"id"`
 	Title     string    `json:"title"`
@@ -423,28 +423,25 @@ type boardNode struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// claimTitlePrefixes lists board node title prefixes that identify claim-like
-// knowledge entries. Lessons and Critiques are stored as kind=task on the board,
-// not as kind=claim on the knowledge lens — the knowledge endpoint returns 0.
+// claimTitlePrefixes lists node title prefixes that identify claim-like
+// knowledge entries. These are stored as kind=claim on the knowledge lens.
 var claimTitlePrefixes = []string{"Lesson ", "Critique:"}
 
-// syncClaims fetches lesson and critique nodes from the board (stored as
-// kind=task, not kind=claim) and writes them to outPath as a markdown file.
-// The MCP knowledge server indexes this file so knowledge_search can find them.
+// syncClaims fetches lesson and critique nodes from the knowledge endpoint and
+// writes them to outPath as a markdown file. The MCP knowledge server indexes
+// this file so knowledge_search can find them.
+// Uses the knowledge endpoint (not board search) to avoid the server-side cap
+// (~68 results) that truncated results when using the board query API.
 func syncClaims(apiKey, baseURL, outPath string) error {
-	seen := make(map[string]bool)
-	var allNodes []boardNode
+	all, err := fetchKnowledgeClaims(apiKey, baseURL)
+	if err != nil {
+		return fmt.Errorf("fetch knowledge claims: %w", err)
+	}
 
-	for _, prefix := range claimTitlePrefixes {
-		nodes, err := fetchBoardByQuery(apiKey, baseURL, prefix)
-		if err != nil {
-			return fmt.Errorf("fetch board q=%q: %w", prefix, err)
-		}
-		for _, n := range nodes {
-			if !seen[n.ID] && hasClaimPrefix(n.Title) {
-				seen[n.ID] = true
-				allNodes = append(allNodes, n)
-			}
+	var allNodes []boardNode
+	for _, n := range all {
+		if hasClaimPrefix(n.Title) {
+			allNodes = append(allNodes, n)
 		}
 	}
 
@@ -525,6 +522,43 @@ func fetchBoardByQuery(apiKey, baseURL, q string) ([]boardNode, error) {
 		return nil, fmt.Errorf("decode nodes: %w", err)
 	}
 	return result.Nodes, nil
+}
+
+// fetchKnowledgeClaims fetches all claims from the knowledge endpoint.
+// Returns all KindClaim nodes; callers filter by title prefix as needed.
+// The knowledge endpoint returns all claims without a server-side row cap,
+// unlike the board search API which is capped at ~68 results.
+func fetchKnowledgeClaims(apiKey, baseURL string) ([]boardNode, error) {
+	u := baseURL + "/app/hive/knowledge?tab=claims"
+	req, err := http.NewRequest("GET", u, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, b)
+	}
+
+	var result struct {
+		Claims []boardNode `json:"claims"`
+	}
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read body: %w", err)
+	}
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, fmt.Errorf("decode claims: %w", err)
+	}
+	return result.Claims, nil
 }
 
 // hasClaimPrefix reports whether title starts with a recognised claim prefix.
