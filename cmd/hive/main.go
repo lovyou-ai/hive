@@ -267,14 +267,11 @@ func runPipeline(space, apiBase, repoPath string, budget float64, agentID string
 	makeRunner := func(role string) (*runner.Runner, error) {
 		model := runner.ModelForRole(role)
 		providerCfg := intelligence.Config{
-			Provider:     "claude-cli",
+			Provider:     "claude-sdk",
 			Model:        model,
 			MaxBudgetUSD: budget,
+			SessionID:    agentSessions[role], // warm session from DB (empty = cold start)
 		}
-		// Session persistence disabled: --session-id doesn't work with -p (print mode).
-		// Print mode is stateless — no warm context between calls.
-		// TODO: migrate to Claude Agent SDK for proper session management.
-		_ = agentSessions // session UUIDs stored in DB, ready for SDK migration
 		if mcpConfigPath != "" {
 			providerCfg.MCPConfigPath = mcpConfigPath
 		}

@@ -4,13 +4,13 @@
       "args": [
         "run",
         "-buildvcs=false",
-        "C:\\src\\matt\\lovyou3\\hive\\cmd\\mcp-knowledge"
+        "D:\\src\\matt\\lovyou3\\hive\\cmd\\mcp-knowledge"
       ],
-      "command": "C:\\Users\\matt_\\go\\pkg\\mod\\golang.org\\toolchain@v0.0.1-go1.24.2.windows-amd64\\bin\\go.exe",
+      "command": "C:\\Users\\matt_\\go-sdk\\go\\bin\\go.exe",
       "env": {
-        "HIVE_DIR": "C:\\src\\matt\\lovyou3\\hive",
-        "SITE_DIR": "C:\\src\\matt\\lovyou3\\site",
-        "WORKSPACE": "C:\\src\\matt\\lovyou3"
+        "HIVE_DIR": "D:\\src\\matt\\lovyou3\\hive",
+        "SITE_DIR": "D:\\src\\matt\\lovyou3\\site",
+        "WORKSPACE": "D:\\src\\matt\\lovyou3"
       }
     }
   }
