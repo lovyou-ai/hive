@@ -1,68 +1,41 @@
-# Test Report: Governance Delegation + Quorum
+# Test Report: voting_body Quorum Enforcement
 
-- **Iteration:** 354
+- **Iteration:** 355
 - **Timestamp:** 2026-03-29
-- **Build:** 052878b — Governance delegation + quorum UI
+- **Build:** 901ab79 — Fix: voting_body quorum enforcement not implemented
 
 ## What Was Tested
 
-The Builder added delegation and quorum to the governance system in `site/graph/`. Tested:
+Builder added `GetVotingBodyMemberCount` and wired `CheckAndAutoCloseProposal` to use it.
 
 ### Store layer (`graph/store_test.go`)
 
-`TestGovernanceDelegation` (12 sub-tests) — shipped by Builder, verified passing:
+`TestVotingBodyQuorum` (8 sub-tests) — 5 shipped by Builder, 3 added by Tester:
 
-| Sub-test | Covers |
-|---|---|
-| `delegate_and_has_delegated` | `Delegate` + `HasDelegated` happy path |
-| `undelegate_clears_delegation` | `Undelegate` removes delegation |
-| `circular_delegation_blocked` | A→B then B→A returns error |
-| `self_delegation_blocked` | A→A returns error |
-| `effective_vote_count_includes_delegated` | Delegate votes count for delegator |
-| `quorum_auto_close_on_threshold` | Proposal closes at 50% threshold |
-| `redelegate_updates_target` | A→B then A→C redirects delegation |
-| `undelegate_idempotent` | No error when undelegating a non-delegation |
-| `quorum_disabled_when_zero` | `quorum_pct=0` never auto-closes |
-| `quorum_tie_outcome_rejected` | Tied vote → ProposalFailed |
-| `get_user_delegation` | Returns delegateID + name, false when none |
-| `list_delegations` | Returns all space delegations with names |
-
-`TestGovernanceDelegationEdgeCases` (3 sub-tests) — added by Tester:
-
-| Sub-test | Covers | Why added |
+| Sub-test | Who | Covers |
 |---|---|---|
-| `auto_close_idempotent_on_already_closed` | `CheckAndAutoCloseProposal` returns `(false, nil)` on closed proposal | Not in Builder's tests; early-return path on `state != ProposalOpen` |
-| `effective_vote_count_zero_with_no_votes` | `GetEffectiveVoteCount` returns 0 before any votes | Delegation alone (no actual vote) must not inflate count |
-| `list_delegations_zero_limit_uses_default` | `ListDelegations(limit=0)` uses default 50 | `limit <= 0` branch in store untested |
-
-### Handler layer (`graph/handlers_test.go`)
-
-`TestHandlerGovernanceDelegation` (6 sub-tests) — shipped by Builder, verified passing:
-
-| Sub-test | Covers |
-|---|---|
-| `propose_with_quorum_pct` | `intend` op with `quorum_pct` + `voting_body` fields |
-| `delegate_op` | `delegate` op via HTTP |
-| `vote_blocked_when_delegated` | Voting returns 400 when user has delegated |
-| `undelegate_op` | `undelegate` op via HTTP |
-| `delegate_missing_delegate_id` | Missing field returns 400 |
-| `vote_after_undelegate` | Vote succeeds after undelegating |
+| `council_quorum_uses_council_member_count` | Builder | Council body: 50% quorum closes at 1/2 council votes |
+| `council_quorum_not_met_with_full_space_count` | Builder | Regression: council body 75% quorum needs 2/2, not 1/4 |
+| `team_quorum_uses_team_member_count` | Builder | Team body: 66% quorum closes at 2/3 team votes |
+| `all_body_falls_back_to_space_members` | Builder | `VotingBodyAll` → `GetSpaceMemberCount` |
+| `empty_voting_body_falls_back_to_space_members` | Builder | `""` → `GetSpaceMemberCount` |
+| `council_body_zero_eligible_never_closes` | Tester | `eligible == 0` guard: no council nodes → never closes despite votes |
+| `distinct_members_across_multiple_council_nodes` | Tester | `COUNT(DISTINCT)`: user in 2 council nodes counts as 1 |
+| `council_body_rejected_outcome` | Tester | `no > yes` on council body → `ProposalFailed` |
 
 ## Results
 
 ```
-TestHandlerGovernanceDelegation    PASS  6/6 sub-tests
-TestGovernanceDelegation           PASS  12/12 sub-tests
-TestGovernanceDelegationEdgeCases  PASS  3/3 sub-tests
+TestVotingBodyQuorum    PASS  8/8 sub-tests
 ```
 
-**Total: 21/21 PASS**
+**Total: 8/8 PASS**
 
 ## Coverage Notes
 
-- All new public functions covered: `SetProposalConfig`, `Delegate`, `Undelegate`, `HasDelegated`, `GetSpaceMemberCount`, `GetEffectiveVoteCount`, `CheckAndAutoCloseProposal`, `GetUserDelegation`, `ListDelegations`
-- `voting_body` filter (`council`/`team` scoped quorum) exercised only with `VotingBodyAll` — acceptable since council/team membership is not set up in the test space.
-- **One observation for Critic:** `Delegate` only checks one hop for circular delegation (if B delegates to A, block A→B). A longer chain (A→B→C, then C→A) is not caught. The function comment says "prevent circular delegation" but the guard is only the direct case. Known limitation or gap.
+- `GetVotingBodyMemberCount` fully covered: council, team, all, empty, zero-eligible, multi-node dedup
+- `CheckAndAutoCloseProposal` paths covered: `eligible == 0` guard, quorum not met, quorum met+passed, quorum met+rejected
+- The `state != ProposalOpen` early-return path (closed proposal) remains covered by `TestGovernanceDelegationEdgeCases/auto_close_idempotent_on_already_closed` from the previous iteration
 
 ## @Critic
 

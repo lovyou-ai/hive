@@ -324,3 +324,13 @@
 {"phase":"builder","outcome":"task.done","repo":"hive","revise_count":1,"board_open":8,"duration_secs":334.4628152,"cost_usd":5.181962250000001,"timestamp":"2026-03-28T19:29:34Z"}
 {"phase":"tester","outcome":"tests.pass","repo":"hive","revise_count":1,"board_open":8,"duration_secs":289.5044875,"cost_usd":5.839933350000001,"timestamp":"2026-03-28T19:34:24Z"}
 {"phase":"critic","outcome":"critique.revise","repo":"hive","revise_count":1,"board_open":9,"duration_secs":230.9483477,"cost_usd":6.256392150000001,"timestamp":"2026-03-28T19:38:16Z"}
+{"phase":"builder","outcome":"task.done","repo":"hive","revise_count":2,"board_open":8,"duration_secs":302.2229195,"cost_usd":7.122843900000001,"timestamp":"2026-03-28T19:43:19Z"}
+{"phase":"tester","outcome":"tests.pass","repo":"hive","revise_count":2,"board_open":8,"duration_secs":136.6723265,"cost_usd":7.459009650000001,"timestamp":"2026-03-28T19:45:36Z"}
+{"phase":"critic","outcome":"critique.pass","repo":"hive","revise_count":2,"board_open":8,"duration_secs":198.2970117,"cost_usd":7.826658000000001,"timestamp":"2026-03-28T19:48:56Z"}
+{"phase":"reflector","outcome":"reflection.done","repo":"hive","revise_count":2,"board_open":8,"duration_secs":251.0358865,"cost_usd":8.319169500000001,"timestamp":"2026-03-28T19:53:07Z"}
+{"phase":"builder","error":"claude CLI operate error: exit status 1\nstderr: Error: --resume requires a valid session ID when used with --print. Usage: claude -p --resume \u003csession-id\u003e. Session IDs must be in UUID format (e.g., 550e8400-e29b-41d4-a716-446655440000). Provided value \"hive-hive-builder\" is not a valid UUID\n","timestamp":"2026-03-28T20:06:05Z"}
+{"phase":"builder","outcome":"task.done","repo":"hive","board_open":8,"duration_secs":3.7145536,"timestamp":"2026-03-28T20:06:05Z"}
+{"phase":"tester","outcome":"tests.pass","repo":"hive","board_open":8,"duration_secs":3.2503257,"timestamp":"2026-03-28T20:06:09Z"}
+{"phase":"critic","outcome":"critique.pass","repo":"hive","board_open":8,"duration_secs":4.1120024,"timestamp":"2026-03-28T20:06:14Z"}
+{"phase":"reflector","outcome":"reflection.done","repo":"hive","board_open":8,"duration_secs":6.1579294,"timestamp":"2026-03-28T20:06:21Z"}
+{"phase":"observer","outcome":"audit.done","repo":"hive","board_open":8,"duration_secs":4.7313783,"timestamp":"2026-03-28T20:06:25Z"}

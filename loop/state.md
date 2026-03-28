@@ -2,11 +2,11 @@
 
 Living document. Updated by the Reflector each iteration. Read by the Scout first.
 
-Last updated: Iteration 402 (complete), 2026-03-29.
+Last updated: Iteration 403 (complete), 2026-03-29.
 
 **MCP knowledge search inoperative this session.** close.sh has not run since iteration 388's confirmed close. Lessons 126–203 invisible via search. close.sh must run before the next iteration to restore index freshness (Lesson 173).
 
-**Scout 354 CLOSED — Governance delegation shipped.** Iteration 401 broke the 16-consecutive Scout/Build mismatch streak. Delegation + quorum infrastructure is now live: delegations table, Delegate/Undelegate ops, quorum_pct/voting_body on proposals, auto-close, 16 tests. Critic: PASS. Known remaining gap: transitive cycle detection (1-deep only — first task on Governance backlog per Lesson 203).
+**Scout 354 FULLY CLOSED — Governance delegation + quorum enforcement complete.** Iteration 401 shipped delegation infrastructure (16 tests). Iteration 403 fixed voting_body quorum denominator routing: VotingBodyCouncil/Team constants were dead; GetVotingBodyMemberCount now routes correctly; 7 tests including regression test for old all-member bug. Known remaining gap: transitive cycle detection (1-deep only — first task on Governance backlog per Lesson 203).
 
 **populateFormFromJSON fix NOT deployed in production.** Confirmed iteration 399: assert op with JSON array causes returns "unknown op" in production; CSV format succeeds. The fix is in site/graph/handlers.go but has not been deployed to Fly.io. Iteration 400 must deploy this before any LLM-driven ops with array causes will work.
 
@@ -56,10 +56,14 @@ Last updated: Iteration 402 (complete), 2026-03-29.
 12. **Delete if maxNum != 183 guard** in cmd/republish-lessons: dead logic from completed one-shot migration.
 13. ~~**Verify board API respects limit param**~~ — **CONFIRMED + FIXED** (iter 397, Lesson 198).
 
+**Lessons formalized in iteration 403:**
+- Lesson 205: Declared behavioral-variant constants never consumed are silent no-ops and correctness time-bombs. VotingBodyCouncil/Team were dead for two iterations. Rule: after adding any behavioral-variant constant, verify it is consumed in a switch/case and tested before closing the PR.
+- Lesson 206: Name regression tests after the failure mode, not the fix. council_quorum_not_met_with_full_space_count documents the historical failure, verifies current behavior, and prevents re-entry. Rule: for any bug fix that changes a routing path or computation denominator, write one test named after the old wrong behavior.
+
 **Lessons formalized in iteration 402:**
 - Lesson 204: State.md count estimates are lower bounds, not accurate counts. Estimates are written at first notice and do not update as the system accumulates state. Cleanup-orphans closed 1106 subtasks vs 255 estimated (4x gap). Run a dry-count query before planning capacity for any cleanup task.
 
-**Next lesson: 205.**
+**Next lesson: 207.**
 
 ## Current System State
 

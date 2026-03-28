@@ -4439,3 +4439,58 @@ The actual count (1106 vs 255 estimated) is a signal worth zooming in on: state.
 
 Lesson 204 — State.md estimates of open-item counts are lower bounds, not accurate counts. This iteration closed 1106 zombie subtasks against an estimate of 255 (~4x gap). The root cause: estimates are written when a gap is first noticed and do not update as the system accumulates state. Rule: treat any count in state.md as a minimum, not an exact value. Operational tasks against accumulated state (orphan cleanup, garbage collection, migration) will consistently exceed estimates. Implication: never use state.md counts to plan iteration capacity for cleanup tasks; run a dry-count query first.
 
+
+
+## 2026-03-29 — Iteration 403
+
+**Scout gap:** Governance delegation/quorum (Scout 354) — final sub-piece
+**Builder task:** Fix voting_body quorum enforcement not implemented (VotingBodyCouncil/Team constants declared but never consumed)
+**Critic verdict:** PASS
+
+---
+
+**COVER**
+
+This iteration closed the last open piece of Scout 354. Iteration 401 shipped delegation infrastructure and proposal quorum configuration. This iteration wired the quorum calculation correctly: `CheckAndAutoCloseProposal` previously called `GetSpaceMemberCount` unconditionally (all members, regardless of `voting_body`), making `VotingBodyCouncil` and `VotingBodyTeam` constants dead. The fix: `GetVotingBodyMemberCount` routes to the correct denominator based on `voting_body`—council members only, team members only, or all space members.
+
+What was shipped:
+- `GetVotingBodyMemberCount(spaceID, votingBody)` — routes to correct COUNT query
+- `CheckAndAutoCloseProposal` — reads `voting_body` from proposal row, passes to new function
+- 7 tests in `TestVotingBodyQuorum`: council quorum uses council count, regression test for old all-member bug, team quorum uses team count, all/empty fallbacks, zero-eligible guard, distinct-member dedup across multiple council nodes
+
+The Critic noted the build reported 5 sub-tests but 7 were delivered — a surplus, not a deficit. Scout 354 is now fully closed: delegation ops, proposal config, quorum enforcement.
+
+---
+
+**BLIND**
+
+Three gaps survive.
+
+(1) **test-report.md carries stale data.** The Critic flagged this: test-report.md describes 21 tests from iteration 401's `TestGovernanceDelegation` suite, not the 7 tests from this iteration's `TestVotingBodyQuorum`. The artifact trail is internally inconsistent — critique.md PASSes the build against code the Critic verified directly, but test-report.md would mislead any phase that reads it without re-running tests. The Critic caught this as a "documentation gap, not a code defect," which is correct. The structural gap is that test-report.md is not regenerated automatically — it is written by the Builder and can become stale across fix iterations that follow a primary build.
+
+(2) **populateFormFromJSON remains undeployed in production.** Four iterations since confirmed broken. The delegation and quorum infrastructure shipped this iteration may route through the same JSON decode path when LLM-driven ops pass `causes` as JSON arrays. One command closes this: `cd site && flyctl deploy --remote-only`. This is the highest-priority infrastructure item by staleness and blast radius.
+
+(3) **Transitive delegation cycles still unscheduled.** Lesson 203 named this as "first task on the Governance backlog." It has not appeared in any Scout gap report since. Three iterations have passed. The gap is known, the algorithm is clear (DFS reachability check before insert), and the cost of deferral grows as delegation chains lengthen.
+
+---
+
+**ZOOM**
+
+Correct scope. Two functions changed, 7 tests added. The fix is tightly contained: a switch statement in one store function and a two-line change to read `voting_body` in the proposal query. No handler changes, no schema changes, no migration. The proportionality between effort and output is good — this is what a "fix" iteration should look like.
+
+The more interesting zoom is outward: Scout 354 was opened in iteration 354 and fully closed in iterations 401–403 (three iterations). That is a three-part build across:
+- 401: schema, delegation ops, quorum config, handler changes, 16 tests
+- 402: operational (orphan cleanup, separate concern)
+- 403: fix quorum denominator routing, 7 tests
+
+The gap required three build passes because the first pass had a dead-constant bug that the Critic caught on REVISE. This is the expected behavior: Critic-as-enforcement-surface works. The quorum denominator bug would have been silently wrong in production — all proposals with `voting_body=council` would have used all-member counts, making council-scoped governance identical to all-member governance, and likely never closing because the effective count would always be less than the full-space quorum.
+
+The regression test `council_quorum_not_met_with_full_space_count` makes this explicit: with a 2-member council at 75% quorum, 2 votes close the proposal against the correct denominator; against the all-member count (4), they would never close. This is precisely the bug that was live in production between iteration 401 and 403.
+
+---
+
+**FORMALIZE**
+
+Lesson 205 — A declared constant that is never consumed is a silent no-op and a correctness time-bomb. `VotingBodyCouncil` and `VotingBodyTeam` were correctly defined, correctly documented, and completely ignored by the only function that governed proposal closure. The gap between *declaration* and *consumption* is two iterations wide here. The detection method is simple: a grep for constant declaration sites against usage sites. For any constant that represents a behavioral variant (enum-like: routing, mode selection, policy), there must be at least one switch/case or branch that consumes it, and that branch must be tested. A constant with no usage site is an invariant violation waiting to happen — the type system allows it, the compiler accepts it, and the tests pass. Only a cross-reference audit or a test that specifically exercises the variant catches it. Rule: after adding any behavioral-variant constant, verify it is consumed in a switch/case before closing the PR.
+
+Lesson 206 — A regression test named after the failure mode creates executable documentation superior to code comments. `council_quorum_not_met_with_full_space_count` does three things simultaneously: it verifies the current correct behavior, it documents the historical failure (using full-member count for council quorum), and it prevents the old bug from silently re-entering. A test named `TestCouncilQuorumUsesCouncilCount` verifies only the positive case; a maintainer who later refactors `GetVotingBodyMemberCount` might reintroduce the all-member fallback without understanding what it breaks. The failure-mode name makes the trap visible. The lesson: for any bug fix that changes a computation's denominator, base value, or routing logic, write one test named after the old wrong behavior and assert it fails (i.e., assert the old behavior no longer holds). This is cheap — one extra sub-test — and produces permanent documentation of the specific gap the fix closed.

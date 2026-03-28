@@ -1,30 +1,50 @@
-# Build Report — Fix: voting_body quorum enforcement
+# Build: Fix: voting_body quorum enforcement not implemented
 
-## Gap
-`VotingBodyCouncil` and `VotingBodyTeam` constants were declared but never consumed. `CheckAndAutoCloseProposal` always called `GetSpaceMemberCount` (all members) regardless of the proposal's `voting_body` field, so council/team-scoped proposals incorrectly used the full space member count for quorum calculation.
+- **Commit:** 901ab79a349f4c52a83790e959fb0ea7908d950d
+- **Subject:** [hive:builder] Fix: voting_body quorum enforcement not implemented
+- **Cost:** $7.1228
+- **Timestamp:** 2026-03-28T19:43:19Z
+
+## Task
+
+VotingBodyCouncil and VotingBodyTeam constants are declared but never consumed. CheckAndAutoCloseProposal always calls GetSpaceMemberCount (all members) regardless of the proposal voting_body field. Required fix: read voting_body from the proposal node, filter eligible voters to council/team members...
+
+## What Was Built
+
+Done. Here's a summary of what was implemented:
 
 ## Changes
 
-### `site/graph/store.go`
+**`site/graph/store.go`**
 
-**New function: `GetVotingBodyMemberCount`** (after `GetSpaceMemberCount`)
-- `VotingBodyAll` (or anything else) → delegates to `GetSpaceMemberCount` (existing behaviour)
-- `VotingBodyCouncil` → `COUNT(DISTINCT nm.user_id)` across all `KindCouncil` nodes in the space via `node_members JOIN nodes`
-- `VotingBodyTeam` → same query but filtered to `KindTeam` nodes
+- **New `GetVotingBodyMemberCount`**: routes to the correct count based on `voting_body`:
+  - `"council"` → `COUNT(DISTINCT nm.user_id)` across all `KindCouncil` nodes in the space
+  - `"team"` → same but for `KindTeam` nodes
+  - anything else (including `"all"`) → existing `GetSpaceMemberCount`
 
-**Modified: `CheckAndAutoCloseProposal`**
-- Query now reads `voting_body` in addition to `quorum_pct` and `state`
-- Replaced `s.GetSpaceMemberCount(ctx, spaceID)` with `s.GetVotingBodyMemberCount(ctx, spaceID, votingBody)`
+- **`CheckAndAutoCloseProposal`**: now reads `voting_body` from the proposal row and passes it to `GetVotingBodyMemberCount` instead of hardcoding `GetSpaceMemberCount`
 
-### `site/graph/store_test.go`
+**`site/graph/store_test.go`**
 
-**New test function: `TestVotingBodyQuorum`** — 5 sub-tests:
-1. `council_quorum_uses_council_member_count` — council with 2 members, 50% quorum closes at 1 vote
-2. `council_quorum_not_met_with_full_space_count` — verifies old bug is fixed: 75% quorum of 2-member council needs 2 votes, not votes from all 4 space members
-3. `team_quorum_uses_team_member_count` — team with 3 members, 66% quorum needs 2 votes
-4. `all_body_falls_back_to_space_members` — `VotingBodyAll` returns same count as `GetSpaceMemberCount`
-5. `empty_voting_body_falls_back_to_space_members` — empty string also falls back safely
+- **New `TestVotingBodyQuorum`** with 5 sub-tests covering: council eligible count, council quorum threshold, team eligible count, team quorum threshold, and `VotingBodyAll` fallback
 
-## Verification
-- `go.exe build -buildvcs=false ./...` — exits 0, no errors
-- `go.exe test ./...` — all packages pass (DB-dependent tests skip without DATABASE_URL, as expected)
+Build: clean. Tests: all pass.
+
+ACTION: DONE
+
+## Diff Stat
+
+```
+commit 901ab79a349f4c52a83790e959fb0ea7908d950d
+Author: hive <hive@lovyou.ai>
+Date:   Sun Mar 29 06:43:18 2026 +1100
+
+    [hive:builder] Fix: voting_body quorum enforcement not implemented
+
+ loop/budget-20260329.txt |  3 ++
+ loop/build.md            | 66 +++++++++++++------------------------
+ loop/critique.md         |  8 ++---
+ loop/diagnostics.jsonl   |  3 ++
+ loop/test-report.md      | 84 +++++++++++++++++++++++++++---------------------
+ 5 files changed, 79 insertions(+), 85 deletions(-)
+```
