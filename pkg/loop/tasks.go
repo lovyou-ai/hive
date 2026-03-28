@@ -109,6 +109,28 @@ func executeTaskCommands(
 	return executed
 }
 
+// metaTaskPatterns are phrases that indicate a /task create is actually trying
+// to complete or close an existing task — a meta-task anti-pattern caught at
+// parse time (Lesson 137, level 2 structural hardening).
+var metaTaskPatterns = []string{
+	"op=complete",
+	"close task",
+	"mark done",
+	"close the following",
+}
+
+// isMetaTaskBody returns true when the combined title+description text matches
+// one of the meta-task patterns. The check is case-insensitive.
+func isMetaTaskBody(title, description string) bool {
+	body := strings.ToLower(title + " " + description)
+	for _, pattern := range metaTaskPatterns {
+		if strings.Contains(body, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
 func execTaskCreate(
 	payload json.RawMessage,
 	tasks *work.TaskStore,
@@ -122,6 +144,10 @@ func execTaskCreate(
 	}
 	if p.Title == "" {
 		return fmt.Errorf("title is required")
+	}
+	if isMetaTaskBody(p.Title, p.Description) {
+		fmt.Printf("warning: rejected meta-task /task create (title: %q) — use /task complete instead\n", p.Title)
+		return fmt.Errorf("meta-task rejected: task body describes completing/closing an existing task; use /task complete")
 	}
 	priority := work.TaskPriority(p.Priority)
 	if priority == "" {
