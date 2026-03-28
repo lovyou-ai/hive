@@ -1,32 +1,22 @@
-# Build: Update Critic prompt — enforce Scout-gap cross-reference and degenerate-iteration REVISE
+# Build: intend op — read body field + allow kind=proposal
 
-## Gap Addressed
-Lessons 168, 171, 197, 200, 201 converged on a single root cause: the Critic prompt was not enforcing two critical checks, allowing it to ratify drift across 16 consecutive iterations.
+## Gap
+Two bugs in the `intend` op handler (`site/graph/handlers.go`):
+1. Body field read `description` only — JSON callers using key `body` silently got empty task body.
+2. `KindProposal` missing from allowed-kinds guard — `kind=proposal` silently downgraded to `kind=task`.
 
-## What Changed
+## Changes
 
-### `agents/critic.md`
-- Added **Scout gap cross-reference** (Lessons 168/171) to "What You Produce": Critic must REVISE when `build.md` does not explicitly reference the open gap from `scout.md`.
-- Added **Degenerate iteration** (Lesson 200) to "What You Produce": Critic must REVISE when the diff only contains `loop/` artifact changes.
-- Added two corresponding anti-patterns to reinforce both rules.
+### `site/graph/handlers.go`
+- Added `KindProposal` to the allowed-kinds guard (line ~2323).
+- Replaced `r.FormValue("description")` with two-field read: prefer `body` if non-empty, fall back to `description`. Stored in local `intentBody` before `CreateNode` call.
 
-### `loop/critic-prompt.txt`
-- Added `SCOUT GAP CROSS-REFERENCE` section with explicit REVISE instruction.
-- Added `DEGENERATE ITERATION CHECK` section with explicit REVISE instruction.
-- Both sections reference the lessons that motivated them.
-
-### `pkg/runner/critic.go`
-- `buildReviewPrompt`: Added `scoutContent` and `buildContent` parameters; both checks are items 1 and 2 in the review checklist.
-- Operate path instruction: Added `Required Checks (Lessons 168/171/200)` section with both rules.
-- Reason path call site: Loads `loop/scout.md` and `loop/build.md` via new `loadLoopArtifact` helper and passes them into the prompt.
-- New `isDegenerateIteration(diff)` helper: detects when every file in a diff is under `loop/`.
-- New `loadLoopArtifact(hiveDir, name)` helper: reads a loop artifact, capped at 3000 bytes.
-
-### `pkg/runner/critic_test.go`
-- Updated `TestBuildReviewPrompt` signature and added assertions for both new checklist items.
-- Added `TestBuildReviewPromptWithArtifacts`: verifies scout/build content appears in prompt.
-- Added `TestIsDegenerateIteration`: covers all-loop, mixed, empty, and no-loop cases.
+### `site/graph/handlers_test.go`
+- Added `intend_body_field` subtest: JSON with `body` key, asserts node body stored correctly.
+- Added `intend_kind_proposal` subtest: JSON with `kind=proposal`, asserts node kind is `proposal`.
 
 ## Verification
-- `go.exe build -buildvcs=false ./...` — clean
-- `go.exe test ./...` — all pass (pkg/runner: 3.724s)
+```
+go.exe build -buildvcs=false ./...   → EXIT:0
+go.exe test -buildvcs=false ./...    → all pass
+```

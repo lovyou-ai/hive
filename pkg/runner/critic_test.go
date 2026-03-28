@@ -162,6 +162,76 @@ func searchString(s, sub string) bool {
 	return false
 }
 
+func TestLoadLoopArtifact(t *testing.T) {
+	t.Run("empty hiveDir returns empty", func(t *testing.T) {
+		got := loadLoopArtifact("", "scout.md")
+		if got != "" {
+			t.Errorf("expected empty, got %q", got)
+		}
+	})
+
+	t.Run("missing file returns empty", func(t *testing.T) {
+		dir := t.TempDir()
+		got := loadLoopArtifact(dir, "scout.md")
+		if got != "" {
+			t.Errorf("expected empty, got %q", got)
+		}
+	})
+
+	t.Run("short file returns full content", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(dir, "loop"), 0755); err != nil {
+			t.Fatal(err)
+		}
+		content := "## Gap\nAdd login flow."
+		if err := os.WriteFile(filepath.Join(dir, "loop", "scout.md"), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+		got := loadLoopArtifact(dir, "scout.md")
+		if got != content {
+			t.Errorf("got %q, want %q", got, content)
+		}
+	})
+
+	t.Run("long file truncated at 3000 with marker", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(dir, "loop"), 0755); err != nil {
+			t.Fatal(err)
+		}
+		big := strings.Repeat("x", 4000)
+		if err := os.WriteFile(filepath.Join(dir, "loop", "build.md"), []byte(big), 0644); err != nil {
+			t.Fatal(err)
+		}
+		got := loadLoopArtifact(dir, "build.md")
+		if len(got) >= 4000 {
+			t.Errorf("expected truncation, got len=%d", len(got))
+		}
+		if !strings.Contains(got, "... (truncated)") {
+			t.Error("expected truncation marker")
+		}
+		// First 3000 chars must be preserved exactly.
+		if got[:3000] != big[:3000] {
+			t.Error("first 3000 chars changed")
+		}
+	})
+}
+
+func TestIsDegenerateIterationBudgetFile(t *testing.T) {
+	// Budget files live under loop/ — iteration is still degenerate.
+	diff := "diff --git a/loop/budget-20260329.txt b/loop/budget-20260329.txt\n+token budget\n"
+	if !isDegenerateIteration(diff) {
+		t.Error("budget-only diff should be degenerate")
+	}
+}
+
+func TestIsDegenerateIterationLoopPrefixOnly(t *testing.T) {
+	// A file named loop-extra/foo.go is NOT under loop/ — not degenerate.
+	diff := "diff --git a/loop-extra/foo.go b/loop-extra/foo.go\n+func foo() {}\n"
+	if isDegenerateIteration(diff) {
+		t.Error("loop-extra/ file should not be considered degenerate")
+	}
+}
+
 func TestWriteCritiqueArtifact(t *testing.T) {
 	cases := []struct {
 		name    string

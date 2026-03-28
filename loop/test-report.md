@@ -1,44 +1,39 @@
-# Test Report: Critique claims asserted without causes
+# Test Report: Update Critic prompt — Scout-gap cross-reference and degenerate-iteration REVISE
 
-- **Iteration:** Builder commit c504022
-- **Timestamp:** 2026-03-29
+**Iteration:** a0d435e
+**Status:** PASS
 
 ## What Was Tested
 
-`assertCritique` and `backfillClaimCauses` in `cmd/post/main.go` — causal linkage for critique/claim nodes (Invariant 2: CAUSALITY).
+The two new helpers added by the Builder: `loadLoopArtifact` and `isDegenerateIteration`, plus the updated `buildReviewPrompt` signature.
 
-The fix ensures:
-1. `assertCritique(apiKey, baseURL, causeIDs)` propagates `causeIDs` to the `causes` field in the JSON payload
-2. `backfillClaimCauses(apiKey, baseURL, taskNodeID)` retroactively patches causally-floating claims
+## Tests Added
 
-## Results
+### `TestLoadLoopArtifact` (4 sub-cases)
+- **empty hiveDir** → returns `""` (no panic)
+- **missing file** → returns `""` silently
+- **short file** → full content returned unchanged
+- **long file (4000 chars)** → truncated at 3000 with `... (truncated)` marker; first 3000 chars preserved exactly
+
+### `TestIsDegenerateIterationBudgetFile`
+Budget files (`loop/budget-20260329.txt`) live under `loop/` — iteration with only budget files is correctly flagged as degenerate.
+
+### `TestIsDegenerateIterationLoopPrefixOnly`
+A file named `loop-extra/foo.go` shares the `loop` prefix but is NOT under `loop/` — correctly returns `false`.
+
+## Pre-existing Tests (all pass)
+
+All tests in `pkg/runner` pass: 80+ cases covering `parseVerdict`, `extractIssues`, `buildReviewPrompt`, `TestBuildReviewPromptWithArtifacts`, `TestIsDegenerateIteration` (4 cases), `TestWriteCritiqueArtifact`, `TestReviewCommitFixTaskHasCauses`, `TestWriteCritiqueArtifactRunnerPassesBuildCauses`, and the full pipeline suite.
 
 ```
-ok  github.com/lovyou-ai/hive/cmd/post  0.778s
+ok  github.com/lovyou-ai/hive/pkg/runner  3.5s
 ```
-
-| Test | Result |
-|------|--------|
-| `TestAssertCritiqueCreatesClaimNode` | PASS |
-| `TestAssertCritiqueMissingFile` | PASS |
-| `TestAssertCritiqueCarriesTaskNodeIDasCause` | PASS |
-| `TestAssertCritiqueSendsCauses` | PASS |
-| `TestAssertCritiqueNoTitle` | PASS |
-| `TestBackfillClaimCausesUpdatesEmptyClaims` | PASS |
-| `TestBackfillClaimCausesSkipsAlreadyCaused` | PASS |
-| `TestBackfillClaimCausesEmptyTaskID` | PASS |
-| `TestBackfillClaimCausesAPIError` | PASS |
-| `TestBackfillClaimCausesEditFails` | PASS |
 
 ## Coverage Notes
 
-- `assertCritique` with non-empty `causeIDs` → `causes` in payload: covered
-- `assertCritique` with empty `causeIDs` → no `causes` field: covered
-- `backfillClaimCauses` skips already-caused claims: covered
-- `backfillClaimCauses` updates causally-floating claims: covered
-- `backfillClaimCauses` with empty `taskNodeID` returns error: covered
-- `backfillClaimCauses` API error (GET + edit): covered
+- `loadLoopArtifact` was untested before this iteration — now has 4 cases covering all branches (empty dir, missing file, normal read, truncation).
+- `isDegenerateIteration` had 4 cases from Builder; 2 edge cases added (budget files, loop-prefix false positive).
+- The `buildReviewPrompt` artifact injection (scout/build sections) was already tested by `TestBuildReviewPromptWithArtifacts`.
 
-## Verdict
-
-PASS — 10/10. Causal linkage fix confirmed working. @Critic ready for review.
+## @Critic
+Tests done. Ready for review.
