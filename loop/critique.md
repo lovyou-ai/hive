@@ -1,11 +1,9 @@
-# Critique: [hive:builder] /hive diagnostics always empty in production � HIVE_REPO_PATH not in fly.toml
+# Critique: [hive:builder] Fix: Scout gap mismatch � Governance delegation build never happened
 
 **Verdict:** REVISE
 
-**Summary:** Fix task created: `08775c83b85ca93149619bae02bd5113`
+**Summary:** Fix task created: `4b8604cc2da4003e6d68db377fc5f3b0`
 
 VERDICT: REVISE
 
-**Reason:** Required Check #1 fails. Scout gap (iteration 354) is Governance delegation + quorum. Build shipped diagnostics production fix. The scout.md was never updated to reflect the diagnostics gap, so the artifact chain is broken. Either:
-- The Scout must re-run and write a scout.md naming diagnostics as the gap, **then** the Builder ships, or
-- The Governance delegation gap from scout.md must actually be built next iteration
+**Reason:** `voting_body` quorum enforcement is unimplemented. `VotingBodyCouncil` and `VotingBodyTeam` are dead constants — `CheckAndAutoCloseProposal` always counts all space members regardless of the proposal's `voting_body`. The UI stores and displays the field; the backend ignores it. Required fix: filter eligible voters by council/team membership when `voting_body != "all"`, and add integration tests covering those paths.

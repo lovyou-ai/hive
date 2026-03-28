@@ -1,57 +1,69 @@
-# Test Report — Iteration 402
+# Test Report: Governance Delegation + Quorum
 
-## What was tested
+- **Iteration:** 354
+- **Timestamp:** 2026-03-29
+- **Build:** 052878b — Governance delegation + quorum UI
 
-Iteration 402 migrated `/hive/feed` diagnostics from a local file to the graph database,
-adding `AppendHiveDiagnostic`, `ListHiveDiagnostics`, `POST /api/hive/diagnostic`,
-`api.Client.PostDiagnostic`, and `Runner.appendDiagnostic` (dual-write).
+## What Was Tested
 
-## Bug found and fixed
+The Builder added delegation and quorum to the governance system in `site/graph/`. Tested:
 
-**`TestListHiveDiagnostics_Empty` fails when tests run in order** — `TestPostHiveDiagnostic_StoresAndServes`
-inserts a row into `hive_diagnostics`, then `TestListHiveDiagnostics_Empty` asserts the table is
-empty. Fixed by adding `DELETE FROM hive_diagnostics` at the start of the empty test to isolate it
-from prior rows.
+### Store layer (`graph/store_test.go`)
 
-## Tests added
+`TestGovernanceDelegation` (12 sub-tests) — shipped by Builder, verified passing:
 
-### `site/graph/hive_test.go`
+| Sub-test | Covers |
+|---|---|
+| `delegate_and_has_delegated` | `Delegate` + `HasDelegated` happy path |
+| `undelegate_clears_delegation` | `Undelegate` removes delegation |
+| `circular_delegation_blocked` | A→B then B→A returns error |
+| `self_delegation_blocked` | A→A returns error |
+| `effective_vote_count_includes_delegated` | Delegate votes count for delegator |
+| `quorum_auto_close_on_threshold` | Proposal closes at 50% threshold |
+| `redelegate_updates_target` | A→B then A→C redirects delegation |
+| `undelegate_idempotent` | No error when undelegating a non-delegation |
+| `quorum_disabled_when_zero` | `quorum_pct=0` never auto-closes |
+| `quorum_tie_outcome_rejected` | Tied vote → ProposalFailed |
+| `get_user_delegation` | Returns delegateID + name, false when none |
+| `list_delegations` | Returns all space delegations with names |
 
-- **`TestPostHiveDiagnostic_StoresAndServes`** (pre-existing, Builder wrote it) — round-trip POST
-  then GET /hive/feed, verifies the stored phase name appears in the feed. **PASS** with DB.
-- **`TestListHiveDiagnostics_Empty`** (pre-existing, fixed isolation) — verifies empty DB returns
-  nil without error. **PASS** with DB after adding pre-test DELETE.
+`TestGovernanceDelegationEdgeCases` (3 sub-tests) — added by Tester:
 
-### `hive/pkg/api/client_test.go`
+| Sub-test | Covers | Why added |
+|---|---|---|
+| `auto_close_idempotent_on_already_closed` | `CheckAndAutoCloseProposal` returns `(false, nil)` on closed proposal | Not in Builder's tests; early-return path on `state != ProposalOpen` |
+| `effective_vote_count_zero_with_no_votes` | `GetEffectiveVoteCount` returns 0 before any votes | Delegation alone (no actual vote) must not inflate count |
+| `list_delegations_zero_limit_uses_default` | `ListDelegations(limit=0)` uses default 50 | `limit <= 0` branch in store untested |
 
-- **`TestPostDiagnostic_SendsPayload`** — verifies the request hits `/api/hive/diagnostic`, sends
-  raw payload unchanged, sets `Content-Type: application/json`, and includes `Bearer` auth.
-- **`TestPostDiagnostic_Error4xx`** — verifies HTTP 401 is returned as a non-nil error.
+### Handler layer (`graph/handlers_test.go`)
 
-### `hive/pkg/runner/diagnostic_test.go`
+`TestHandlerGovernanceDelegation` (6 sub-tests) — shipped by Builder, verified passing:
 
-- **`TestRunnerAppendDiagnostic_WritesFileOnly`** — HiveDir set, no APIClient: event written to
-  `diagnostics.jsonl`, no HTTP call.
-- **`TestRunnerAppendDiagnostic_PostsOnly`** — APIClient set, no HiveDir: event POSTed, no file
-  written.
-- **`TestRunnerAppendDiagnostic_WritesBoth`** — both set: file written AND POST made (the production
-  path).
-- **`TestRunnerAppendDiagnostic_NeitherSet`** — neither set: no panic (defensive).
+| Sub-test | Covers |
+|---|---|
+| `propose_with_quorum_pct` | `intend` op with `quorum_pct` + `voting_body` fields |
+| `delegate_op` | `delegate` op via HTTP |
+| `vote_blocked_when_delegated` | Voting returns 400 when user has delegated |
+| `undelegate_op` | `undelegate` op via HTTP |
+| `delegate_missing_delegate_id` | Missing field returns 400 |
+| `vote_after_undelegate` | Vote succeeds after undelegating |
 
 ## Results
 
 ```
-hive: go test -count=1 ./...    PASS (all 13 packages)
-site: go test -count=1 ./graph/ PASS (DB tests with DATABASE_URL)
+TestHandlerGovernanceDelegation    PASS  6/6 sub-tests
+TestGovernanceDelegation           PASS  12/12 sub-tests
+TestGovernanceDelegationEdgeCases  PASS  3/3 sub-tests
 ```
 
-## Coverage notes
+**Total: 21/21 PASS**
 
-- The store-level functions `AppendHiveDiagnostic` / `ListHiveDiagnostics` are covered by DB integration
-  tests (skip without DATABASE_URL, pass with local Docker Postgres).
-- `handleHiveDiagnostic` (the HTTP handler) is covered via the round-trip test through the full handler stack.
-- `Runner.appendDiagnostic` dual-write logic is fully covered: file-only, API-only, both, neither.
-- `api.Client.PostDiagnostic` path, headers, body, and error propagation are all covered.
+## Coverage Notes
+
+- All new public functions covered: `SetProposalConfig`, `Delegate`, `Undelegate`, `HasDelegated`, `GetSpaceMemberCount`, `GetEffectiveVoteCount`, `CheckAndAutoCloseProposal`, `GetUserDelegation`, `ListDelegations`
+- `voting_body` filter (`council`/`team` scoped quorum) exercised only with `VotingBodyAll` — acceptable since council/team membership is not set up in the test space.
+- **One observation for Critic:** `Delegate` only checks one hop for circular delegation (if B delegates to A, block A→B). A longer chain (A→B→C, then C→A) is not caught. The function comment says "prevent circular delegation" but the guard is only the direct case. Known limitation or gap.
 
 ## @Critic
+
 Tests done. Ready for review.
