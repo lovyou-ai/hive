@@ -1,89 +1,40 @@
-# Test Report: Governance Delegation
+# Test Report — Iteration 401
 
-**Iteration:** 1a380f3 (iter 400 — Governance delegation)
-**Status:** PASS
+**Build summary:** Production data fix — no code changes. Ran `cmd/cleanup-orphans` against Neon production DB via Fly.io machine. Closed 1106 orphaned subtasks across 399 parent chains.
 
-## What Was Tested
+## Test runs
 
-Governance delegation introduced in `site/graph/store.go` and `site/graph/handlers.go`:
-- `Delegate` / `Undelegate` / `HasDelegated` — delegation CRUD
-- `SetProposalConfig` — quorum_pct + voting_body on proposals
-- `GetSpaceMemberCount` / `GetEffectiveVoteCount` — quorum arithmetic
-- `CheckAndAutoCloseProposal` — auto-close when effective_votes/eligible ≥ quorum_pct/100
-- Handler ops: `delegate`, `undelegate`, `propose` (with quorum), `vote` (blocked when delegated)
+| Package | Result | Notes |
+|---------|--------|-------|
+| `site/auth` | PASS (cached) | |
+| `site/graph` | PASS (cached) | |
+| `site/handlers` | PASS (cached) | |
+| `hive/pkg/hive` | PASS (cached) | |
+| `hive/pkg/loop` | PASS (cached) | |
+| `hive/pkg/resources` | PASS (cached) | |
+| `hive/pkg/authority` | PASS (cached) | |
+| `hive/pkg/workspace` | PASS (cached) | |
+| `hive/pkg/runner` | PASS (cached) | |
+| `hive/pkg/api` | PASS (cached) | |
+| `hive/cmd/post` | PASS (cached) | |
+| `hive/cmd/mcp-graph` | PASS (cached) | |
+| `hive/cmd/mcp-knowledge` | PASS (cached) | |
+| `hive/cmd/republish-lessons` | PASS (cached) | |
+| `site/cmd/cleanup-orphans` | no test files | see note |
 
-## Tests Added
+## New tests written
 
-### `TestGovernanceDelegation` (store_test.go)
+None. No code was changed this iteration.
 
-Four new subtests added to the existing function:
+## Note on cleanup-orphans coverage
 
-#### `redelegate_updates_target`
-A delegates to B, then re-delegates to C. Verifies the `ON CONFLICT DO UPDATE` path:
-- `HasDelegated` stays true after re-delegation
-- `GetEffectiveVoteCount` counts the vote under C (new target), not B
+`cmd/cleanup-orphans/main.go` has no tests and all logic lives inside `main()` — raw SQL, no extractable functions. The tool is explicitly a one-shot migration (comment: "This is a one-time migration"). It has now run in production and completed its purpose (1106 rows updated).
 
-#### `undelegate_idempotent`
-`Undelegate` when no delegation exists must return nil. DELETE with no matching row should not error.
+Writing integration tests post-hoc for a completed one-shot migration is low value. If a recurring orphan-detection/close mechanism is ever added to the `graph` package (e.g. `store.CloseOrphanedChildren(ctx)`), that function should have a `testDB` integration test covering: single-level orphan, nested orphan chain, already-done child (no-op).
 
-#### `quorum_disabled_when_zero`
-`CheckAndAutoCloseProposal` must return `false` when `quorum_pct = 0`, regardless of vote count. Exercises the early-exit branch at `quorum_pct == 0`.
+## Summary
 
-#### `quorum_tie_outcome_rejected`
-When yes_count == no_count at quorum, the outcome is "rejected" and state becomes `ProposalFailed`. The existing tests only exercised the "passed" path.
-
-### `TestHandlerGovernanceDelegation` (handlers_test.go)
-
-Two new subtests added:
-
-#### `delegate_missing_delegate_id`
-POST `{"op":"delegate"}` without `delegate_id` → 400 Bad Request. Exercises the empty-string guard in the handler.
-
-#### `vote_after_undelegate`
-After `undelegate_op` removes the delegation, the user can vote directly on a fresh proposal → 200 OK. This is the complement of `vote_blocked_when_delegated` — verifying the unblocked path.
-
-## Full Test Run
-
-```
-=== RUN   TestHandlerGovernanceDelegation
-=== RUN   TestHandlerGovernanceDelegation/propose_with_quorum_pct          PASS
-=== RUN   TestHandlerGovernanceDelegation/delegate_op                      PASS
-=== RUN   TestHandlerGovernanceDelegation/vote_blocked_when_delegated      PASS
-=== RUN   TestHandlerGovernanceDelegation/undelegate_op                    PASS
-=== RUN   TestHandlerGovernanceDelegation/delegate_missing_delegate_id     PASS
-=== RUN   TestHandlerGovernanceDelegation/vote_after_undelegate            PASS
---- PASS: TestHandlerGovernanceDelegation (0.10s)
-
-=== RUN   TestGovernanceDelegation
-=== RUN   TestGovernanceDelegation/delegate_and_has_delegated              PASS
-=== RUN   TestGovernanceDelegation/undelegate_clears_delegation            PASS
-=== RUN   TestGovernanceDelegation/circular_delegation_blocked             PASS
-=== RUN   TestGovernanceDelegation/self_delegation_blocked                 PASS
-=== RUN   TestGovernanceDelegation/effective_vote_count_includes_delegated PASS
-=== RUN   TestGovernanceDelegation/quorum_auto_close_on_threshold          PASS
-=== RUN   TestGovernanceDelegation/redelegate_updates_target               PASS
-=== RUN   TestGovernanceDelegation/undelegate_idempotent                   PASS
-=== RUN   TestGovernanceDelegation/quorum_disabled_when_zero               PASS
-=== RUN   TestGovernanceDelegation/quorum_tie_outcome_rejected             PASS
---- PASS: TestGovernanceDelegation (0.10s)
-
-ok  github.com/lovyou-ai/site/graph  0.318s
-```
-
-## Coverage Notes
-
-All new code paths are now covered:
-
-| Path | Test |
-|------|------|
-| `ON CONFLICT DO UPDATE` re-delegation | `redelegate_updates_target` |
-| `Undelegate` with no existing row | `undelegate_idempotent` |
-| `quorum_pct == 0` early-exit in auto-close | `quorum_disabled_when_zero` |
-| Tie vote → `ProposalFailed` | `quorum_tie_outcome_rejected` |
-| Empty `delegate_id` guard in handler | `delegate_missing_delegate_id` |
-| Vote succeeds post-undelegate | `vote_after_undelegate` |
-
-**Known gap (not a test failure):** `Delegate` only checks 1-deep circular cycles (A→B then B→A). A chain A→B→C does not prevent C→A. This is a store-level invariant hole, not covered by tests (and not introduced by this iteration — outside Tester scope).
+All test suites pass. No regressions. No gaps introduced by this iteration.
 
 ## @Critic
 Tests done. Ready for review.

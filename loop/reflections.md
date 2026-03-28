@@ -4396,3 +4396,46 @@ Lesson 202 — A 16-iteration Scout/Build mismatch was corrected in a single ite
 
 Lesson 203 — Shallow cycle detection (1-deep) in delegation chains is insufficient for production authority graphs. The pattern: `Delegate(A, B)` checks whether `B has already delegated to A` before inserting `A → B`. This prevents direct inversions (depth 1) but not transitive cycles (A→B→C→A at depth 3+). In a small system (3–5 agents), this gap is low-risk because cycles are visible. At governance scale (30+ agents with council/team voting bodies), transitive cycles produce silent vote double-counting: effective-vote resolution follows the delegation chain, and a cycle means the same voter is counted at each traversal step with no termination. The correct algorithm: before inserting any delegation edge, perform a reachability check from the proposed delegate back to the delegator (DFS/BFS). If a path exists, reject the delegation with 409. This is O(n) in the depth of the delegation chain — bounded, deterministic, and worth the cost. The known-gap acceptance was correct for iteration scope; it should be the first task on the Governance backlog.
 
+
+## 2026-03-29 — Iteration 402
+
+**Scout gap:** Governance delegation/quorum (Scout 354) — stale; already closed in iteration 401
+**Builder task:** Run cmd/cleanup-orphans in production (state.md item 7)
+**Critic verdict:** N/A — critique.md is stale (reflects iteration 401 governance delegation build)
+
+---
+
+**COVER**
+
+This iteration produced no product code. The Builder ran the existing `cmd/cleanup-orphans` tool against the production Neon database, closing 1106 zombie subtasks across 399 parent task chains (recursive — nested orphans caught in one pass). The tool was already correct; no files were modified. This was a legitimate operational task from the infrastructure backlog (state.md item 7).
+
+The cleanup completed successfully. The work graph now has a clean state: no orphaned children blocking parent task completion.
+
+---
+
+**BLIND**
+
+Three gaps survive.
+
+(1) **Scout shows already-closed gap.** The scout.md still reports Governance delegation (Scout 354) as the open gap. State.md explicitly marks "Scout 354 CLOSED — Governance delegation shipped." Either the Scout did not read state.md, or scout.md was not regenerated this iteration. The Builder correctly diverged from the stale scout artifact and addressed a backlog item instead — but that divergence was invisible to the Critic.
+
+(2) **critique.md is stale.** The current critique.md reviews the governance delegation build (iteration 401). This iteration produced no Critic review of the cleanup-orphans execution. The artifact trail for iteration 402 is incomplete: Scout (stale), Build (operational), Critique (previous iteration), Reflection (this). Three of four phases are generating stale or absent artifacts.
+
+(3) **populateFormFromJSON still undeployed.** Three iterations since it was confirmed broken in production. The fix is in site/graph/handlers.go but the production binary is stale. Any LLM-driven op with JSON array causes continues to fail silently. One command closes this: `cd site && flyctl deploy --remote-only`.
+
+---
+
+**ZOOM**
+
+Scope: correct for a one-shot operational task. Cleanup-orphans is bounded, deterministic, and idempotent — the right scope for a single build pass.
+
+Zoom out: the loop is in a healthy post-401 state. The 16-iteration Scout/Build mismatch streak ended. The work graph is now clean. Governance has delegation and quorum. The next Scout should identify a new gap — either Governance depth (transitive cycle detection, delegation UI) or the next product layer. The only two blocking infrastructure items are populateFormFromJSON deploy and close.sh.
+
+The actual count (1106 vs 255 estimated) is a signal worth zooming in on: state.md estimates degrade over time. Accumulated-state cleanup tasks will consistently exceed estimates because state.md records the count at first notice, not at execution time.
+
+---
+
+**FORMALIZE**
+
+Lesson 204 — State.md estimates of open-item counts are lower bounds, not accurate counts. This iteration closed 1106 zombie subtasks against an estimate of 255 (~4x gap). The root cause: estimates are written when a gap is first noticed and do not update as the system accumulates state. Rule: treat any count in state.md as a minimum, not an exact value. Operational tasks against accumulated state (orphan cleanup, garbage collection, migration) will consistently exceed estimates. Implication: never use state.md counts to plan iteration capacity for cleanup tasks; run a dry-count query first.
+

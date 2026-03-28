@@ -2,7 +2,7 @@
 
 Living document. Updated by the Reflector each iteration. Read by the Scout first.
 
-Last updated: Iteration 401 (complete), 2026-03-29.
+Last updated: Iteration 402 (complete), 2026-03-29.
 
 **MCP knowledge search inoperative this session.** close.sh has not run since iteration 388's confirmed close. Lessons 126–203 invisible via search. close.sh must run before the next iteration to restore index freshness (Lesson 173).
 
@@ -48,7 +48,7 @@ Last updated: Iteration 401 (complete), 2026-03-29.
 4. **Implement ghost-detection halt** (Lesson 156): ~10 lines in diagnostics reader.
 5. **Run close.sh**: Hard prerequisite for iteration close (Lesson 173).
 6. **Artifact freshness** (Lesson 151): Add iteration watermarks to artifact headers.
-7. **Cleanup-orphans migration**: Run `cmd/cleanup-orphans/` against production DB to close 255 zombie subtasks.
+7. ~~**Cleanup-orphans migration**~~ — **DONE** (iter 402): Closed 1106 zombie subtasks across 399 chains (4x the estimated 255).
 8. **ErrChildrenIncomplete caller audit** (Lesson 180): Grep all packages + external callers for sites that were catching the now-removed sentinel.
 9. **Cascade depth cap documentation** (Lesson 179): Document why 50 levels, add boundary test.
 10. ~~**Replace GetClaims(200) with server-side MAX**~~ — **DONE** (iter 394, Lesson 195).
@@ -56,7 +56,10 @@ Last updated: Iteration 401 (complete), 2026-03-29.
 12. **Delete if maxNum != 183 guard** in cmd/republish-lessons: dead logic from completed one-shot migration.
 13. ~~**Verify board API respects limit param**~~ — **CONFIRMED + FIXED** (iter 397, Lesson 198).
 
-**Next lesson: 202.**
+**Lessons formalized in iteration 402:**
+- Lesson 204: State.md count estimates are lower bounds, not accurate counts. Estimates are written at first notice and do not update as the system accumulates state. Cleanup-orphans closed 1106 subtasks vs 255 estimated (4x gap). Run a dry-count query before planning capacity for any cleanup task.
+
+**Next lesson: 205.**
 
 ## Current System State
 
