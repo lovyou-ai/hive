@@ -221,6 +221,14 @@ func (r *Runner) runBuilder(ctx context.Context) {
 		if t.State == "done" || t.State == "closed" {
 			continue
 		}
+		// Tasks with incomplete children are blocked — mark and skip.
+		if t.ChildCount > 0 && t.ChildDone < t.ChildCount {
+			if t.State != "review" { // don't overwrite review state
+				_ = r.cfg.APIClient.CommentTask(r.cfg.SpaceSlug, t.ID,
+					fmt.Sprintf("Blocked: %d/%d children incomplete", t.ChildCount-t.ChildDone, t.ChildCount))
+			}
+			continue
+		}
 		// When agent-id is set, only work tasks assigned to this agent.
 		// When agent-id is empty, work ALL open tasks (assigned or not).
 		if t.AssigneeID != "" && r.cfg.AgentID != "" && t.AssigneeID != r.cfg.AgentID {

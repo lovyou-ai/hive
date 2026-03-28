@@ -28,9 +28,12 @@ type Node struct {
 	Author     string `json:"author,omitempty"`
 	AuthorID   string `json:"author_id,omitempty"`
 	AuthorKind string `json:"author_kind,omitempty"`
-	DueDate    string `json:"due_date,omitempty"`
-	CreatedAt  string `json:"created_at"`
-	UpdatedAt  string `json:"updated_at"`
+	DueDate      string `json:"due_date,omitempty"`
+	CreatedAt    string `json:"created_at"`
+	UpdatedAt    string `json:"updated_at"`
+	ChildCount   int    `json:"child_count"`
+	ChildDone    int    `json:"child_done"`
+	BlockerCount int    `json:"blocker_count"`
 }
 
 // BoardResponse is the JSON returned by GET /app/{slug}/board?format=json.
