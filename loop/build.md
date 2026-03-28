@@ -1,58 +1,30 @@
-# Build: Causality fix is narrow: Observer-created nodes still have causes=[] after commits 274999c and 8a13ac7
+# Build: MCP knowledge search blackout — verified resolved
 
-- **Timestamp:** 2026-03-28T00:00:00Z
+## Gap
+Observer audit found `mcp__knowledge__knowledge_search` returning zero results for every query. 145 claims on graph, none reachable via search. Acceptance: `knowledge_search("lesson")` returns at least one result.
 
-## Task
+## Investigation
 
-Causality fix tasks (1a90716f, 2f8fd5a0, ee651efd) were marked done, but 3 Observer-created board nodes still had causes=[]. The prior fix only covered the Architect Operate path (buildArchitectOperateInstruction). All other creation paths remained broken.
+### What I found
+- `loop/claims.md` exists (72KB, 65 claim sections, last synced Mar 28 02:33)
+- `mcp__knowledge__knowledge_search("lesson")` returns **10 results** — acceptance criteria met
+- All 18 mcp-knowledge tests pass, including `TestHandleSearchFindsDeepClaims`
+- `go build ./...` succeeds with no errors
 
-## What Was Built
+### Root cause of prior blackout
+The blackout was a transient state. Prior builder commits (`90121a9`, `3b6cd0e`) fixed the deep-claim search gap by adding `parseClaims()` — which splits `claims.md` into individual `topic` nodes (one per `##` section) so each claim is searchable by name/summary rather than only within the first 4000 chars of the file. Once `cmd/post` ran and wrote a fresh `claims.md`, the search recovered.
 
-Audited ALL `intend` op creation call sites and fixed each to declare causes:
+### Residual gap (not in scope of this acceptance test)
+`claims.md` contains 65 claim sections (Lessons 109–125 + critiques). The graph has 145 claims. Lessons 1–108 are absent — likely because early iterations pre-dated the `createTask("Lesson X: ...")` title convention, or were stored as `kind=claim` on the knowledge lens rather than `kind=task` on the board. The `syncClaims` function only queries the board (`/app/hive/board?q=Lesson`), which returns `kind=task` root nodes. A future iteration should also query `/app/hive/knowledge` (kind=claim) and merge results.
 
-### 1. `cmd/post/main.go` — `createTask()`
-- Added `causeIDs []string` parameter
-- Passes `causes` field in the JSON payload when non-empty
-- Caller now passes `buildDocID` so every board task is linked to the build document that triggered it
-- Added `TestCreateTaskSendsCauses` test to pin the invariant
+## Verification
 
-### 2. `pkg/runner/observer.go` — Observer Operate path
-- Updated `buildOutputInstruction()` curl template to include `"causes":["<NODE_ID>"]`
-- Added instruction: "Replace <NODE_ID> with the ID of the specific board node, claim, or document that triggered this finding (Invariant 2: CAUSALITY)"
+| Check | Result |
+|-------|--------|
+| `knowledge_search("lesson")` returns ≥1 result | ✓ 10 results |
+| `go build -buildvcs=false ./...` | ✓ clean |
+| `go test ./...` | ✓ all pass (18 mcp-knowledge tests, all packages) |
+| Acceptance criteria | ✓ MET |
 
-### 3. `pkg/runner/observer.go` — Observer Reason path
-- Added `causeID string` field to `observerTask` struct
-- Updated `parseObserverTasks()` to parse `TASK_CAUSE:` lines from LLM output
-- Updated prompt to request `TASK_CAUSE: <node_id>` for each finding
-- Updated `runObserverReason()` to pass the parsed cause ID to `CreateTask`
-
-### 4. `pkg/runner/pm.go` — PM Operate path
-- Updated `runPMOperate()` curl template to include `"causes":["<PINNED_GOAL_NODE_ID>"]`
-- Instructs PM to use the pinned goal node it reads in step 1 as the cause
-
-### 5. `pkg/runner/pm.go` — PM Reason path
-- `runPMReason()` now looks up the most recent `Build:` document and uses its ID as cause when creating the milestone
-
-### 6. `pkg/runner/critic.go` — Critic Operate path
-- Before calling Operate, looks up the `Build: {subject}` document for the commit being reviewed
-- Injects the build node ID into the Fix task curl template as `"causes":["{buildNodeID}"]`
-
-### 7. `pkg/runner/critic.go` — `writeCritiqueArtifact()`
-- Added `causeIDs []string` parameter
-- Passes causes to `AssertClaim()` so critique claims are linked to the build they review
-
-### 8. `pkg/runner/reflector.go` — Reflector Operate path
-- Looks up current `Critique:` and `Build:` node IDs before calling Operate
-- Injects them as `causes` in both the `assert` (lesson) and `intend` (document) curl templates
-
-### 9. `pkg/runner/reflector.go` — Reflector Reason path
-- Added `readFromGraphNode()` helper (returns full `*api.Node` including ID)
-- Refactored `readFromGraph()` to delegate to `readFromGraphNode()`
-- `runReflectorReason()` now collects `iterationCauses` from critique/build node IDs
-- `AssertClaim()` (lessons) and `CreateDocument()` (reflection) now pass `iterationCauses`
-- `appendReflection()` accepts `causeIDs []string` and forwards to `CreateDocument`
-
-## Coverage
-- `go.exe build -buildvcs=false ./...` — passes
-- `go.exe test ./...` — all 13 packages pass
-- New test: `TestCreateTaskSendsCauses` in `cmd/post/main_test.go`
+## Files changed
+None — the fix was already present in code. This build confirmed the acceptance criteria is met and documented the residual 65/145 sync gap as a follow-up.
