@@ -271,10 +271,10 @@ func runPipeline(space, apiBase, repoPath string, budget float64, agentID string
 			Model:        model,
 			MaxBudgetUSD: budget,
 		}
-		// Agent's session UUID from the DB. Persistent because the agent is persistent.
-		if sid, ok := agentSessions[role]; ok {
-			providerCfg.SessionID = sid
-		}
+		// Session persistence disabled: --session-id doesn't work with -p (print mode).
+		// Print mode is stateless — no warm context between calls.
+		// TODO: migrate to Claude Agent SDK for proper session management.
+		_ = agentSessions // session UUIDs stored in DB, ready for SDK migration
 		if mcpConfigPath != "" {
 			providerCfg.MCPConfigPath = mcpConfigPath
 		}
@@ -306,7 +306,7 @@ func runPipeline(space, apiBase, repoPath string, budget float64, agentID string
 	if err != nil {
 		return err
 	}
-	sm := runner.NewPipelineStateMachine(smRunner)
+	sm := runner.NewPipelineStateMachine(smRunner, makeRunner)
 
 	if err := sm.Run(ctx); err != nil {
 		log.Printf("[pipeline] state machine error: %v", err)
