@@ -334,3 +334,4 @@
 {"phase":"critic","outcome":"critique.pass","repo":"hive","board_open":8,"duration_secs":4.1120024,"timestamp":"2026-03-28T20:06:14Z"}
 {"phase":"reflector","outcome":"reflection.done","repo":"hive","board_open":8,"duration_secs":6.1579294,"timestamp":"2026-03-28T20:06:21Z"}
 {"phase":"observer","outcome":"audit.done","repo":"hive","board_open":8,"duration_secs":4.7313783,"timestamp":"2026-03-28T20:06:25Z"}
+{"phase":"observer","outcome":"audit.done","repo":"hive","revise_count":2,"board_open":9,"duration_secs":882.524605,"cost_usd":9.870830250000001,"timestamp":"2026-03-28T20:07:49Z"}
