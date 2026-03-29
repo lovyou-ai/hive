@@ -17,6 +17,7 @@ import (
 	"github.com/lovyou-ai/eventgraph/go/pkg/decision"
 	"github.com/lovyou-ai/eventgraph/go/pkg/intelligence"
 	"github.com/lovyou-ai/hive/pkg/api"
+	"github.com/lovyou-ai/hive/pkg/registry"
 )
 
 // modelPricing maps short model names to per-million-token costs.
@@ -60,6 +61,7 @@ type Config struct {
 	CouncilTopic    string            // optional: focus the council on a specific question
 	RepoMap         map[string]string // named repos: name → absolute path (for multi-repo pipeline)
 	BaselineCommit  string            // commit hash before Builder ran — Critic only reviews after this
+	Registry        *registry.Registry // repo metadata for prompts, build/test commands
 }
 
 // CostTracker records per-call spending.
@@ -392,6 +394,32 @@ func (r *Runner) buildPrompt(t api.Node) string {
 		b.WriteString("\n\n---\n\n")
 	}
 
+	// Repo context from registry — Builder knows which repo and how to build/test.
+	buildCmd := "go.exe build -buildvcs=false ./..."
+	testCmd := "go.exe test -buildvcs=false ./..."
+	repoName := filepath.Base(r.cfg.RepoPath)
+	if reg := r.cfg.Registry; reg != nil {
+		if repo, found := reg.ForPath(r.cfg.RepoPath); found {
+			repoName = repo.Name
+			if repo.BuildCmd != "" {
+				buildCmd = repo.BuildCmd
+			}
+			if repo.TestCmd != "" {
+				testCmd = repo.TestCmd
+			}
+			if repo.ClaudeMD != "" {
+				b.WriteString(fmt.Sprintf("## Repository: %s\n\n", repo.Name))
+				b.WriteString(repo.ClaudeMD)
+				b.WriteString("\n\n---\n\n")
+			}
+		}
+		// Show all available repos so the Builder knows the landscape.
+		if summary := reg.Summary(); summary != "" {
+			b.WriteString(summary)
+			b.WriteString("\n---\n\n")
+		}
+	}
+
 	// Task.
 	b.WriteString(fmt.Sprintf("# Task: %s\n\n", t.Title))
 	if t.Body != "" {
@@ -402,14 +430,16 @@ func (r *Runner) buildPrompt(t api.Node) string {
 		b.WriteString(fmt.Sprintf("Priority: %s\n", t.Priority))
 	}
 
-	// Instructions.
-	b.WriteString(`
+	b.WriteString(fmt.Sprintf("\nYou are working in the **%s** repository.\n", repoName))
+
+	// Instructions — build/test commands from registry, not hardcoded.
+	b.WriteString(fmt.Sprintf(`
 ## Instructions
 
 1. Implement the task described above.
-2. Run ` + "`go.exe build -buildvcs=false ./...`" + ` to verify compilation.
-3. Run ` + "`go.exe test ./...`" + ` to verify tests pass.
-4. If you edit any .templ files, run ` + "`/c/Users/matt_/go/bin/templ generate`" + ` first.
+2. Run `+"`%s`"+` to verify compilation.
+3. Run `+"`%s`"+` to verify tests pass.
+4. If you edit any .templ files, run `+"`templ generate`"+` first.
 
 When done, end your response with exactly:
 ACTION: DONE
@@ -419,7 +449,7 @@ ACTION: PROGRESS
 
 If you're stuck and need human help:
 ACTION: ESCALATE
-`)
+`, buildCmd, testCmd))
 	return b.String()
 }
 
@@ -510,8 +540,17 @@ func (r *Runner) gitDiffStat() string {
 // ─── Build verification ──────────────────────────────────────────────
 
 func (r *Runner) verifyBuild() error {
-	cmd := exec.Command("go.exe", "build", "-buildvcs=false", "./...")
+	// Use build command from registry if available.
+	buildCmd := "go.exe build -buildvcs=false ./..."
+	if reg := r.cfg.Registry; reg != nil {
+		if repo, found := reg.ForPath(r.cfg.RepoPath); found && repo.BuildCmd != "" {
+			buildCmd = repo.BuildCmd
+		}
+	}
+	parts := strings.Fields(buildCmd)
+	cmd := exec.Command(parts[0], parts[1:]...)
 	cmd.Dir = r.cfg.RepoPath
+	cmd.Env = append(os.Environ(), "GOPATH=/d/gopath", "GOCACHE=/d/gocache")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%s\n%s", err, string(out))

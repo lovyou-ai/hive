@@ -1,0 +1,45 @@
+{
+  "repos": [
+    {
+      "name": "site",
+      "url": "https://github.com/lovyou-ai/site",
+      "local_path": "../site",
+      "language": "go",
+      "build_cmd": "go.exe build -buildvcs=false ./...",
+      "test_cmd": "go.exe test -buildvcs=false ./...",
+      "deploy_target": "fly.io"
+    },
+    {
+      "name": "hive",
+      "url": "https://github.com/lovyou-ai/hive",
+      "local_path": ".",
+      "language": "go",
+      "build_cmd": "go.exe build -buildvcs=false ./...",
+      "test_cmd": "go.exe test -buildvcs=false ./..."
+    },
+    {
+      "name": "eventgraph",
+      "url": "https://github.com/lovyou-ai/eventgraph",
+      "local_path": "../eventgraph",
+      "language": "go",
+      "build_cmd": "go.exe build -buildvcs=false ./go/...",
+      "test_cmd": "go.exe test -buildvcs=false ./go/..."
+    },
+    {
+      "name": "agent",
+      "url": "https://github.com/lovyou-ai/agent",
+      "local_path": "../agent",
+      "language": "go",
+      "build_cmd": "go.exe build -buildvcs=false ./...",
+      "test_cmd": "go.exe test -buildvcs=false ./..."
+    },
+    {
+      "name": "work",
+      "url": "https://github.com/lovyou-ai/work",
+      "local_path": "../work",
+      "language": "go",
+      "build_cmd": "go.exe build -buildvcs=false ./...",
+      "test_cmd": "go.exe test -buildvcs=false ./..."
+    }
+  ]
+}

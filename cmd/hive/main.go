@@ -41,6 +41,7 @@ import (
 
 	"github.com/lovyou-ai/hive/pkg/api"
 	"github.com/lovyou-ai/hive/pkg/hive"
+	"github.com/lovyou-ai/hive/pkg/registry"
 	"github.com/lovyou-ai/hive/pkg/runner"
 )
 
@@ -226,6 +227,25 @@ func runPipeline(space, apiBase, repoPath string, budget float64, agentID string
 
 	hiveDir := findHiveDir()
 
+	// Load repo registry: repos.json first, fall back to --repos flag.
+	var reg *registry.Registry
+	regPath := filepath.Join(hiveDir, "repos.json")
+	if r, err := registry.Load(regPath); err == nil {
+		if err := r.Resolve(); err != nil {
+			log.Printf("[pipeline] registry resolve warning: %v", err)
+		}
+		reg = r
+		// Merge into repoMap for backward compat.
+		for k, v := range r.RepoMap() {
+			if _, exists := repoMap[k]; !exists {
+				repoMap[k] = v
+			}
+		}
+		log.Printf("[pipeline] loaded %d repos from registry", len(r.Available()))
+	} else if len(repoMap) == 0 {
+		log.Printf("[pipeline] no repos.json and no --repos flag")
+	}
+
 	// Log available repos.
 	if len(repoMap) > 0 {
 		var names []string
@@ -294,6 +314,7 @@ func runPipeline(space, apiBase, repoPath string, budget float64, agentID string
 			NoPush:     role == "builder",
 			PRMode:     role == "builder" && prMode,
 			RepoMap:    repoMap,
+			Registry:   reg,
 		}), nil
 	}
 
