@@ -1,61 +1,53 @@
-# Build: Auth: helpful error messages and logging
-
-## Scout Gap Cross-reference
-
-Scout 406 gap: `assertClaim` wrapper in `cmd/post` (CAUSALITY GATE 1). This build addresses a different high-priority task: auth failure visibility. No conflict — Scout gap remains open for next iteration.
+# Build: Auth: email magic link as OAuth fallback
 
 ## What Was Built
 
 ### `site/auth/auth.go`
 
-**New imports:** `html`, `net/url` for error page rendering and URL encoding.
+**Schema changes:**
+- `users.google_id` made nullable (was `NOT NULL`) — magic-link users have no Google ID
+- New table `magic_link_tokens`: `(id, token_hash, email, expires_at, used, created_at)`
+- Migration added: `ALTER TABLE users ALTER COLUMN google_id DROP NOT NULL`
 
-**New routes registered:**
-- `GET /auth/error` — user-facing error page
-- `GET /auth/status` — debug endpoint (no secrets)
+**New routes registered in `Register()`:**
+- `GET /auth/magic-link/request` — email entry form
+- `POST /auth/magic-link/request` — validate email, generate token, log link
+- `GET /auth/magic-link/verify?token=...` — verify token, create session
 
-**`handleLogin`:** Log now includes `state` prefix (first 8 chars) and `host` for correlation.
+**New handlers:**
+- `handleMagicLinkRequestForm` — styled HTML form (Ember Minimalism, matches site design)
+- `handleMagicLinkRequest` — validates email (must contain `@`, len ≥ 3); calls `requestMagicLink`; logs full link (`auth: magic link generated email=... link=...`); returns confirmation HTML
+- `handleMagicLinkVerify` — empty token → redirect to `/auth/error?code=invalid_token`; calls `verifyMagicLink`; creates 30-day session cookie; redirects to `/app`
 
-**`handleCallback`:** Comprehensive overhaul:
-1. Checks `?error=` from Google before state validation — redirects to `/auth/error?code=<errCode>` (e.g. `access_denied`)
-2. State mismatch/missing cookie → redirect to `/auth/error?code=invalid_state` (was: `http.Error` 400)
-3. Token exchange failure → redirect to `/auth/error?code=exchange_failed` + logs error
-4. Userinfo fetch/decode failure → redirect to `/auth/error?code=userinfo_failed` + logs error
-5. Upsert user failure → redirect to `/auth/error?code=user_create_failed`, logs email
-6. Session create failure → redirect to `/auth/error?code=session_failed`
-7. Success path: logs `auth: user upserted id=... email=...` and `auth: login success user=... email=... session=...`
+**New internal methods:**
+- `requestMagicLink(ctx, email) (string, error)` — generates `newID()` raw token, hashes it, inserts into `magic_link_tokens` with 15-min expiry, returns raw token
+- `verifyMagicLink(ctx, rawToken) (*User, error)` — atomic `UPDATE magic_link_tokens SET used=TRUE WHERE token_hash=$1 AND expires_at>NOW() AND used=FALSE RETURNING email`; handles expired/used/invalid in one query; calls `upsertUserByEmail`
+- `upsertUserByEmail(ctx, email) (*User, error)` — `INSERT ... ON CONFLICT (email) DO UPDATE SET email=EXCLUDED.email RETURNING ...`; finds existing user by email or creates new one with `kind='human'`, no `google_id`
 
-**`handleAuthError`:** Styled HTML error page with per-code messages:
-- `access_denied` → "Sign-in was cancelled or blocked. Your organisation may restrict third-party sign-in."
-- `invalid_state` → "Your sign-in session expired. Please try signing in again."
-- `exchange_failed` → "Could not complete sign-in with Google... Try using an API key instead."
-- default → "Authentication failed. Please try again."
-- Shows error code and "Try again" link back to `/auth/login`.
-
-**`handleStatus`:** Returns JSON with `oauth_configured`, `redirect_url`, `secure`. No client secret exposed.
+**Email delivery:** Stub — link is logged via `log.Printf`. TODO comment marks where SMTP/SendGrid wires in.
 
 ### `site/auth/auth_test.go`
 
-New tests (no DB required):
-- `TestCallbackInvalidState` — state mismatch → redirect to `/auth/error?code=invalid_state`
-- `TestCallbackExpiredState` — missing cookie → redirect to `/auth/error?code=invalid_state`
-- `TestCallbackGoogleError` — `?error=access_denied` → redirect to `/auth/error?code=access_denied`
-- `TestAuthErrorPage` — 4 subtests: access_denied message, invalid_state message, no-code default, retry link
-- `TestAuthStatus` — oauth_configured=true, redirect_url contains host, no secrets in body
+No-DB tests (use `newTestAuth()`):
+- `TestMagicLinkRequestInvalidEmail` — 3 subtests: empty, no_at, at_only → all return 400 before touching DB
+- `TestMagicLinkVerifyMissingToken` — empty `?token=` → redirect to `/auth/error`
 
-DB-required test:
-- `TestConcurrentSessions` — two active sessions for same user both resolve correctly (skips without DATABASE_URL)
+DB-required tests (skip without `DATABASE_URL`):
+- `TestMagicLinkHappyPath` — request + verify → user created, second verify fails (used token)
+- `TestMagicLinkExpiredToken` — inserts expired token, verify rejects it
+- `TestMagicLinkInvalidToken` — bogus token rejected
+- `TestMagicLinkIdempotentUser` — two tokens for same email → both verify resolves to same user ID
 
 ## Build Results
 
 ```
 site: go.exe build -buildvcs=false ./...   → OK
 site: go.exe test ./...                    → auth OK, graph OK, handlers OK
-hive: go.exe build -buildvcs=false ./...   → OK
-hive: go.exe test ./...                    → all 11 packages pass
+deploy: flyctl deploy --remote-only        → deployed to lovyou-ai.fly.dev
+commit: 306ffe1 iter 407: Auth: email magic link as OAuth fallback
 ```
 
 ## Files Changed
 
-- `site/auth/auth.go` — logging, error redirects, `handleAuthError`, `handleStatus`, new routes
-- `site/auth/auth_test.go` — 6 new test functions (5 no-DB, 1 DB-required)
+- `site/auth/auth.go` — `magic_link_tokens` table, `google_id` nullable, 3 new routes, 3 handlers, 3 internal methods
+- `site/auth/auth_test.go` — 6 new test functions (2 no-DB, 4 DB-required)

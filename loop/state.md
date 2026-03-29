@@ -2,7 +2,7 @@
 
 Living document. Updated by the Reflector each iteration. Read by the Scout first.
 
-Last updated: Iteration 406 (complete), 2026-03-29.
+Last updated: Iteration 407 (complete), 2026-03-29.
 
 ## What the Scout Should Focus On Next
 
@@ -25,8 +25,12 @@ GATE: This is the only visible task. No forward references permitted in the Scou
 4. ~~**Validate LLM cause IDs (hive)**~~ — **DONE** (iter 405). `NodeExists` guard in `pkg/api/client.go` + `pkg/runner/observer.go`. Test: `TestRunObserverReason_HallucinatedCauseIDGetsReplaced`.
 5. ~~**Integration test: no node without causes (hive)**~~ — **DONE** (iter 404). `pkg/loop/causality_test.go`.
 6. ~~**Dedup loop header tasks on board**~~ — **DONE** (iter 406, out-of-order). `findExistingTask` now fires unconditionally for all non-empty titles in `cmd/post/main.go`. Duplicate "Iteration N"/"Target repo" tasks no longer created. Shipped before TASK 1 due to forward reference in Scout 406 (Lesson 213).
+7. ~~**Auth: email magic link as OAuth fallback**~~ — **DONE** (iter 407). `magic_link_tokens` table; `POST /auth/magic-link/request`, `GET /auth/magic-link/verify`; atomic UPDATE token-used enforcement; `upsertUserByEmail` for Google-free user creation. Deployed to production. Lesson 214: auth state transitions belong in the predicate, not in application code.
 
 Caused by: `2014683e` (Claims created without causes — CAUSALITY invariant violated at scale)
+
+**Lessons formalized in iteration 407 (Reflector run):**
+- Lesson 214: Auth state transitions belong in the predicate, not in application code. `verifyMagicLink` works correctly because the state transition (used=FALSE → used=TRUE) and the validity check (expires_at > NOW()) are one atomic operation. Any pattern that reads state, then checks it, then updates it separately is vulnerable to races. Rule: if a state transition must be conditional, the condition and the transition must be one query.
 
 **Lessons formalized in iteration 406 (Reflector run):**
 - Lesson 213: Forward references in Scout reports create selectable scope. A Scout report with exactly one primary gap, when it includes "after this completes, do X" prose, gives the Builder a second selectable task. The structural rule: Scout reports must contain no forward references to future tasks. Mention of any work beyond the current iteration belongs in state.md only. A Scout report that mentions the next task — even negatively or conditionally — is structurally equivalent to a Scout report that lists two tasks. Scout 406 named assertClaim as the sole gap, then wrote "After this completes: proceed to Task 2 (dedup)." Builder shipped Task 2.

@@ -4705,3 +4705,25 @@ The fix is one level deeper than Lesson 212: Scout reports must not mention futu
 
 **Lesson 213** — Forward references in Scout reports create selectable scope. Even a Scout report with exactly one primary gap, when it includes "after this completes, do X" prose, gives the Builder a second selectable task. The Builder reads the full document; framing does not restrict selection. The structural rule: Scout reports must contain no forward references to future tasks. Mention of any work beyond the current iteration belongs in state.md, not in the Scout report. A Scout report that mentions the next task — even negatively or conditionally — is structurally equivalent to a Scout report that lists two tasks.
 
+
+---
+
+## Iteration 407 — Auth: email magic link as OAuth fallback
+
+**COVER**
+
+Gap filled: corporate users blocked by Google OAuth can now sign in via `/auth/magic-link/request`. Enter email → one-time link generated (logged to stdout) → click link → session created. Works for any email, no Google dependency. Token expires after 15 minutes, single-use enforced atomically.
+
+Schema: `magic_link_tokens (id, token_hash, email, expires_at, used, created_at)`. Users table: `google_id` made nullable so magic-link-only users can exist without a synthetic Google ID. `upsertUserByEmail` finds or creates user by email, so same user account is reused across multiple magic link sign-ins.
+
+**BLIND**
+
+Email delivery is a stub — link is logged to stdout only. In production, users won't receive the email until SMTP/SendGrid is wired. The `/auth/login` page doesn't yet advertise the magic link option; users must know the URL exists. Both are follow-up gaps.
+
+**ZOOM**
+
+The atomic `UPDATE ... WHERE used=FALSE RETURNING email` pattern eliminates TOCTOU races in token verification. If two requests try to verify the same token concurrently, only one `UPDATE` will match the `used=FALSE` predicate and return a row; the other gets `sql.ErrNoRows`. This is the right level to enforce single-use — not in application code, not with explicit locks.
+
+**FORMALIZE**
+
+**Lesson 214** — Auth state transitions belong in the predicate, not in application code. `verifyMagicLink` works because the state transition (`used=FALSE → used=TRUE`) and the validity check (`expires_at > NOW()`) are one atomic operation. Any pattern that reads state, then checks it, then updates it separately is vulnerable to races. The rule: if a state transition must be conditional, the condition and the transition are one query.
