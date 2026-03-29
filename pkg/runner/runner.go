@@ -62,6 +62,7 @@ type Config struct {
 	RepoMap         map[string]string // named repos: name → absolute path (for multi-repo pipeline)
 	BaselineCommit  string            // commit hash before Builder ran — Critic only reviews after this
 	Registry        *registry.Registry // repo metadata for prompts, build/test commands
+	UseWorktrees    bool              // if true, each Builder task gets its own git worktree
 }
 
 // CostTracker records per-call spending.
@@ -90,8 +91,12 @@ type Runner struct {
 	cost        CostTracker
 	dailyBudget *DailyBudget
 	tick        int
-	done        bool // set by one-shot mode after task completes
+	done        bool             // set by one-shot mode after task completes
+	worktree    *WorktreeContext // set by Builder when UseWorktrees is true
 }
+
+// Worktree returns the active worktree context, or nil if not using worktrees.
+func (r *Runner) Worktree() *WorktreeContext { return r.worktree }
 
 // New creates a Runner.
 func New(cfg Config) *Runner {
@@ -291,6 +296,21 @@ func (r *Runner) workTask(ctx context.Context, t api.Node) {
 	// Mark in-progress.
 	_ = r.cfg.APIClient.UpdateTaskStatus(r.cfg.SpaceSlug, t.ID, "active")
 
+	// Worktree isolation: each task gets its own branch in a temp worktree.
+	workDir := r.cfg.RepoPath
+	var wt *WorktreeContext
+	if r.cfg.UseWorktrees {
+		var err error
+		wt, err = CreateTaskWorktree(r.cfg.RepoPath, t.Title, t.ID)
+		if err != nil {
+			log.Printf("[builder] worktree creation failed, falling back to direct: %v", err)
+		} else {
+			workDir = wt.Dir
+			// Store worktree context on runner for pipeline merge step.
+			r.worktree = wt
+		}
+	}
+
 	// Build the prompt.
 	prompt := r.buildPrompt(t)
 
@@ -302,7 +322,7 @@ func (r *Runner) workTask(ctx context.Context, t api.Node) {
 	}
 
 	result, err := op.Operate(ctx, decision.OperateTask{
-		WorkDir:     r.cfg.RepoPath,
+		WorkDir:     workDir,
 		Instruction: prompt,
 	})
 	if err != nil {
@@ -325,6 +345,13 @@ func (r *Runner) workTask(ctx context.Context, t api.Node) {
 
 	switch action {
 	case "DONE":
+		// When using worktrees, verify build in the worktree dir.
+		origRepoPath := r.cfg.RepoPath
+		if wt != nil {
+			r.cfg.RepoPath = wt.Dir
+		}
+		defer func() { r.cfg.RepoPath = origRepoPath }()
+
 		// Verify build passes.
 		if err := r.verifyBuild(); err != nil {
 			log.Printf("[builder] build failed: %v", err)
@@ -376,7 +403,6 @@ func (r *Runner) workTask(ctx context.Context, t api.Node) {
 		// Set task to "escalated" and notify the space owner.
 		if err := r.cfg.APIClient.EscalateTask(r.cfg.SpaceSlug, t.ID, summary, ""); err != nil {
 			log.Printf("[builder] escalation API error: %v", err)
-			// Fall back to comment if API fails.
 			_ = r.cfg.APIClient.CommentTask(r.cfg.SpaceSlug, t.ID,
 				fmt.Sprintf("ESCALATE: %s", summary))
 		}
@@ -386,6 +412,11 @@ func (r *Runner) workTask(ctx context.Context, t api.Node) {
 			Error:   summary,
 			CostUSD: r.cost.TotalCostUSD,
 		})
+		// Clean up worktree on escalation — work is abandoned.
+		if wt != nil {
+			wt.Cleanup()
+			r.worktree = nil
+		}
 	}
 }
 

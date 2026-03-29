@@ -66,6 +66,7 @@ func run() error {
 	agentID := flag.String("agent-id", "", "Agent's lovyou.ai user ID (filters task assignment)")
 	oneShot := flag.Bool("one-shot", false, "Work one task then exit (for testing)")
 	prMode := flag.Bool("pr", false, "Create a feature branch and open a PR instead of pushing directly to main")
+	useWorktrees := flag.Bool("worktrees", false, "Each Builder task gets its own git worktree for isolation")
 
 	// Shared flags.
 	repo := flag.String("repo", "", "Path to repo for Operate (default: current dir)")
@@ -83,11 +84,11 @@ func run() error {
 	}
 	if *daemon {
 		repoMap := parseRepos(*repos, *repo)
-		return runDaemon(*space, *apiBase, *repo, *budget, *agentID, repoMap, *interval, *prMode)
+		return runDaemon(*space, *apiBase, *repo, *budget, *agentID, repoMap, *interval, *prMode, *useWorktrees)
 	}
 	if *pipeline || *role == "pipeline" {
 		repoMap := parseRepos(*repos, *repo)
-		return runPipeline(*space, *apiBase, *repo, *budget, *agentID, repoMap, *prMode)
+		return runPipeline(*space, *apiBase, *repo, *budget, *agentID, repoMap, *prMode, *useWorktrees)
 	}
 	if *role != "" {
 		return runRunner(*role, *space, *apiBase, *repo, *budget, *agentID, *oneShot, *prMode)
@@ -208,7 +209,7 @@ func runCouncilCmd(space, apiBase, repoPath string, budget float64, topic string
 // ─── Pipeline mode ───────────────────────────────────────────────────
 
 // runPipeline runs Scout → Builder → Critic in sequence. One full cycle.
-func runPipeline(space, apiBase, repoPath string, budget float64, agentID string, repoMap map[string]string, prMode bool) error {
+func runPipeline(space, apiBase, repoPath string, budget float64, agentID string, repoMap map[string]string, prMode, useWorktrees bool) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -312,9 +313,10 @@ func runPipeline(space, apiBase, repoPath string, budget float64, agentID string
 			BudgetUSD:  budget,
 			OneShot:    true,
 			NoPush:     role == "builder",
-			PRMode:     role == "builder" && prMode,
-			RepoMap:    repoMap,
-			Registry:   reg,
+			PRMode:       role == "builder" && prMode,
+			UseWorktrees: role == "builder" && useWorktrees,
+			RepoMap:      repoMap,
+			Registry:     reg,
 		}), nil
 	}
 
@@ -420,7 +422,7 @@ const (
 // runDaemon loops runPipeline at the given interval until SIGINT/SIGTERM.
 // On pipeline failure it retries after a short backoff. After 3 consecutive
 // failures it halts. Writes loop/daemon.status after each cycle.
-func runDaemon(space, apiBase, repoPath string, budget float64, agentID string, repoMap map[string]string, interval time.Duration, prMode bool) error {
+func runDaemon(space, apiBase, repoPath string, budget float64, agentID string, repoMap map[string]string, interval time.Duration, prMode, useWorktrees bool) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -440,7 +442,7 @@ func runDaemon(space, apiBase, repoPath string, budget float64, agentID string, 
 			daemonResetToMain(repoPath)
 		}
 
-		pipelineErr := runPipeline(space, apiBase, repoPath, budget, agentID, repoMap, prMode)
+		pipelineErr := runPipeline(space, apiBase, repoPath, budget, agentID, repoMap, prMode, useWorktrees)
 
 		elapsed := time.Since(start)
 

@@ -2,7 +2,7 @@
 
 Living document. Updated by the Reflector each iteration. Read by the Scout first.
 
-Last updated: Iteration 408 (complete), 2026-03-29.
+Last updated: Iteration 409 (complete, reflected), 2026-03-29.
 
 ## What the Scout Should Focus On Next
 
@@ -31,8 +31,15 @@ All CAUSALITY GATE 1 items complete. PM milestone (042617000efca95a9b3c029556135
 
 Caused by: `2014683e` (Claims created without causes — CAUSALITY invariant violated at scale)
 
+**Lessons formalized in iteration 409 (Reflector run):**
+- Lesson 217: Structural build isolation enforces scope as an architectural constraint, not a behavioral one. When the Builder runs in a git worktree, loop artifacts and peer work are unreachable by construction — not by instruction. The same structural isolation pattern applies at three layers: database predicates (L214), typed I/O gates (L215), and filesystem boundaries (L217). When scope leakage recurs despite instruction, the fix is a smaller filesystem, not stronger prompting. Consequence: Critic confirms isolation held, not what the Builder touched. Graph: `b3826c0c0cf7209bbbb67a33cd907038`.
+- **Gaps flagged (open):** (a) worktree.go has no tests — VERIFIED violated; (b) `git config` in `CreateTaskWorktree` sets no `cmd.Dir`, modifying main repo identity silently; (c) `MergeToMain` not concurrency-safe in daemon mode.
+
+**Next focus:** Scout should prioritize: (1) tests for `worktree.go` — closes VERIFIED violation; (2) fix `git config` cmd.Dir gap. Run close.sh to restore MCP index freshness (stale since iter 388, Lesson 173).
+
 **Lessons formalized in iteration 408 (Reflector run):**
 - Lesson 215: Invariant guards belong before I/O boundaries, not inside them. The `assertClaim` wrapper works because the causality check (`len(causeIDs) == 0`) fires before any HTTP call — no path reaches the network with empty causes. Rule: when an invariant violation makes a downstream operation semantically invalid, enforce it at the boundary as a typed gate before the operation begins. "Check then act" separated by I/O is a race; "gate then act" as a single typed function is structural enforcement. Generalises: budget checks before compute, auth checks before data reads, schema validation before writes.
+- Lesson 216: Structural process fixes are cumulative and eventually convergent. L211 named the selection law (friction minimization). L212 closed "multiple tasks in scope." L213 closed "forward references in prose." No single fix changed the outcome — together they converged to correct selection in iteration 408. When a loop phase fails repeatedly: identify the structural enabler of avoidance, remove it, expect convergence after N≥1 iterations. Emphasis and repetition do not change selection; structure does. Meta-work on the loop has delayed but real compounding ROI. Graph: `9b36e64566174246ef1d2074b04665ca`.
 
 **Lessons formalized in iteration 407 (Reflector run):**
 - Lesson 214: Auth state transitions belong in the predicate, not in application code. `verifyMagicLink` works correctly because the state transition (used=FALSE → used=TRUE) and the validity check (expires_at > NOW()) are one atomic operation. Any pattern that reads state, then checks it, then updates it separately is vulnerable to races. Rule: if a state transition must be conditional, the condition and the transition must be one query.

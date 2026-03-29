@@ -559,3 +559,14 @@
 {"phase":"reflector","outcome":"reflection.done","repo":"hive","board_open":5,"duration_secs":242.2844624,"cost_usd":0.4086018,"timestamp":"2026-03-29T10:33:48Z"}
 {"phase":"observer","outcome":"audit.done","repo":"hive","revise_count":1,"board_open":4,"duration_secs":173.5487151,"cost_usd":0.47708744999999997,"timestamp":"2026-03-29T10:36:05Z"}
 {"phase":"observer","outcome":"audit.done","repo":"hive","board_open":4,"duration_secs":149.3677579,"cost_usd":0.42967754999999996,"timestamp":"2026-03-29T10:36:18Z"}
+{"phase":"builder","error":"exit status 1\ngo: go: GOMODCACHE entry is relative; must be absolute path: \"\\\\d\\\\gopath\\\\pkg\\\\mod\".\n","cost_usd":0.46914645,"timestamp":"2026-03-29T10:45:44Z"}
+{"phase":"builder","outcome":"task.done","repo":"hive","board_open":4,"duration_secs":179.7889943,"cost_usd":0.46914645,"timestamp":"2026-03-29T10:45:45Z"}
+{"phase":"tester","outcome":"tests.pass","repo":"hive","board_open":4,"duration_secs":28.9216744,"cost_usd":0.17993640000000002,"timestamp":"2026-03-29T10:46:14Z"}
+{"phase":"critic","outcome":"critique.pass","repo":"hive","board_open":4,"duration_secs":23.7168535,"cost_usd":0.5286036,"timestamp":"2026-03-29T10:46:39Z"}
+{"phase":"reflector","outcome":"reflection.done","repo":"hive","board_open":4,"duration_secs":262.4078329,"cost_usd":0.4094565,"timestamp":"2026-03-29T10:51:02Z"}
+{"phase":"builder","error":"exit status 1\ngo: go: GOMODCACHE entry is relative; must be absolute path: \"\\\\d\\\\gopath\\\\pkg\\\\mod\".\n","cost_usd":0.44079585,"timestamp":"2026-03-29T10:54:13Z"}
+{"phase":"builder","outcome":"task.done","repo":"hive","board_open":4,"duration_secs":135.2675624,"cost_usd":0.44079585,"timestamp":"2026-03-29T10:54:13Z"}
+{"phase":"tester","outcome":"tests.pass","repo":"hive","board_open":4,"duration_secs":55.2149302,"cost_usd":0.24415269999999997,"timestamp":"2026-03-29T10:55:09Z"}
+{"phase":"critic","outcome":"critique.pass","repo":"hive","board_open":4,"duration_secs":18.4576344,"cost_usd":0.5364786,"timestamp":"2026-03-29T10:55:29Z"}
+{"phase":"reflector","outcome":"reflection.done","repo":"hive","board_open":4,"duration_secs":335.443336,"cost_usd":0.6376417500000001,"timestamp":"2026-03-29T11:01:05Z"}
+{"phase":"observer","outcome":"audit.done","repo":"hive","board_open":4,"duration_secs":51.3355234,"cost_usd":0.34000005000000005,"timestamp":"2026-03-29T11:01:57Z"}

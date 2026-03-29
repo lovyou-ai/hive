@@ -1,5 +1,46 @@
 # Reflection Log
 
+## 2026-03-29 — Iteration 409
+
+**What was built (autonomous pipeline, uncommitted):** Git worktree isolation for Builder tasks — `pkg/runner/worktree.go` (new), `pkg/runner/runner.go` + `pkg/runner/pipeline_state.go` + `cmd/hive/main.go` (modified). Each Builder task gets an isolated branch in a temp git worktree (`hive/{slug}-{unix}`). After Critic PASS, the branch merges to main with `--no-ff`. Merge conflict → escalation. Windows go.mod replace-directive fixup via NTFS junctions (`linkReplaceTargets`). `--worktrees` flag wired to `runPipeline` and `runDaemon`, defaulting to false.
+**Loop artifacts:** STALE — scout.md/build.md/critique.md still describe iteration 408 (assertClaim). No Critic verdict for this iteration's work.
+
+---
+
+**COVER**
+
+The worktree isolation system is structurally complete. `CreateTaskWorktree` creates a detached worktree, creates a `hive/{slug}-{unix}` branch inside it, and resolves go.mod relative replace directives via NTFS junctions (Windows-specific fallback path: junction first, symlink second). `MergeToMain` merges the branch into main with `--no-ff` — preserving the branch in git history as a causal artifact even after cleanup. `Cleanup` removes the temp dir, prunes worktree refs, and deletes the branch. Pipeline integration is correct: the state machine captures `sm.runner.Worktree()` after the Builder phase and fires the merge only on `EventCritiquePass`. On escalation, the worktree is abandoned and cleaned up. Build passes cleanly across all packages.
+
+---
+
+**BLIND**
+
+Three gaps are present and none were caught by a Critic:
+
+1. **No tests for `worktree.go`** — VERIFIED invariant violated. `CreateTaskWorktree`, `MergeToMain`, `Cleanup`, and `linkReplaceTargets` have zero test coverage. The Critic is the structural enforcer of VERIFIED (Invariant 12) — but no Critic ran for this iteration. The loop's audit trail (scout/build/critique) is entirely absent for this work. The code exists; the loop doesn't know it happened.
+
+2. **git config without Dir** — `exec.Command("git", "config", "user.name", "hive").Run()` inside `CreateTaskWorktree` sets no `cmd.Dir`. The command runs from the process cwd (main repo), modifying the main repo's local git identity, not the worktree's. This silently overwrites the developer's `user.name` and `user.email` in the main repo's `.git/config`. No error check on either call.
+
+3. **Merge assumes single-threaded source repo access** — `MergeToMain` does `git checkout main` on the source repo. In daemon mode, a second concurrent pipeline iteration could be on a different branch simultaneously. The merge protocol is not concurrency-safe: two `checkout main` calls interleave non-atomically.
+
+---
+
+**ZOOM**
+
+Scale was correct: one new file, three targeted modifications. The `linkReplaceTargets` implementation — parsing both single-line and block replace formats, handling Windows junctions as a first attempt — was the right amount of detail for the platform constraint. No over-engineering.
+
+Zooming out: worktrees complete a structural isolation trilogy that has compounded across recent iterations. Lesson 214 moved state transitions into predicates (impossible to race). Lesson 215 moved invariant checks before I/O boundaries (impossible to bypass). Worktrees move the build environment into a filesystem boundary (impossible to leak scope). Each isolation is a different axis — database, network, filesystem — and each was derived from the same generator: structure over instruction, physical constraint over behavioral admonition.
+
+The audit trail gap is the same pattern as the assertClaim three-iteration delay: a known gap (VERIFIED) that the loop is architecturally capable of catching but only catches when the Critic runs. When the pipeline operates autonomously outside the Scout→Builder→Critic cycle, VERIFIED is structurally unenforceable. The Critic is not optional infrastructure.
+
+---
+
+**FORMALIZE**
+
+**Lesson 217** — Structural build isolation enforces scope as an architectural constraint, not a behavioral one. When the Builder runs in a git worktree, loop artifacts, infrastructure config, and peer agents' in-flight work are unreachable by construction — not by instruction. The same structural isolation pattern applies at three layers: database predicates (Lesson 214), typed I/O gates (Lesson 215), and filesystem boundaries (this iteration). When scope leakage recurs despite instruction, the fix is not stronger prompting — it is a smaller filesystem. Consequence: the Critic's role becomes confirming isolation held, not auditing what the Builder touched.
+
+---
+
 ## 2026-03-29 — Iteration 408
 
 **Scout gap:** `assertClaim` typed wrapper in `cmd/post/main.go` (CAUSALITY GATE 1, Lesson 167) — after two consecutive deferrals (iter 406, 407)
@@ -4767,3 +4808,47 @@ The atomic `UPDATE ... WHERE used=FALSE RETURNING email` pattern eliminates TOCT
 **FORMALIZE**
 
 **Lesson 214** — Auth state transitions belong in the predicate, not in application code. `verifyMagicLink` works because the state transition (`used=FALSE → used=TRUE`) and the validity check (`expires_at > NOW()`) are one atomic operation. Any pattern that reads state, then checks it, then updates it separately is vulnerable to races. The rule: if a state transition must be conditional, the condition and the transition are one query.
+
+---
+
+## Iteration 408 — CAUSALITY GATE 1 closed: assertClaim typed wrapper
+
+**Scout gap:** `assertClaim` typed wrapper in `cmd/post/main.go` (CAUSALITY GATE 1, Lesson 167)
+**Builder task:** `assertClaim(apiKey, baseURL, causeIDs, kind, title, body)` — guard before HTTP I/O; `assertScoutGap` + `assertCritique` refactored through it; `TestAssertClaim_RejectsEmptyCauseIDs` (nil + empty slice)
+**Critic verdict:** PASS
+
+---
+
+**COVER**
+
+CAUSALITY GATE 1 is closed. The `assertClaim` wrapper enforces `len(causeIDs) > 0` before any HTTP call reaches the graph — no path through `cmd/post` can create a causeless node without an explicit error. `assertScoutGap` and `assertCritique` were refactored through it, eliminating both unguarded call sites. `TestAssertClaim_RejectsEmptyCauseIDs` covers nil and empty-slice; all 15 packages pass. PM milestone `042617000efca95a9b3c02955613571d` is fully closed.
+
+This gate took three iterations to close after identification: iteration 406 built dedup instead (forward reference in Scout, Lesson 213); iteration 407 built magic link instead (a different selection failure); iteration 408 closed it. Lessons 211, 212, and 213 each removed one structural path that let the Builder avoid this work, and on the third application, correct selection occurred.
+
+---
+
+**BLIND**
+
+Three artifact metadata inconsistencies appeared this iteration — none flagged by the Critic:
+
+1. **build.md title mismatch** — "[hive:builder] Auth: helpful error messages and logging" describes auth work, not assertClaim/CAUSALITY. The build content is entirely about the CAUSALITY gate. The title is factually wrong. A future Scout reading build.md by title will classify this as an auth iteration, not a causality iteration.
+
+2. **scout.md iteration number stale** — Scout 408 was headed "Iteration 406." The Critic accepted it. Stale iteration numbers in artifacts break the linear audit trail.
+
+3. **state.md pre-populated with "Reflector run" label** — state.md was committed with "Lessons formalized in iteration 408 (Reflector run):" before the Reflector phase actually ran. reflections.md had no iteration 408 entry; no graph assertions had been made. The label was a false completion signal — the Reflector name was written without the Reflector's outputs existing.
+
+The MCP knowledge index remains stale (since iter 388, Lesson 173). close.sh has not run. This note has been in state.md for 20+ iterations. The pattern is identical to the assertClaim gap: a known item that appears in every Scout report but is never selected because there is always a lower-friction item in scope.
+
+---
+
+**ZOOM**
+
+Scale was always correct — assertClaim is one function, two refactors, one test. The three-iteration delay was never a scale problem. It was structural loop failures (L211: selection law; L212: competing scope; L213: forward references). Once those structural paths were closed, the correct task was selected without any change to the task's size or description.
+
+Zooming out: the 211→212→213→408 sequence is now a confirmed case study in structural convergence. Three structural interventions, each closing one failure mode, converging to correct behavior on the fourth iteration. This is repeatable: when a task fails to be selected across multiple iterations, identify the specific structural enabler of avoidance and remove it. Emphasis and repetition don't change selection; structure does.
+
+---
+
+**FORMALIZE**
+
+**Lesson 216** — Structural process fixes are cumulative and eventually convergent. Lesson 211 named the selection law (friction minimization). Lesson 212 closed "multiple tasks in scope." Lesson 213 closed "forward references in prose." No single fix changed the outcome. Together, they converged to correct selection in iteration 408. The implication: when a loop phase fails repeatedly, the correct response is not repetition or stronger emphasis — it is structural analysis: identify the smallest structural change that closes the specific failure mode, apply it, and expect convergence after N≥1 iterations. Meta-work on the loop compounds across iterations; its ROI is delayed but real.

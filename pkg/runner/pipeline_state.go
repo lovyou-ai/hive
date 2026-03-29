@@ -114,6 +114,7 @@ type PipelineStateMachine struct {
 	makeRunner   RunnerFactory // creates a fresh runner per role
 	reviseCount  int           // how many REVISE loops this cycle
 	postPhase    PostPhaseFunc // optional callback after each phase
+	worktree     *WorktreeContext // persists across phases for merge-after-PASS
 }
 
 // NewPipelineStateMachine creates a state machine with a runner factory.
@@ -253,6 +254,11 @@ func (sm *PipelineStateMachine) Run(ctx context.Context) error {
 		sm.runner.runTick(ctx)
 		phaseDuration := time.Since(phaseStart)
 
+		// Capture worktree from Builder for merge after Critic PASS.
+		if agent == "builder" && sm.runner.Worktree() != nil {
+			sm.worktree = sm.runner.Worktree()
+		}
+
 		// Post-phase callback (e.g., persist session IDs).
 		if sm.postPhase != nil {
 			sm.postPhase(agent, sm.runner.cfg.Provider)
@@ -260,6 +266,17 @@ func (sm *PipelineStateMachine) Run(ctx context.Context) error {
 
 		// Determine the next event based on what happened.
 		event := sm.inferEvent(agent)
+
+		// After Critic PASS, merge the worktree branch into main.
+		if event == EventCritiquePass && sm.worktree != nil {
+			if err := sm.worktree.MergeToMain(); err != nil {
+				log.Printf("[pipeline] merge conflict — escalating: %v", err)
+				event = EventEscalation
+			} else {
+				sm.worktree.Cleanup()
+				sm.worktree = nil
+			}
+		}
 
 		// Record diagnostic for every phase — the hive's nervous system.
 		boardOpen := 0
