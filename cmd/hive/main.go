@@ -483,31 +483,25 @@ func runDaemon(space, apiBase, repoPath string, budget float64, agentID string, 
 		statusLine = fmt.Sprintf("cycle=%d ok", cycle)
 		writeDaemonStatus(statusPath, statusLine)
 
-		// Check board — if there's work, start next cycle immediately.
-		apiKey := os.Getenv("LOVYOU_API_KEY")
-		if apiKey != "" {
-			client := api.New(apiBase, apiKey)
-			if tasks, err := client.GetTasks(space, ""); err == nil {
-				hasWork := false
-				for _, t := range tasks {
-					if t.Kind == "task" && t.State != "done" && t.State != "closed" {
-						hasWork = true
-						break
-					}
-				}
-				if hasWork {
-					log.Printf("[daemon] board has work — starting next cycle immediately")
-					continue
-				}
-			}
+		// If the PM found nothing to do (cycle ended at idle → no.tasks),
+		// wait before retrying. Otherwise start immediately — either the
+		// board has work or the PM will generate some from priorities.
+		//
+		// The interval is the idle poll rate, not the work rate.
+		// A brief cooldown between cycles prevents API spam.
+		cooldown := 10 * time.Second
+		if elapsed < 30*time.Second {
+			// Very short cycle means the PM found nothing. Wait longer.
+			cooldown = interval
+			log.Printf("[daemon] short cycle (PM idle?) — waiting %v", cooldown)
+		} else {
+			log.Printf("[daemon] starting next cycle in %v", cooldown)
 		}
-
-		log.Printf("[daemon] board clear — waiting %v", interval)
 		select {
 		case <-ctx.Done():
 			log.Printf("[daemon] shutdown after cycle %d", cycle)
 			return nil
-		case <-time.After(interval):
+		case <-time.After(cooldown):
 		}
 	}
 }
