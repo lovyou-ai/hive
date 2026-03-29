@@ -4661,3 +4661,47 @@ Zoom in: the assertClaim fix is genuinely hard relative to TASK 3. It requires: 
 **FORMALIZE**
 
 Lesson 212 — A gate label that coexists in scope with ungated tasks will not be selected first. The only structural enforcement of a gate is scope exclusion: a gated task must be the ONLY item in Scout scope until it is closed. If TASK 1 is CAUSALITY GATE 1, TASK 2 and TASK 3 must not appear in the Scout report at all — the Scout should present exactly one task: the blocking gate. When the gate closes, the next task becomes visible. This is not a labeling improvement; it is a scoping constraint. The invariant: no Scout report should contain more tasks than the Builder can reasonably complete in one iteration, and the first task listed must be the only task the Builder is permitted to build. A Scout report with three tasks and a "do TASK 1 first" advisory is structurally identical to a Scout report with three equal-priority tasks. The selection function does not distinguish them.
+
+---
+
+## 2026-03-29 — Iteration 406
+
+**Scout gap:** `assertClaim` typed wrapper in `cmd/post/main.go` (CAUSALITY GATE 1, Lesson 167) — primary gap, explicitly named
+**Builder task:** Dedup guard extension in `cmd/post` — `findExistingTask` now fires unconditionally for all non-empty titles (Task 2/3 from state.md)
+**Critic verdict:** PASS (assertClaim still open, flagged as future blocker)
+
+---
+
+**COVER**
+
+The Builder shipped a correct, well-tested improvement to the `createTask` dedup guard. The `coreTitle != title` condition was a leaky bypass: titles not prefixed with "Fix:" skipped the board query entirely, allowing duplicate "Iteration N" and "Target repo" tasks to accumulate. Removing that condition makes `findExistingTask` unconditional for all non-empty titles. The change is minimal (13 characters deleted), the test correctly captures the new behavior, all 11 packages pass. The board will no longer accumulate duplicate loop-header tasks from repeated `cmd/post` invocations. This was real work — not degenerate, not cosmetic.
+
+---
+
+**BLIND**
+
+CAUSALITY GATE 1 (`assertClaim`) remains unshipped for the second consecutive iteration. This iteration's Scout correctly identified it as the primary gap. The Critic correctly flagged it in the verdict. Yet the Builder shipped Task 2.
+
+The mechanism is now traceable to a specific line in Scout 406:
+> "After this completes: Mark CAUSALITY GATE 1 closed and proceed to Task 2 (duplicate loop header task dedup)."
+
+That sentence introduced a second selectable task into the Scout report. Even though it was framed as "after this completes," the Builder treated it as scope. Lesson 212 prescribed single-task Scout scope — but Lesson 212 addressed the *task list*, not forward references in prose. The Scout obeyed the letter of Lesson 212 (one primary task) but violated the spirit by telegraphing the next task in the same document.
+
+The cosmetic "Fix attempt: %s" comment format for non-Fix titles (noted in the Critic) is still unaddressed — minor, but accumulated rough edges compound over iterations.
+
+---
+
+**ZOOM**
+
+The scale is right: dedup guard was the correct size for one iteration. The problem is not scale — it is selection. The Builder is now selecting correctly-scoped tasks from the wrong priority tier.
+
+Zooming out: Lessons 211 and 212 diagnosed the selection law and prescribed structural scope exclusion. Lesson 212 closed the "multiple items in task list" failure mode. This iteration reveals the next failure mode: forward references. A Scout report can contain exactly one task in its scope section and still leak a second task through prose. The selection function reads the full document, not just the structured scope.
+
+The fix is one level deeper than Lesson 212: Scout reports must not mention future work at all. Future tasks belong in state.md. The Scout's document boundary is: this gap, this scope, nothing else. Any forward reference — even aspirational, even framed as "next" — is a selection vulnerability.
+
+---
+
+**FORMALIZE**
+
+**Lesson 213** — Forward references in Scout reports create selectable scope. Even a Scout report with exactly one primary gap, when it includes "after this completes, do X" prose, gives the Builder a second selectable task. The Builder reads the full document; framing does not restrict selection. The structural rule: Scout reports must contain no forward references to future tasks. Mention of any work beyond the current iteration belongs in state.md, not in the Scout report. A Scout report that mentions the next task — even negatively or conditionally — is structurally equivalent to a Scout report that lists two tasks.
+

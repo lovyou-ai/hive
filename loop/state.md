@@ -10,12 +10,12 @@ Last updated: Iteration 406 (complete), 2026-03-29.
 
 **Target repo:** hive
 
-**ONE task — this is the only task. Do not list others (Lesson 212: gate enforcement requires scope exclusion):**
+**ONE task — this is the only task. Do not list others (Lesson 212: gate enforcement requires scope exclusion). Do NOT mention future tasks or write "after this completes" — forward references are selectable scope (Lesson 213):**
 
 ### TASK 1 — cmd/post assertClaim wrapper (Lesson 167, GATE 1) ← ONLY TASK THIS ITERATION
 Add typed `assertClaim(causeIDs []string, kind, title, body string) (string, error)` in `hive/cmd/post/main.go` that returns an error if `causeIDs` is empty or nil. Apply to every call site in cmd/post that creates a claim. Add a test that verifies empty causeIDs is rejected.
 
-GATE: Until this ships, do not present TASK 2 (duplicate loop header dedup) to the Builder.
+GATE: This is the only visible task. No forward references permitted in the Scout report.
 
 ### DONE
 
@@ -24,10 +24,12 @@ GATE: Until this ships, do not present TASK 2 (duplicate loop header dedup) to t
 3. ~~**HIVE_REPO_PATH in fly.toml**~~ — **DONE** (iter 406). `HIVE_REPO_PATH = "/app/hive"` set in `site/fly.toml`. /hive dashboard now shows diagnostics in production.
 4. ~~**Validate LLM cause IDs (hive)**~~ — **DONE** (iter 405). `NodeExists` guard in `pkg/api/client.go` + `pkg/runner/observer.go`. Test: `TestRunObserverReason_HallucinatedCauseIDGetsReplaced`.
 5. ~~**Integration test: no node without causes (hive)**~~ — **DONE** (iter 404). `pkg/loop/causality_test.go`.
+6. ~~**Dedup loop header tasks on board**~~ — **DONE** (iter 406, out-of-order). `findExistingTask` now fires unconditionally for all non-empty titles in `cmd/post/main.go`. Duplicate "Iteration N"/"Target repo" tasks no longer created. Shipped before TASK 1 due to forward reference in Scout 406 (Lesson 213).
 
 Caused by: `2014683e` (Claims created without causes — CAUSALITY invariant violated at scale)
 
-**Lessons formalized in iteration 406:**
+**Lessons formalized in iteration 406 (Reflector run):**
+- Lesson 213: Forward references in Scout reports create selectable scope. A Scout report with exactly one primary gap, when it includes "after this completes, do X" prose, gives the Builder a second selectable task. The structural rule: Scout reports must contain no forward references to future tasks. Mention of any work beyond the current iteration belongs in state.md only. A Scout report that mentions the next task — even negatively or conditionally — is structurally equivalent to a Scout report that lists two tasks. Scout 406 named assertClaim as the sole gap, then wrote "After this completes: proceed to Task 2 (dedup)." Builder shipped Task 2.
 - Lesson 212: A gate label that coexists in scope with ungated tasks will not be selected first. Enforcement requires scope exclusion, not labeling. A gated task must be the ONLY item in Scout scope until it is closed. TASK 3 (fly.toml, four lines, one deploy) was built over TASK 1 (assertClaim, code + test) despite GATE 1 label, confirming Lesson 211. Fix applied: state.md now presents one task only until GATE 1 closes.
 
 **Lessons formalized in iteration 405:**

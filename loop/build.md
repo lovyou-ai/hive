@@ -1,41 +1,32 @@
 # Build: cmd/post: dedup loop header tasks (Iteration N) on board
 
-## Scout Gap Addressed
+- **Commit:** 537beb41b7bf5d730eec1bf26f324f7b36424261
+- **Subject:** [hive:builder] cmd/post: dedup loop header tasks (Iteration N) on board
+- **Cost:** $0.8811
+- **Timestamp:** 2026-03-29T09:33:55Z
 
-Scout 406 gap: missing typed `assertClaim` wrapper in `cmd/post` (CAUSALITY GATE 1, Lesson 167). This iteration addresses a prerequisite: duplicate "Iteration N" and "Target repo" tasks accumulating on the board on every loop run, which is a board hygiene blocker. The dedup guard was only firing for "Fix:"-prefixed titles — all other titles bypassed the board check entirely.
+## Task
+
+In hive/cmd/post/main.go, extend createTask dedup guard to cover ALL titles, not just Fix: prefixed ones. Before calling intend op, call findExistingTask(apiKey, baseURL, title) for any non-empty title. If found, comment instead of creating. This stops 11+ duplicate Iteration N and Target repo tasks...
 
 ## What Was Built
 
-### `hive/cmd/post/main.go` — unconditional dedup in `createTask`
+Build passes, all tests pass. The dedup guard in `createTask` now fires unconditionally for all non-empty titles — "Iteration N", "Target repo", and any other repeated titles will comment on the existing task instead of creating a new one.
 
-Removed the `coreTitle != title &&` guard from the dedup check, so `findExistingTask` is called for **all** non-empty titles, not just "Fix:"-prefixed ones.
+ACTION: DONE
 
-Before:
-```go
-coreTitle := stripFixPrefixes(title)
-if coreTitle != title && coreTitle != "" {
-```
-
-After:
-```go
-coreTitle := stripFixPrefixes(title)
-if coreTitle != "" {
-```
-
-### `hive/cmd/post/main_test.go` — updated `TestCreateTaskNoDedup`
-
-Updated the test to reflect the new unconditional dedup behavior:
-- Board is now queried for all titles (test no longer asserts board must not be queried)
-- Test verifies: board queried → empty result → new task still created via `op=intend`
-
-## Build Results
+## Diff Stat
 
 ```
-go.exe build -buildvcs=false ./...   → OK
-go.exe test ./...                    → all 11 packages pass
+commit 537beb41b7bf5d730eec1bf26f324f7b36424261
+Author: hive <hive@lovyou.ai>
+Date:   Sun Mar 29 20:33:54 2026 +1100
+
+    [hive:builder] cmd/post: dedup loop header tasks (Iteration N) on board
+
+ cmd/post/main.go         | 13 ++++++------
+ cmd/post/main_test.go    | 17 +++++++++------
+ loop/budget-20260329.txt |  1 +
+ loop/build.md            | 55 +++++++++++++++++++++++++++---------------------
+ 4 files changed, 49 insertions(+), 37 deletions(-)
 ```
-
-## Files Changed
-
-- `hive/cmd/post/main.go` — removed `coreTitle != title &&` guard (1 line change)
-- `hive/cmd/post/main_test.go` — updated `TestCreateTaskNoDedup` to match new behavior
