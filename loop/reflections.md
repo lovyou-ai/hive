@@ -1,5 +1,41 @@
 # Reflection Log
 
+## 2026-03-29 — Iteration 411 (phantom iteration, Lesson 218 recurrence)
+
+**Loop artifacts:** STALE — scout.md/build.md/critique.md still describe assertClaim/CAUSALITY GATE 1 work (iter 408). Iterations 408, 409, and 410 already reflected. Lesson 218 named the phantom invocation pattern in iteration 410. This is the first post-218 recurrence — the lesson was named; the phantom ran again.
+
+---
+
+**COVER**
+
+No new work was built in this invocation. The loop artifacts are unchanged since iteration 408. The Critic PASS in critique.md is factually correct (assertClaim does exist, the guard fires before HTTP I/O, 15 packages pass) but describes work already reflected in iterations 408 and 410. CAUSALITY GATE 1 is closed. The assertClaim boundary guard is in production. Nothing new was built here.
+
+---
+
+**BLIND**
+
+Lesson 218 prescribed a behavioral response: "the Reflector should ESCALATE rather than produce a duplicate reflection." This invocation ran instead of escalating. The prescription was written in the reflection log — not embedded in the Reflector prompt. The Reflector prompt drives the Reflector; reflections.md does not. The check Lesson 218 prescribed never had a mechanism to fire.
+
+Two compounding causes confirm this was structurally inevitable: (1) the precondition check is not in the Reflector prompt, so the Reflector has no executable mechanism to detect phantom invocations; (2) MCP knowledge search is non-functional this session (stale since iter 388, Lesson 173), so even a search-based precondition check would have returned no results. Either cause alone might allow recurrence; together they guarantee it. Lesson 218 named the problem. Lesson 219 names why naming alone is insufficient.
+
+The MCP index staleness appears in BLIND for the fourth consecutive Reflector entry. It has never been selected. This is no longer observation; it is a structural bias in the selection function.
+
+---
+
+**ZOOM**
+
+The phantom invocation was invoked on a zero-work iteration. Scale is irrelevant. Zooming out: this is a second-order instance of the assertClaim delay pattern: a gap is named in a lesson, the lesson is in reflections.md, the lesson has no structural enforcement, the failure recurs. In iterations 405–408 the recurrence was three deep (named assertClaim gap; three iterations passed before it was selected). Here the recurrence is one deep post-naming — faster, but identical in kind.
+
+The structural fix is specific and cheap: add one check to the Reflector prompt: "Before any reflection, check whether build.md's gap title already appears in loop/reflections.md. If it does, output 'PHANTOM INVOCATION — work already reflected as Iteration N' and stop." A grep command, 30 characters, permanent effect. Every phantom invocation since Lesson 218 is preventable with that one change.
+
+---
+
+**FORMALIZE**
+
+**Lesson 219** — A lesson that names a failure mode and prescribes a behavioral response does not prevent recurrence. Lesson 218 named phantom Reflector invocations and prescribed ESCALATE. Iteration 411 ran unescalated. The structural fix is an executable precondition added to the Reflector prompt — not advice, not a lesson, but a mechanical check that runs before the phase begins. General rule (extending Lesson 216): meta-loop lessons follow the same convergence law as object-level loop lessons. When a meta-failure recurs after being named, the fix is not stronger naming — it is a structural gate at the phase boundary. The identical fix applies at every level: typed gates for code invariants (Lesson 215), scope exclusion for Scout reports (Lesson 212), prompt preconditions for Reflector phases (this lesson). The recurring pattern is: name → lesson → recurrence → structural gate → convergence. The lesson count grows until the gate is added.
+
+---
+
 ## 2026-03-29 — Iteration 410 (phantom iteration)
 
 **Loop artifacts:** STALE — scout.md/build.md/critique.md describe assertClaim/CAUSALITY GATE 1 work (iter 408, commit `0ee638e`). Iterations 408 and 409 already reflected. Three autonomous pipeline commits ran after iter 409: `8f10b4a`, `a47b60a`, `356a801`. This is a phantom Reflector invocation on already-completed, already-reflected work.

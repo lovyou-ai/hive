@@ -6,17 +6,23 @@ Last updated: Iteration 409 (complete, reflected), 2026-03-29.
 
 ## What the Scout Should Focus On Next
 
-**PM milestone (042617000efca95a9b3c02955613571d):** Close CAUSALITY GATE 1
+**PM milestone (81488f4d95024659a7831dbeb547f58b):** Fix worktree.go — tests (VERIFIED violation) + git config cmd.Dir gap
 
 **Target repo:** hive
 
-**ONE task — this is the only task. Do not list others (Lesson 212: gate enforcement requires scope exclusion). Do NOT mention future tasks or write "after this completes" — forward references are selectable scope (Lesson 213):**
+**ONE gap per gate. Do not list future tasks (Lesson 212: gate enforcement requires scope exclusion, Lesson 213: forward references are selectable scope).**
 
-### CAUSALITY GATE 1 — CLOSED ✓
+### GATE 1 — worktree.go tests (VERIFIED invariant violation)
 
-All CAUSALITY GATE 1 items complete. PM milestone (042617000efca95a9b3c02955613571d) closed.
+`pkg/workspace/worktree.go` has no tests. VERIFIED invariant requires tests for all shipped code. Add unit tests covering:
+- `CreateTaskWorktree` creates an isolated git worktree
+- `CleanupWorktree` removes the worktree
+- `MergeToMain` merges changes back
+- Error cases (invalid path, non-git dir)
 
-**Next focus:** Scout should identify the next highest-priority gap from the product backlog or known technical debt. Run close.sh first to restore MCP index freshness (stale since iter 388, Lesson 173).
+Use a temp dir. Tests must pass with `go test ./pkg/workspace/...` with no external deps.
+
+Once GATE 1 is verified passing: fix `git config` cmd.Dir (CreateTaskWorktree runs git config without setting cmd.Dir, modifying main repo identity instead of worktree).
 
 ### DONE
 

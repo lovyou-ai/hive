@@ -576,3 +576,12 @@
 {"phase":"critic","outcome":"critique.pass","repo":"hive","board_open":4,"duration_secs":13.4951388,"cost_usd":0.5416311,"timestamp":"2026-03-29T12:01:52Z"}
 {"phase":"reflector","outcome":"reflection.done","repo":"hive","board_open":4,"duration_secs":269.0591149,"cost_usd":0.4531248,"timestamp":"2026-03-29T12:06:22Z"}
 {"phase":"observer","outcome":"audit.done","repo":"hive","board_open":4,"duration_secs":48.0125053,"cost_usd":0.35473605,"timestamp":"2026-03-29T12:07:10Z"}
+{"phase":"pm","outcome":"milestone.created","repo":"hive","board_open":6,"duration_secs":146.8563409,"cost_usd":0.39292155,"timestamp":"2026-03-29T12:14:57Z"}
+{"phase":"scout","outcome":"report.posted","repo":"hive","board_open":6,"duration_secs":11.8258315,"cost_usd":0.05274825,"timestamp":"2026-03-29T12:15:09Z"}
+{"phase":"architect","outcome":"tasks.created","repo":"hive","board_open":7,"duration_secs":98.4194211,"cost_usd":0.3972218999999999,"timestamp":"2026-03-29T12:16:47Z"}
+{"phase":"builder","error":"exit status 1\ngo: go: GOMODCACHE entry is relative; must be absolute path: \"\\\\d\\\\gopath\\\\pkg\\\\mod\".\n","cost_usd":0.8052294,"timestamp":"2026-03-29T12:24:52Z"}
+{"phase":"builder","outcome":"task.done","repo":"hive","board_open":7,"duration_secs":484.9252662,"cost_usd":0.8052294,"timestamp":"2026-03-29T12:24:53Z"}
+{"phase":"tester","outcome":"tests.pass","repo":"hive","board_open":7,"duration_secs":73.2282987,"cost_usd":0.3284963500000001,"timestamp":"2026-03-29T12:26:06Z"}
+{"phase":"critic","outcome":"critique.pass","repo":"hive","board_open":7,"duration_secs":15.4775251,"cost_usd":0.5515386000000001,"timestamp":"2026-03-29T12:26:24Z"}
+{"phase":"reflector","outcome":"reflection.done","repo":"hive","board_open":7,"duration_secs":364.1328022,"cost_usd":0.5802795,"timestamp":"2026-03-29T12:32:29Z"}
+{"phase":"observer","outcome":"audit.done","repo":"hive","board_open":7,"duration_secs":71.9313867,"cost_usd":0.4300478999999999,"timestamp":"2026-03-29T12:33:41Z"}

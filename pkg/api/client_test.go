@@ -376,3 +376,88 @@ func TestNodeExists_NetworkError(t *testing.T) {
 		t.Error("NodeExists with network error: expected false")
 	}
 }
+
+// TestEscalateTaskSendsPayload verifies that EscalateTask POSTs to /api/hive/escalation
+// with the correct payload and returns success on HTTP 2xx.
+func TestEscalateTaskSendsPayload(t *testing.T) {
+	var capturedPath string
+	var capturedBody []byte
+	var capturedAuth string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
+		capturedAuth = r.Header.Get("Authorization")
+		capturedBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "lv_testkey")
+	err := c.EscalateTask("hive", "task-123", "builder timeout", "human-operator-id")
+	if err != nil {
+		t.Fatalf("EscalateTask: %v", err)
+	}
+
+	if capturedPath != "/api/hive/escalation" {
+		t.Errorf("path = %q, want /api/hive/escalation", capturedPath)
+	}
+	if capturedAuth != "Bearer lv_testkey" {
+		t.Errorf("Authorization = %q, want Bearer lv_testkey", capturedAuth)
+	}
+
+	var payload map[string]string
+	if err := json.Unmarshal(capturedBody, &payload); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	if payload["space_slug"] != "hive" {
+		t.Errorf("space_slug = %q, want hive", payload["space_slug"])
+	}
+	if payload["task_id"] != "task-123" {
+		t.Errorf("task_id = %q, want task-123", payload["task_id"])
+	}
+	if payload["reason"] != "builder timeout" {
+		t.Errorf("reason = %q, want builder timeout", payload["reason"])
+	}
+	if payload["assignee_id"] != "human-operator-id" {
+		t.Errorf("assignee_id = %q, want human-operator-id", payload["assignee_id"])
+	}
+}
+
+// TestEscalateTaskOmitsEmptyAssignee verifies that assignee_id is not sent when empty.
+func TestEscalateTaskOmitsEmptyAssignee(t *testing.T) {
+	var capturedBody []byte
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "test-key")
+	err := c.EscalateTask("hive", "task-456", "invalid state", "")
+	if err != nil {
+		t.Fatalf("EscalateTask: %v", err)
+	}
+
+	var payload map[string]string
+	if err := json.Unmarshal(capturedBody, &payload); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	if _, ok := payload["assignee_id"]; ok {
+		t.Error("assignee_id should be omitted when empty")
+	}
+}
+
+// TestEscalateTaskError verifies that HTTP errors are returned.
+func TestEscalateTaskError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "server error", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "test-key")
+	err := c.EscalateTask("hive", "task-789", "some reason", "")
+	if err == nil {
+		t.Error("EscalateTask with 500: expected error")
+	}
+}
