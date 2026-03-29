@@ -438,11 +438,23 @@ func runDaemon(space, apiBase, repoPath string, budget float64, agentID string, 
 	hiveDir := findHiveDir()
 	statusPath := filepath.Join(hiveDir, "loop", "daemon.status")
 
-	log.Printf("[daemon] starting: interval=%v space=%s", interval, space)
+	dailyBudget := runner.NewDailyBudget(hiveDir)
+
+	log.Printf("[daemon] starting: interval=%v space=%s budget=$%.0f/day", interval, space, budget)
 	cycle := 0
 	consecFailures := 0
 
 	for {
+		// Budget gate: halt if daily spend exceeds ceiling.
+		spent := dailyBudget.Spent()
+		if spent >= budget {
+			log.Printf("[daemon] ⚠ daily budget exhausted ($%.2f/$%.0f) — halting", spent, budget)
+			writeDaemonStatus(statusPath, daemonStatus(cycle, "budget_exhausted", spent, 0))
+			return nil
+		}
+		remaining := budget - spent
+		log.Printf("[daemon] budget: $%.2f spent, $%.2f remaining", spent, remaining)
+
 		cycle++
 		start := time.Now()
 		log.Printf("[daemon] ── cycle %d start ──", cycle)
@@ -454,14 +466,13 @@ func runDaemon(space, apiBase, repoPath string, budget float64, agentID string, 
 		pipelineErr := runPipeline(space, apiBase, repoPath, budget, agentID, repoMap, prMode, useWorktrees, autoClone)
 
 		elapsed := time.Since(start)
+		spent = dailyBudget.Spent()
 
-		var statusLine string
 		if pipelineErr != nil {
 			consecFailures++
 			log.Printf("[daemon] ████ cycle %d FAILED (%d/%d consecutive): %v ████",
 				cycle, consecFailures, daemonMaxConsecFailures, pipelineErr)
-			statusLine = fmt.Sprintf("cycle=%d error: %v", cycle, pipelineErr)
-			writeDaemonStatus(statusPath, statusLine)
+			writeDaemonStatus(statusPath, daemonStatus(cycle, "error", spent, elapsed.Seconds()))
 
 			if consecFailures >= daemonMaxConsecFailures {
 				return fmt.Errorf("[daemon] halting after %d consecutive failures — last error: %w",
@@ -479,19 +490,12 @@ func runDaemon(space, apiBase, repoPath string, budget float64, agentID string, 
 		}
 
 		consecFailures = 0
-		log.Printf("[daemon] cycle %d complete in %v", cycle, elapsed.Round(time.Second))
-		statusLine = fmt.Sprintf("cycle=%d ok", cycle)
-		writeDaemonStatus(statusPath, statusLine)
+		log.Printf("[daemon] cycle %d complete in %v (spent today: $%.2f)", cycle, elapsed.Round(time.Second), spent)
+		writeDaemonStatus(statusPath, daemonStatus(cycle, "ok", spent, elapsed.Seconds()))
 
-		// If the PM found nothing to do (cycle ended at idle → no.tasks),
-		// wait before retrying. Otherwise start immediately — either the
-		// board has work or the PM will generate some from priorities.
-		//
-		// The interval is the idle poll rate, not the work rate.
-		// A brief cooldown between cycles prevents API spam.
+		// Short cycle = PM idle. Long cycle = real work. Adjust cooldown.
 		cooldown := 10 * time.Second
 		if elapsed < 30*time.Second {
-			// Very short cycle means the PM found nothing. Wait longer.
 			cooldown = interval
 			log.Printf("[daemon] short cycle (PM idle?) — waiting %v", cooldown)
 		} else {
@@ -504,6 +508,13 @@ func runDaemon(space, apiBase, repoPath string, budget float64, agentID string, 
 		case <-time.After(cooldown):
 		}
 	}
+}
+
+// daemonStatus builds a JSON status line for daemon.status.
+// Readable by external monitors, scripts, or a future health endpoint.
+func daemonStatus(cycle int, state string, spentUSD, lastCycleSecs float64) string {
+	return fmt.Sprintf(`{"cycle":%d,"state":%q,"spent_usd":%.2f,"last_cycle_secs":%.0f,"time":%q}`,
+		cycle, state, spentUSD, lastCycleSecs, time.Now().UTC().Format(time.RFC3339))
 }
 
 // daemonResetToMain fetches and resets the repo to origin/main before each

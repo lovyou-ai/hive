@@ -275,30 +275,18 @@ func (r *Runner) runReflectorOperate(ctx context.Context, op decision.IOperator)
 
 	instruction := fmt.Sprintf(`You are the Reflector. Reflect on this iteration using COVER/BLIND/ZOOM/FORMALIZE.
 
-## Your Tools
-- Use knowledge.search to find prior reflections and lessons
-- Use knowledge.get to read the backlog and design docs
-- Use Bash to read the current loop artifacts:
-  - cat loop/scout.md (gap report)
-  - cat loop/build.md (build report)
-  - cat loop/critique.md (critique)
+**Be concise. Max 3 tool calls for reading, 1 knowledge search, then write your outputs. Do NOT explore the codebase — just read the artifacts and reflect.**
 
 ## Steps
-1. Read the current iteration's artifacts (scout, build, critique)
-2. Search knowledge for prior reflections to avoid repeating insights
-3. Reflect using the four sections:
-   - **COVER** — what was explored, what was covered
-   - **BLIND** — what was missed, what blind spots remain
-   - **ZOOM** — was the scale right, should we zoom in or out
-   - **FORMALIZE** — lessons to extract as verifiable knowledge
-
-4. Write the reflection to loop/reflections.md (append)
-5. Assert each lesson as a claim on the graph. **Use lesson number %d** (queried from the graph — do NOT read state.md for this number):
+1. Read loop/build.md and loop/critique.md (2 reads max)
+2. One knowledge.search for "lesson" to check the latest lesson number
+3. Write COVER/BLIND/ZOOM/FORMALIZE to loop/reflections.md (append)
+4. Assert lesson %d on the graph:
    curl -s -X POST -H "Authorization: Bearer %s" -H "Content-Type: application/json" -H "Accept: application/json" "https://lovyou.ai/app/%s/op" -d '{"op":"assert","title":"Lesson %d: <SHORT DESCRIPTION>","body":"<DETAILS>"%s}'
-6. Post the full reflection as a document (causes links to the iteration artifacts — Invariant 2: CAUSALITY):
-   curl -s -X POST -H "Authorization: Bearer %s" -H "Content-Type: application/json" -H "Accept: application/json" "https://lovyou.ai/app/%s/op" -d '{"op":"intend","kind":"document","title":"Reflection: <DATE>","description":"<FULL REFLECTION>"%s}'
+5. Post reflection as document:
+   curl -s -X POST -H "Authorization: Bearer %s" -H "Content-Type: application/json" -H "Accept: application/json" "https://lovyou.ai/app/%s/op" -d '{"op":"intend","kind":"document","title":"Reflection: iter %d","description":"<COVER/BLIND/ZOOM/FORMALIZE>"%s}'
 
-Search first. Reflect deeply. Assert what you learn.`, nextLessonNum, apiKey, r.cfg.SpaceSlug, nextLessonNum, causesSuffix, apiKey, r.cfg.SpaceSlug, causesSuffix)
+No codebase exploration. Read artifacts, reflect, write, done.`, nextLessonNum, apiKey, r.cfg.SpaceSlug, nextLessonNum, causesSuffix, apiKey, r.cfg.SpaceSlug, nextLessonNum, causesSuffix)
 
 	result, err := op.Operate(ctx, decision.OperateTask{
 		WorkDir:     r.cfg.HiveDir,
