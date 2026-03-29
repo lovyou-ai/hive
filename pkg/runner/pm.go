@@ -82,6 +82,10 @@ If it doesn't, you're drifting. The Director's intent persists across cycles.
 - One direction per milestone, 3-5 specific tasks
 - ALWAYS include Target repo in the directive
 - Your milestone MUST serve the pinned goal. If it doesn't, you're drifting.
+- The pinned goal has a PRIORITY QUEUE (P0, P1, P2...). Work top to bottom.
+  Do NOT create P1 tasks while P0 items remain open on the board.
+  If all open tasks serve the current priority level, create the next item from the queue.
+- If ALL items in the priority queue are done, propose the next goal to the Director (do not self-assign — create a goal proposal, not a task).
 `, repoNames, apiKey, r.cfg.SpaceSlug, apiKey, r.cfg.SpaceSlug, apiKey, r.cfg.SpaceSlug)
 
 	result, err := op.Operate(ctx, decision.OperateTask{
